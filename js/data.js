@@ -11,6 +11,25 @@ const SINPE_CONFIG = {
 const GAM_PROVINCES = ["San José", "Heredia", "Alajuela", "Cartago"];
 const NON_GAM_SURCHARGE_RATE = 0.12; // 12% surcharge for provinces outside GAM
 
+// Cantons located inside GAM provinces that are geographically OUTSIDE the GAM.
+// These must be charged the 12% travel surcharge even though their province is in GAM.
+const NON_GAM_EXCEPTIONS = {
+  "San José": ["Pérez Zeledón"],
+  "Heredia": ["Sarapiquí"],
+  "Cartago": ["Turrialba"]
+};
+
+// Hard caps for the extras counters (max selectable units per line item).
+// Keys must match CartState property names.
+const MAX_EXTRAS = {
+  extraHoursCount: 6,
+  djHoursCount: 6,
+  subwoofersCount: 4
+};
+
+// localStorage key used to recover an in-flight quote after a page refresh.
+const STORAGE_KEY = "arkik_cart_state_v1";
+
 const CATALOG_SERVICES = [
   {
     id: 1,
@@ -95,50 +114,77 @@ const DYNAMIC_EXTRAS_CONFIG = {
   }
 };
 
-const MEDIA_GALLERY = [
+// Gallery filter definitions (rendered dynamically in #gallery-filters)
+const GALLERY_FILTERS = [
+  { key: "todos", label: "Todos" },
+  { key: "banda", label: "Banda en Vivo" },
+  { key: "acustico", label: "Show Acústico" },
+  { key: "tecnico", label: "Montaje Técnico" }
+];
+
+// Category labels used on cards and filter counts
+const GALLERY_CATEGORY_LABELS = {
+  banda: "Banda en Vivo",
+  acustico: "Show Acústico",
+  tecnico: "Montaje Técnico"
+};
+
+// Multimedia Library — add/remove gallery items here only.
+// type: 'video' (YouTube embed URL) | 'image'; category: banda | acustico | tecnico
+const mediaLibrary = [
   {
+    id: 1,
     type: "video",
-    title: "Arkik Banda RT en Vivo — Highlights Festival",
+    title: "Banda RT en Vivo — Highlights Festival",
     subtitle: "Juan José & Banda Completa en Acción",
-    embedUrl: "https://www.youtube.com/embed/5qap5aO4i9A",
-    thumbnail: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80",
-    category: "Banda Completa"
+    category: "banda",
+    url: "https://www.youtube.com/embed/5qap5aO4i9A",
+    thumbnail: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"
   },
   {
-    type: "photo",
+    id: 2,
+    type: "image",
     title: "Trío Acústico Premium — Recepción de Boda",
     subtitle: "Granadilla / Escazú, Costa Rica",
-    imageUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
-    category: "Trío"
+    category: "acustico",
+    url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
+    thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80"
   },
   {
-    type: "photo",
+    id: 3,
+    type: "image",
     title: "Dúo Íntimo Arkik — Ceremonia Romántica",
     subtitle: "Voz & Teclado Electroacústico",
-    imageUrl: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80",
-    category: "Dúo"
+    category: "acustico",
+    url: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80",
+    thumbnail: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80"
   },
   {
+    id: 4,
     type: "video",
     title: "Juan José Ramírez — Performance Solista",
     subtitle: "Show de Saxofón & Pistas HD",
-    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    thumbnail: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?auto=format&fit=crop&w=800&q=80",
-    category: "Solista"
+    category: "acustico",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    thumbnail: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?auto=format&fit=crop&w=800&q=80"
   },
   {
-    type: "photo",
+    id: 5,
+    type: "image",
     title: "Montaje Técnico de Sonido e Iluminación Pro",
     subtitle: "Equipos JBL / RCF & Consolas Behringer X32",
-    imageUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
-    category: "Sonido Pro"
+    category: "tecnico",
+    url: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+    thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80"
   },
   {
-    type: "photo",
+    id: 6,
+    type: "image",
     title: "Banda RT en Evento Corporativo VIP",
     subtitle: "San José, Costa Rica",
-    imageUrl: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80",
-    category: "Banda Completa"
+    category: "banda",
+    url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80",
+    thumbnail: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80"
   }
 ];
 
