@@ -197,3 +197,60 @@ const PROVINCES_AND_CANTONES = {
   "Puntarenas": ["Central (Puntarenas)", "Garabito (Jacó)", "Quepos (Manuel Antonio)", "Esparza", "Osa (Uvita/Dominical)", "Golfito"],
   "Limón": ["Central (Limón)", "Pocoćı (Guápiles)", "Talamanca (Puerto Viejo/Cahuita)", "Siquirres", "Matina"]
 };
+
+// ---- Security & Administration Configuration (v3) ----
+// PIN por defecto (hash verificado en runtime con SHA-256):
+//   Propietario  -> 2580   |   Ingeniero de TI -> 1234
+
+const ADMIN_CONFIG = {
+  roles: {
+    owner: {
+      id: "owner",
+      label: "Propietario",
+      name: "Juan José Ramírez",
+      hashKey: "ownerHash",
+      defaultPin: "2580"
+    },
+    it: {
+      id: "it",
+      label: "Ingeniero de TI",
+      name: "Admin System",
+      hashKey: "itHash",
+      defaultPin: "1234"
+    }
+  },
+  maxAttempts: 5,
+  lockoutMs: 60000,
+  storageKey: "arkik_admin_auth_v1"
+};
+
+// Claves de persistencia local (por dominio, con fallback seguro)
+const STORAGE_KEYS = {
+  cart: STORAGE_KEY,
+  bookings: "arkik_bookings_v1",
+  availability: "arkik_availability_v1",
+  prices: "arkik_prices_v1",
+  admin: ADMIN_CONFIG.storageKey
+};
+
+// Plazas por evento (calendario de disponibilidad)
+const DEFAULT_SLOTS_PER_DAY = 50;
+const LOW_SLOTS_THRESHOLD = 10;
+
+// Franjas horarias del selector de hora (Mañana / Tarde / Noche)
+const TIME_SLOTS = {
+  morning: { label: "Mañana", range: "08:00 - 12:00", times: ["08:00", "09:00", "10:00", "11:00"] },
+  afternoon: { label: "Tarde", range: "13:00 - 17:00", times: ["13:00", "14:00", "15:00", "16:00"] },
+  night: { label: "Noche", range: "18:00 - 02:00", times: ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00"] }
+};
+
+const CALENDAR_LOCALE = {
+  months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+  weekdays: ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+};
+
+const BOOKING_STATUSES = {
+  pendiente: "Pendiente",
+  confirmada: "Confirmada",
+  cancelada: "Cancelada"
+};

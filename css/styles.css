@@ -612,4 +612,519 @@ html {
   text-shadow: 0 1px 2px rgba(11, 9, 20, 0.45);
 }
 
+/* ============================================================
+   CALENDARIO DE DISPONIBILIDAD (Glassmorphism)
+   ============================================================ */
+
+.ark-cal {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 1.25rem;
+  box-shadow: 0 12px 35px -10px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.ark-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ark-cal-month {
+  font-weight: 800;
+  font-size: 1rem;
+  color: #fff;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+.cal-nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cal-nav-btn:hover {
+  color: #fff;
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.12);
+}
+
+.ark-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.ark-cal-weekday {
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  padding: 6px 0;
+}
+
+.ark-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 0 12px 12px;
+}
+
+.ark-cal-day--empty {
+  aspect-ratio: 1;
+}
+
+.ark-cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.ark-cal-day:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(168, 85, 247, 0.55);
+  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.18);
+}
+
+.ark-cal-day:disabled {
+  cursor: not-allowed;
+}
+
+.ark-cal-day--available {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.ark-cal-day--available:hover:not(:disabled) {
+  border-color: rgba(16, 185, 129, 0.7);
+}
+
+.ark-cal-day--few {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.ark-cal-day--soldout {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.ark-cal-day--disabled {
+  background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.14) 0 6px, rgba(239, 68, 68, 0.05) 6px 12px);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.ark-cal-day--past {
+  opacity: 0.3;
+}
+
+.ark-cal-day--today::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.ark-cal-day--selected {
+  border-color: rgba(168, 85, 247, 0.95);
+  background: rgba(168, 85, 247, 0.22);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.5);
+  transform: scale(1.06);
+}
+
+.ark-cal-day-num {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+
+.ark-cal-day-label {
+  font-size: 0.55rem;
+  line-height: 1;
+  color: #94a3b8;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ark-cal-day--available .ark-cal-day-label {
+  color: #34d399;
+}
+
+.ark-cal-day--few .ark-cal-day-label {
+  color: #fbbf24;
+}
+
+.ark-cal-day--soldout .ark-cal-day-label,
+.ark-cal-day--disabled .ark-cal-day-label {
+  color: #f87171;
+}
+
+/* Leyenda del calendario */
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-available {
+  background: rgba(16, 185, 129, 0.5);
+  border: 1px solid #10b981;
+}
+
+.legend-few {
+  background: rgba(245, 158, 11, 0.5);
+  border: 1px solid #f59e0b;
+}
+
+.legend-soldout {
+  background: rgba(239, 68, 68, 0.4);
+  border: 1px solid #ef4444;
+}
+
+.legend-past {
+  background: rgba(148, 163, 184, 0.25);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+/* ---- Franjas horarias (chips interactivos) ---- */
+
+.ark-time-group {
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ark-time-chip {
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 0.2s ease;
+  min-height: 44px;
+  min-width: 72px;
+  cursor: pointer;
+}
+
+.ark-time-chip:hover:not(:disabled) {
+  border-color: rgba(168, 85, 247, 0.55);
+  background: rgba(168, 85, 247, 0.12);
+  transform: translateY(-1px);
+}
+
+.ark-time-chip--selected {
+  border-color: rgba(168, 85, 247, 0.9);
+  background: rgba(168, 85, 247, 0.25);
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);
+  color: #fff;
+}
+
+.ark-time-chip--past {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   WIZARD: TRANSICIONES ENTRE PASOS (slide + fade-scale)
+   ============================================================ */
+
+.animate-step-in {
+  animation: slideInRight 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-step-in-back {
+  animation: slideInLeft 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(48px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-48px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* ============================================================
+   MICRO-ANIMACIÓN: PULSO NEÓN DEL CONTADOR DE PRECIO
+   ============================================================ */
+
+@keyframes pricePulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(168, 85, 247, 0));
+  }
+  40% {
+    transform: scale(1.07);
+    filter: drop-shadow(0 0 14px rgba(168, 85, 247, 0.85));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(168, 85, 247, 0));
+  }
+}
+
+.price-pulse {
+  display: inline-block;
+  animation: pricePulse 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ============================================================
+   TOAST SUCCESS
+   ============================================================ */
+
+.toast-item.toast-success {
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+/* ============================================================
+   PANEL DE ADMINISTRACIÓN DUAL
+   ============================================================ */
+
+.admin-lightbox {
+  box-shadow: 0 0 45px rgba(168, 85, 247, 0.3), 0 30px 70px -20px rgba(0, 0, 0, 0.9);
+  animation: adminModalIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes adminModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+#adminModal {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.admin-role-btn {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  transition: all 0.2s ease;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.admin-role-btn:hover {
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #fff;
+}
+
+.admin-role-btn--active {
+  border-color: rgba(168, 85, 247, 0.8);
+  background: rgba(168, 85, 247, 0.18);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+}
+
+.admin-role-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.admin-role-badge--owner {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.admin-role-badge--it {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  color: #818cf8;
+}
+
+.admin-tab-btn {
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.admin-tab-btn:hover {
+  color: #fff;
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.admin-tab-btn--active {
+  color: #fff;
+  background: linear-gradient(to right, rgba(168, 85, 247, 0.35), rgba(236, 72, 153, 0.25));
+  border-color: rgba(168, 85, 247, 0.6);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+}
+
+.admin-act-btn {
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.admin-act-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.admin-act-btn--confirm {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.admin-act-btn--confirm:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.admin-act-btn--cancel {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.admin-act-btn--cancel:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.admin-act-btn--neutral {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.admin-act-btn--neutral:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.admin-act-btn--whatsapp {
+  color: #4ade80;
+  background: rgba(37, 211, 102, 0.12);
+  border: 1px solid rgba(37, 211, 102, 0.4);
+}
+
+.admin-act-btn--whatsapp:hover:not(:disabled) {
+  background: rgba(37, 211, 102, 0.22);
+}
+
+.admin-booking-row {
+  transition: border-color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+}
+
+.admin-booking-row:hover {
+  border-color: rgba(168, 85, 247, 0.45);
+  background: rgba(168, 85, 247, 0.06);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-badge--pendiente {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.status-badge--confirmada {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.status-badge--cancelada {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.status-badge--soldout {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.status-badge--disabled {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
 

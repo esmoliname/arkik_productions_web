@@ -817,7 +817,11 @@
       <div
         class="mt-14 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-2 text-xs text-gray-500">
         <p>© 2026 Arkik Productions. Todos los derechos reservados.</p>
-        <p>Juan José Ramírez Chaves — Propietario</p>
+        <div class="flex items-center gap-4">
+          <p>Juan José Ramírez Chaves — Propietario</p>
+          <button type="button" onclick="openAdminModal()" aria-label="Acceso al panel de administración"
+            class="text-[10px] font-semibold text-gray-600 hover:text-purple-400 transition-colors px-2 py-1 rounded-md border border-transparent hover:border-purple-500/40">Admin</button>
+        </div>
       </div>
     </div>
   </footer>
@@ -976,11 +980,11 @@
           class="flex-1 text-center py-1 rounded-md border border-purple-500 bg-purple-900/40 text-purple-300 mr-1">1.
           Formato & Extras</div>
         <div id="step-indicator-2" class="flex-1 text-center py-1 rounded-md border border-gray-700 text-gray-500 mx-1">
-          2. Ubicación</div>
+          2. Fecha & Hora</div>
         <div id="step-indicator-3" class="flex-1 text-center py-1 rounded-md border border-gray-700 text-gray-500 mx-1">
-          3. SINPE (50%)</div>
+          3. Ubicación & Cliente</div>
         <div id="step-indicator-4" class="flex-1 text-center py-1 rounded-md border border-gray-700 text-gray-500 ml-1">
-          4. Voucher</div>
+          4. SINPE & Voucher</div>
       </div>
 
       <div class="p-6">
@@ -1012,6 +1016,53 @@
           <div class="flex justify-end pt-2">
             <button onclick="goToStep(2)"
               class="py-3 px-6 min-h-[44px] rounded-xl font-bold text-sm text-white bg-purple-600 hover:bg-purple-500 transition-all flex items-center space-x-2">
+              <span>Siguiente: Fecha & Hora</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 2: Calendario de Disponibilidad & Franja Horaria -->
+        <div id="modal-step-2" class="hidden space-y-5">
+
+          <div class="ark-cal">
+            <div class="ark-cal-nav px-4 pt-3 pb-1">
+              <button type="button" id="cal-prev" aria-label="Mes anterior" class="cal-nav-btn">‹</button>
+              <span id="cal-month-label" class="ark-cal-month">—</span>
+              <button type="button" id="cal-next" aria-label="Mes siguiente" class="cal-nav-btn">›</button>
+            </div>
+            <div class="ark-cal-weekdays px-4">
+              <span class="ark-cal-weekday">Lun</span><span class="ark-cal-weekday">Mar</span><span
+                class="ark-cal-weekday">Mié</span><span class="ark-cal-weekday">Jue</span><span
+                class="ark-cal-weekday">Vie</span><span class="ark-cal-weekday">Sáb</span><span
+                class="ark-cal-weekday">Dom</span>
+            </div>
+            <div id="calendar-grid" class="ark-cal-grid"></div>
+            <div class="px-4 pb-4 pt-1 flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-400">
+              <span class="flex items-center gap-1.5"><span class="legend-dot legend-available"></span>Disponible</span>
+              <span class="flex items-center gap-1.5"><span class="legend-dot legend-few"></span>Pocas plazas</span>
+              <span class="flex items-center gap-1.5"><span class="legend-dot legend-soldout"></span>Agotado</span>
+              <span class="flex items-center gap-1.5"><span class="legend-dot legend-past"></span>Pasado / Hoy</span>
+            </div>
+          </div>
+
+          <div id="time-slots" class="space-y-4"></div>
+
+          <div
+            class="p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-between text-xs">
+            <span class="text-gray-400 font-semibold">Selección actual:</span>
+            <span id="date-summary" class="font-bold text-purple-300 text-right">Ninguna fecha seleccionada</span>
+          </div>
+
+          <div class="flex justify-between pt-2">
+            <button type="button" onclick="goToStep(1)"
+              class="py-3 px-5 min-h-[44px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel">
+              Regresar
+            </button>
+            <button type="button" onclick="goToStep(3)"
+              class="py-3 px-6 min-h-[44px] rounded-xl font-bold text-sm text-white bg-purple-600 hover:bg-purple-500 transition-all flex items-center space-x-2">
               <span>Siguiente: Ubicación & Datos</span>
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
@@ -1020,31 +1071,43 @@
           </div>
         </div>
 
-        <!-- STEP 2: Location & Client Form -->
-        <div id="modal-step-2" class="hidden space-y-4">
-          <form id="booking-form-step2" onsubmit="event.preventDefault(); goToStep(3);" class="space-y-4">
+        <!-- STEP 3: Ubicación & Datos del Cliente -->
+        <div id="modal-step-3" class="hidden space-y-4">
+          <div
+            class="p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-between text-xs">
+            <span class="text-gray-400 font-semibold">📅 Fecha & Hora seleccionadas:</span>
+            <span id="step3-date-time" class="font-bold text-purple-300 text-right">—</span>
+          </div>
+
+          <form id="booking-form-step3" onsubmit="event.preventDefault(); goToStep(4);" class="space-y-4">
+            <!-- Campo anti-spam honeypot: invisible para humanos, atractivo para bots -->
+            <input type="text" id="website_hp" name="website_hp" value="" tabindex="-1" autocomplete="off"
+              aria-hidden="true" style="display:none">
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Nombre Completo *</label>
-                <input type="text" id="client-name" required placeholder="Ej. Carlos Rodríguez"
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="client-name">Nombre Completo *</label>
+                <input type="text" id="client-name" required maxlength="120" placeholder="Ej. Carlos Rodríguez"
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Teléfono (WhatsApp) *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="client-phone">Teléfono (WhatsApp)
+                  *</label>
                 <input type="tel" id="client-phone" required placeholder="Ej. 8888-8888" inputmode="tel"
-                  pattern="(\+?506[\s-]?)?[2-8]\d{3}[\s-]?\d{4}" title="Formato: 8888-8888 o +506 8888-8888"
+                  pattern="(\+?506)? ?[2678][0-9]{3}-?[0-9]{4}" title="Formato: 8888-8888 o +506 8888-8888"
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Correo Electrónico *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="client-email">Correo Electrónico
+                  *</label>
                 <input type="email" id="client-email" required placeholder="carlos@ejemplo.com"
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Tipo de Evento *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="event-type">Tipo de Evento *</label>
                 <select id="event-type" required
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <option value="Boda">Boda / Matrimonio</option>
@@ -1058,27 +1121,15 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Fecha del Evento *</label>
-                <input type="date" id="booking-date" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Hora Inicio *</label>
-                <input type="time" id="booking-time" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Provincia *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-province">Provincia
+                  *</label>
                 <select id="booking-province" required
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <!-- Populated by JS -->
                 </select>
               </div>
               <div>
-                <label class="block text-sm font-medium text-purple-200 mb-1.5">Cantón *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-canton">Cantón *</label>
                 <select id="booking-canton" required
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <option value="">Seleccione primero provincia</option>
@@ -1090,15 +1141,15 @@
             <div id="surcharge-notice-box"></div>
 
             <div>
-              <label class="block text-sm font-medium text-purple-200 mb-1.5">Dirección Exacta o Salón de Eventos
-                *</label>
-              <textarea id="booking-address" rows="2" required
+              <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-address">Dirección Exacta o
+                Salón de Eventos *</label>
+              <textarea id="booking-address" rows="2" required maxlength="300"
                 placeholder="Ej. Hotel Real Intercontinental, Escazú / Quinta San José, Granadilla"
                 class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input"></textarea>
             </div>
 
             <div class="flex justify-between pt-2">
-              <button type="button" onclick="goToStep(1)"
+              <button type="button" onclick="goToStep(2)"
                 class="py-3 px-5 min-h-[44px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel">
                 Regresar
               </button>
@@ -1113,127 +1164,211 @@
           </form>
         </div>
 
-        <!-- STEP 3: SINPE Móvil Gateway (50% Rule) -->
-        <div id="modal-step-3" class="hidden space-y-6">
-          <div class="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center">
-            <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">Pasarela SINPE Móvil Oficial (50%
-              Adelanto)</span>
-            <p class="text-3xl font-extrabold text-white mt-1">+506 6227-4984</p>
-            <p class="text-xs text-gray-300 mt-1">A nombre de: <span class="font-bold text-emerald-300">Juan José
-                Ramírez Chaves</span></p>
+        <!-- STEP 4: Pago SINPE (50%) & Voucher -->
+        <div id="modal-step-4" class="hidden">
+          <div id="sinpe-gateway-view" class="space-y-6">
+            <div class="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center">
+              <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">Pasarela SINPE Móvil Oficial
+                (50% Adelanto)</span>
+              <p class="text-3xl font-extrabold text-white mt-1">+506 6227-4984</p>
+              <p class="text-xs text-gray-300 mt-1">A nombre de: <span class="font-bold text-emerald-300">Juan José
+                  Ramírez Chaves</span></p>
 
-            <div class="mt-4 p-3 bg-black/40 rounded-xl space-y-1.5 text-xs text-left border border-emerald-500/20">
-              <div class="flex justify-between">
-                <span class="text-gray-400">Gran Total Cotizado:</span>
-                <span class="font-bold text-white calc-gran-total">₡0</span>
+              <div class="mt-4 p-3 bg-black/40 rounded-xl space-y-1.5 text-xs text-left border border-emerald-500/20">
+                <div class="flex justify-between">
+                  <span class="text-gray-400">Gran Total Cotizado:</span>
+                  <span class="font-bold text-white calc-gran-total">₡0</span>
+                </div>
+                <div class="flex justify-between text-emerald-400 font-extrabold text-sm border-t border-emerald-500/20 pt-1.5">
+                  <span>Monto a Transferir Ahora (50%):</span>
+                  <span class="calc-deposit-50">₡0</span>
+                </div>
+                <div class="flex justify-between text-gray-400">
+                  <span>Saldo el Día del Evento:</span>
+                  <span class="calc-remaining-50">₡0</span>
+                </div>
               </div>
-              <div
-                class="flex justify-between text-emerald-400 font-extrabold text-sm border-t border-emerald-500/20 pt-1.5">
-                <span>Monto a Transferir Ahora (50%):</span>
-                <span class="calc-deposit-50">₡0</span>
+            </div>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5" for="sinpe-reference">Número de
+                  Referencia SINPE (Opcional)</label>
+                <input type="text" id="sinpe-reference" placeholder="Ej. 94820194" maxlength="15"
+                  pattern="[A-Za-z0-9]*" title="Solo caracteres alfanuméricos (máx. 15)"
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
-              <div class="flex justify-between text-gray-400">
-                <span>Saldo el Día del Evento:</span>
-                <span class="calc-remaining-50">₡0</span>
+
+              <div class="p-4 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs text-gray-300 leading-relaxed">
+                <p class="font-bold text-purple-300 mb-1">📲 Después de realizar el SINPE:</p>
+                <p>Realice la transferencia por el monto indicado y <span class="text-emerald-300 font-semibold">envíe el
+                    comprobante como adjunto directamente en el chat de WhatsApp</span> que se abrirá al continuar. Así
+                  confirmamos su reserva al instante.</p>
               </div>
             </div>
-          </div>
 
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-purple-200 mb-1.5">Número de Referencia SINPE
-                (Opcional)</label>
-              <input type="text" id="sinpe-reference" placeholder="Ej. 94820194" maxlength="50"
-                class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
-            </div>
-
-            <div
-              class="p-4 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs text-gray-300 leading-relaxed">
-              <p class="font-bold text-purple-300 mb-1">📲 Después de realizar el SINPE:</p>
-              <p>Realice la transferencia por el monto indicado y <span class="text-emerald-300 font-semibold">envíe el
-                  comprobante como adjunto directamente en el chat de WhatsApp</span> que se abrirá al continuar. Así
-                confirmamos su reserva al instante.</p>
+            <div class="flex justify-between pt-2">
+              <button type="button" onclick="goToStep(3)"
+                class="py-3 px-5 min-h-[44px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel">
+                Regresar
+              </button>
+              <button id="btn-submit-booking" type="button" onclick="submitStaticBooking()"
+                class="py-3 px-8 min-h-[44px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-900/40 transition-all flex items-center space-x-2">
+                <span>Generar Voucher & Abrir WhatsApp</span>
+              </button>
             </div>
           </div>
 
-          <div class="flex justify-between pt-2">
-            <button type="button" onclick="goToStep(2)"
-              class="py-3 px-5 min-h-[44px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel">
-              Regresar
-            </button>
-            <button id="btn-submit-booking" type="button" onclick="submitStaticBooking()"
-              class="py-3 px-8 min-h-[44px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-900/40 transition-all flex items-center space-x-2">
-              <span>Generar Voucher & Abrir WhatsApp</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- STEP 4: Success & Voucher Confirmation -->
-        <div id="modal-step-4" class="hidden text-center space-y-6">
-          <div
-            class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-          </div>
-
-          <div>
-            <span class="text-xs font-bold text-emerald-400 tracking-widest uppercase">¡Reserva Lista para
-              Enviar!</span>
-            <h3 class="text-2xl font-extrabold text-white mt-1">Código: <span id="confirm-booking-code"
-                class="text-gradient-purple">ARK-XXXXXX</span></h3>
-            <p class="text-xs text-gray-400 mt-1">Haz clic en el botón de WhatsApp abajo para enviar tu desglose de
-              contrato al productor.</p>
-          </div>
-
-          <div class="glass-panel p-4 rounded-2xl text-left space-y-2 text-xs">
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Cliente:</span>
-              <span id="confirm-client-name" class="font-bold text-white">-</span>
-            </div>
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Tipo de Evento:</span>
-              <span id="confirm-event-type" class="font-bold text-white">-</span>
-            </div>
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Servicio:</span>
-              <span id="confirm-service-name" class="font-bold text-purple-300">-</span>
-            </div>
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Fecha del Evento:</span>
-              <span id="confirm-event-date" class="font-bold text-white">-</span>
-            </div>
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Ubicación:</span>
-              <span id="confirm-location" class="font-bold text-white">-</span>
-            </div>
-            <div class="flex justify-between border-b border-purple-500/10 pb-2">
-              <span class="text-gray-400">Gran Total Evento:</span>
-              <span id="confirm-gran-total" class="font-bold text-white">-</span>
-            </div>
-            <div class="flex justify-between pt-1">
-              <span class="text-gray-300 font-bold">Adelanto SINPE (50%):</span>
-              <span id="confirm-deposit-50" class="font-extrabold text-emerald-400 text-sm">-</span>
-            </div>
-          </div>
-
-          <div class="space-y-3">
-            <a id="btn-whatsapp-client" href="#" target="_blank"
-              class="w-full py-3.5 px-4 min-h-[52px] rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-emerald-900/40">
-              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                <path
-                  d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+          <div id="voucher-view" class="hidden text-center space-y-6">
+            <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
               </svg>
-              <span>Enviar Pedido a WhatsApp</span>
-            </a>
+            </div>
 
-            <button onclick="copyBookingCode()"
-              class="w-full py-3 px-4 min-h-[44px] rounded-xl text-sm font-semibold text-purple-300 glass-panel hover:bg-purple-900/30 transition-all">
-              Copiar Código de Reserva
-            </button>
+            <div>
+              <span class="text-xs font-bold text-emerald-400 tracking-widest uppercase">¡Reserva Lista para
+                Enviar!</span>
+              <h3 class="text-2xl font-extrabold text-white mt-1">Código: <span id="confirm-booking-code"
+                  class="text-gradient-purple">ARK-XXXXXX</span></h3>
+              <p class="text-xs text-gray-400 mt-1">Haz clic en el botón de WhatsApp abajo para enviar tu desglose de
+                contrato al productor.</p>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl text-left space-y-2 text-xs">
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Cliente:</span>
+                <span id="confirm-client-name" class="font-bold text-white">-</span>
+              </div>
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Tipo de Evento:</span>
+                <span id="confirm-event-type" class="font-bold text-white">-</span>
+              </div>
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Servicio:</span>
+                <span id="confirm-service-name" class="font-bold text-purple-300">-</span>
+              </div>
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Fecha del Evento:</span>
+                <span id="confirm-event-date" class="font-bold text-white">-</span>
+              </div>
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Ubicación:</span>
+                <span id="confirm-location" class="font-bold text-white">-</span>
+              </div>
+              <div class="flex justify-between border-b border-purple-500/10 pb-2">
+                <span class="text-gray-400">Gran Total Evento:</span>
+                <span id="confirm-gran-total" class="font-bold text-white">-</span>
+              </div>
+              <div class="flex justify-between pt-1">
+                <span class="text-gray-300 font-bold">Adelanto SINPE (50%):</span>
+                <span id="confirm-deposit-50" class="font-extrabold text-emerald-400 text-sm">-</span>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <a id="btn-whatsapp-client" href="#" target="_blank"
+                class="w-full py-3.5 px-4 min-h-[52px] rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-emerald-900/40">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                  <path
+                    d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+                </svg>
+                <span>Enviar Pedido a WhatsApp</span>
+              </a>
+
+              <button onclick="copyBookingCode()"
+                class="w-full py-3 px-4 min-h-[44px] rounded-xl text-sm font-semibold text-purple-300 glass-panel hover:bg-purple-900/30 transition-all">
+                Copiar Código de Reserva
+              </button>
+
+              <button onclick="finalizeVoucher()"
+                class="w-full py-3 px-4 min-h-[44px] rounded-xl text-sm font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 transition-all">
+                Finalizar
+              </button>
+            </div>
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel de Administración Dual (Ctrl+Shift+A o botón Admin en el footer) -->
+  <div id="adminModal" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title"
+    onclick="if (event.target === this) closeAdminModal()"
+    class="fixed inset-0 z-[70] hidden overflow-y-auto p-4 bg-black/85 backdrop-blur-md">
+    <div
+      class="admin-lightbox relative m-auto max-w-3xl w-full my-8 rounded-3xl border border-purple-500/30 bg-[#0c0814]/95 backdrop-blur-2xl shadow-2xl overflow-hidden">
+
+      <div class="p-5 border-b border-purple-500/20 flex items-center justify-between bg-purple-950/30">
+        <div>
+          <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Acceso Restringido</span>
+          <h3 id="admin-modal-title" class="text-lg font-bold text-white">Panel de Administración Arkik</h3>
+        </div>
+        <button onclick="closeAdminModal()" aria-label="Cerrar panel de administración"
+          class="w-11 h-11 rounded-full bg-purple-900/40 text-gray-400 hover:text-white flex items-center justify-center">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Vista de Autenticación -->
+      <div id="admin-auth-view" class="p-6">
+        <p class="text-xs text-gray-400 mb-5 text-center">Identifíquese con su rol y PIN de acceso (hash verificado
+          localmente).</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-md mx-auto">
+          <button type="button" id="admin-role-owner"
+            class="admin-role-btn admin-role-btn--active">🛡️ Propietario<br><span
+              class="text-[10px] font-semibold opacity-60">Juan José Ramírez</span></button>
+          <button type="button" id="admin-role-it" class="admin-role-btn">⚙️ Ingeniero de TI<br><span
+              class="text-[10px] font-semibold opacity-60">Admin System</span></button>
+        </div>
+        <div class="max-w-xs mx-auto">
+          <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2" for="admin-pin">PIN de
+            Acceso</label>
+          <input type="password" id="admin-pin" inputmode="numeric" maxlength="8" placeholder="••••"
+            autocomplete="off"
+            class="w-full py-3 px-4 rounded-xl text-base text-center tracking-[0.5em] bg-white/10 border border-white/20 text-white font-bold placeholder-gray-500 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
+          <p id="admin-auth-error" class="hidden text-xs text-red-400 mt-2 text-center"></p>
+          <button type="button" onclick="attemptAdminLogin()"
+            class="w-full mt-4 py-3 min-h-[44px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 transition-all">
+            Ingresar al Panel
+          </button>
+        </div>
+      </div>
+
+      <!-- Vista de Dashboard (por rol) -->
+      <div id="admin-dashboard-view" class="hidden">
+        <div class="px-6 py-3 flex items-center justify-between border-b border-purple-500/10 bg-[#0f0c1a]">
+          <div class="flex items-center gap-3">
+            <span id="admin-role-badge" class="admin-role-badge admin-role-badge--owner">Rol</span>
+            <span class="text-xs text-gray-400">Sesión autenticada</span>
+          </div>
+          <button type="button" onclick="adminLogout()"
+            class="text-xs font-semibold text-gray-400 hover:text-white transition-colors">Cerrar Sesión</button>
+        </div>
+
+        <!-- Rol Propietario -->
+        <div id="admin-owner-view" class="hidden p-6 space-y-6">
+          <div id="admin-metrics" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+          <div>
+            <div id="admin-status-filters" class="flex flex-wrap gap-2 mb-4"></div>
+            <div id="admin-bookings-list" class="space-y-3"></div>
+          </div>
+        </div>
+
+        <!-- Rol Ingeniero de TI -->
+        <div id="admin-it-view" class="hidden p-6">
+          <div id="admin-it-tabs" class="flex flex-wrap gap-2 mb-6">
+            <button type="button" data-it-tab="availability" class="admin-tab-btn admin-tab-btn--active">Disponibilidad</button>
+            <button type="button" data-it-tab="prices" class="admin-tab-btn">Precios</button>
+            <button type="button" data-it-tab="backup" class="admin-tab-btn">Respaldo</button>
+          </div>
+          <div id="admin-it-availability" class="space-y-5"></div>
+          <div id="admin-it-prices" class="hidden space-y-5"></div>
+          <div id="admin-it-backup" class="hidden space-y-5"></div>
+        </div>
       </div>
     </div>
   </div>
