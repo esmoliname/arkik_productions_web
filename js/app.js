@@ -421,15 +421,38 @@ function setupEventListeners() {
     });
   }
 
-  // ESC closes the booking modal
+  // ESC closes the executive card modal and/or the booking modal
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      const execModal = document.getElementById('executive-modal');
+      if (execModal && !execModal.classList.contains('hidden')) {
+        closeExecutiveModal();
+        return;
+      }
       const modal = document.getElementById('booking-modal');
       if (modal && !modal.classList.contains('hidden')) {
         closeBookingModal();
       }
     }
   });
+}
+
+// ---- Executive Card Lightbox (Tarjeta Ejecutiva VIP) ----
+
+function openExecutiveModal() {
+  const modal = document.getElementById('executive-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeExecutiveModal() {
+  const modal = document.getElementById('executive-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  document.body.style.overflow = '';
 }
 
 // Modal Control
