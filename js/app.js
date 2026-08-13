@@ -421,12 +421,17 @@ function setupEventListeners() {
     });
   }
 
-  // ESC closes the executive card modal and/or the booking modal
+  // ESC closes the executive card, brand presentation and/or booking modal
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const execModal = document.getElementById('executive-modal');
       if (execModal && !execModal.classList.contains('hidden')) {
         closeExecutiveModal();
+        return;
+      }
+      const brandModal = document.getElementById('brand-modal');
+      if (brandModal && !brandModal.classList.contains('hidden')) {
+        closeBrandModal();
         return;
       }
       const modal = document.getElementById('booking-modal');
@@ -449,6 +454,24 @@ function openExecutiveModal() {
 
 function closeExecutiveModal() {
   const modal = document.getElementById('executive-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  document.body.style.overflow = '';
+}
+
+// ---- Brand Presentation Modal (Presentación de Marca VIP) ----
+
+function openBrandModal() {
+  const modal = document.getElementById('brand-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeBrandModal() {
+  const modal = document.getElementById('brand-modal');
   if (!modal) return;
   modal.classList.add('hidden');
   modal.classList.remove('flex');
