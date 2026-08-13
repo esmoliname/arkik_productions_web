@@ -208,6 +208,8 @@ function initApp() {
   populateProvinces();
   setMinBookingDate();
   restoreBookingToUI();
+  initFooterFluidEffect();
+  initHeroStringsEffect();
 }
 
 // Render Services Catalog Cards
@@ -1030,4 +1032,366 @@ function copyBookingCode() {
       fail();
     }
   }
+}
+
+// ---- Footer: Fluid Neon Wave Engine (Canvas 2D, 60 FPS, pausa por IntersectionObserver) ----
+
+function initFooterFluidEffect() {
+  const footer = document.getElementById('site-footer');
+  const canvas = document.getElementById('footerFluidCanvas');
+  if (!footer || !canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DPR_CAP = 2;
+  const NEON = ['#a855f7', '#38bdf8', '#10b981', '#ec4899'];
+  const RIBBON_COUNT = 3;
+  const RIBBON_POINTS = 64;
+  const MAX_PARTICLES = 140;
+
+  let W = 0;
+  let H = 0;
+  let rafId = null;
+  let footerInView = false;
+  let lastBurstAt = 0;
+  let lastScrollAt = 0;
+  const ribbons = [];
+  const particles = [];
+
+  function buildRibbons() {
+    ribbons.length = 0;
+    for (let i = 0; i < RIBBON_COUNT; i++) {
+      ribbons.push({
+        color: NEON[i % NEON.length],
+        baseY: (0.28 + i * 0.2 + Math.random() * 0.12) * H,
+        amp: (0.02 + Math.random() * 0.018) * H,
+        freq: 0.004 + Math.random() * 0.003,
+        speed: 0.00022 + Math.random() * 0.00018,
+        phase: Math.random() * Math.PI * 2,
+        width: 1.6 + Math.random() * 1.4,
+        alpha: 0.34 + Math.random() * 0.2
+      });
+    }
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const rect = footer.getBoundingClientRect();
+    W = Math.max(1, Math.round(rect.width * dpr));
+    H = Math.max(1, Math.round(rect.height * dpr));
+    canvas.width = W;
+    canvas.height = H;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildRibbons();
+  }
+
+  function spawnBurst(x, y, count, spread) {
+    if (particles.length >= MAX_PARTICLES) return;
+    for (let i = 0; i < count; i++) {
+      if (particles.length >= MAX_PARTICLES) break;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.5 + Math.random() * 2.2;
+      const life = 700 + Math.random() * 900;
+      particles.push({
+        x: x + (Math.random() - 0.5) * spread,
+        y: y + (Math.random() - 0.5) * spread,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life,
+        maxLife: life,
+        size: 1 + Math.random() * 1.6,
+        color: NEON[Math.floor(Math.random() * NEON.length)],
+        history: []
+      });
+    }
+  }
+
+  function pointerBurst(e) {
+    const now = performance.now();
+    if (now - lastBurstAt < 70) return;
+    lastBurstAt = now;
+    const rect = footer.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    spawnBurst(x, y, 5, 26);
+  }
+
+  function scrollBurst() {
+    if (!footerInView) return;
+    const now = performance.now();
+    if (now - lastScrollAt < 260) return;
+    lastScrollAt = now;
+    const rect = footer.getBoundingClientRect();
+    for (let i = 0; i < 3; i++) {
+      spawnBurst(Math.random() * rect.width, rect.top * 0.2 + Math.random() * rect.height * 0.25, 4, 40);
+    }
+  }
+
+  function tick() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Cintas de onda neón en ondulación orgánica constante
+    for (const r of ribbons) {
+      ctx.beginPath();
+      for (let i = 0; i <= RIBBON_POINTS; i++) {
+        const x = (i / RIBBON_POINTS) * W;
+        const y = r.baseY
+          + Math.sin(x * r.freq + performance.now() * r.speed + r.phase) * r.amp
+          + Math.sin(x * r.freq * 2.7 - performance.now() * r.speed * 0.6 + r.phase * 2) * r.amp * 0.35;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = r.color;
+      ctx.globalAlpha = r.alpha;
+      ctx.lineWidth = r.width;
+      ctx.shadowBlur = 16;
+      ctx.shadowColor = r.color;
+      ctx.stroke();
+    }
+
+    // Estelas de fluido reactivo (partículas)
+    ctx.shadowBlur = 12;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.985;
+      p.vy *= 0.985;
+      p.life -= 16.67;
+      p.history.push({ x: p.x, y: p.y });
+      if (p.history.length > 7) p.history.shift();
+      if (p.life <= 0 || p.y > H + 30) {
+        particles.splice(i, 1);
+        continue;
+      }
+      const alpha = Math.max(0, p.life / p.maxLife) * 0.8;
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = p.size;
+      ctx.shadowColor = p.color;
+      ctx.beginPath();
+      p.history.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (rafId != null || reducedMotion) return;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (rafId == null) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  // El bucle solo corre mientras el footer sea visible (performance crítica)
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      footerInView = entry.isIntersecting;
+      footerInView ? start() : stop();
+    });
+  }, { rootMargin: '120px' });
+  observer.observe(footer);
+
+  footer.addEventListener('pointermove', pointerBurst, { passive: true });
+  window.addEventListener('scroll', scrollBurst, { passive: true });
+
+  resize();
+  start();
+  window.addEventListener('resize', resize);
+}
+
+// ---- Hero: Cuerdas de Guitarra Neón Interactivas (Canvas 2D, scroll + cursor, 60 FPS) ----
+
+function initHeroStringsEffect() {
+  const hero = document.getElementById('hero');
+  const canvas = document.getElementById('heroStringsCanvas');
+  if (!hero || !canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DPR_CAP = 2;
+  const NEON = ['#a855f7', '#38bdf8', '#10b981', '#ec4899'];
+  const STRING_COUNT = 4;
+  const SEGMENTS = 60;
+  const DEFLECT_REACH = 140;
+
+  let W = 0;
+  let H = 0;
+  let rafId = null;
+  let heroInView = false;
+  const strings = [];
+  let scrollEnergy = 0;
+  let lastScrollY = window.scrollY || 0;
+  let lastScrollAt = performance.now();
+  const pointer = { x: -1, y: -1, active: false, lastX: -1, lastY: -1, lastT: 0 };
+
+  function buildStrings() {
+    strings.length = 0;
+    for (let i = 0; i < STRING_COUNT; i++) {
+      strings.push({
+        color: NEON[i % NEON.length],
+        baseY: (0.16 + i * 0.22 + Math.random() * 0.04) * H,
+        amp: (0.008 + Math.random() * 0.006) * H,
+        freq: 0.006 + Math.random() * 0.004,
+        speed: 0.0002 + Math.random() * 0.0002,
+        phase: Math.random() * Math.PI * 2,
+        width: i === 2 ? 2 : 1.5,
+        alpha: i === 3 ? 0.55 : 0.85
+      });
+    }
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const rect = hero.getBoundingClientRect();
+    W = Math.max(1, Math.round(rect.width * dpr));
+    H = Math.max(1, Math.round(rect.height * dpr));
+    canvas.width = W;
+    canvas.height = H;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildStrings();
+  }
+
+  // Scroll Ripple: la velocidad del desplazamiento inyecta oscilación en las cuerdas
+  function onScroll() {
+    const now = performance.now();
+    const sy = window.scrollY || 0;
+    const dt = Math.max(1, now - lastScrollAt);
+    const velocity = Math.abs(sy - lastScrollY) / dt;
+    lastScrollY = sy;
+    lastScrollAt = now;
+    if (!heroInView || velocity <= 0.4) return;
+    scrollEnergy = Math.min(1, scrollEnergy + Math.min(0.5, velocity * 0.004));
+  }
+
+  // Punto de tensión orgánica por cursor / toque dentro del Hero
+  function onPointerMove(e) {
+    const rect = hero.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < -60 || y < -60 || x > rect.width + 60 || y > rect.height + 60) {
+      pointer.active = false;
+      return;
+    }
+    const now = performance.now();
+    if (pointer.lastX >= 0 && now > pointer.lastT) {
+      pointer.velX = (x - pointer.lastX) / (now - pointer.lastT);
+      pointer.velY = (y - pointer.lastY) / (now - pointer.lastT);
+    }
+    pointer.x = x;
+    pointer.y = y;
+    pointer.active = true;
+    pointer.lastX = x;
+    pointer.lastY = y;
+    pointer.lastT = now;
+  }
+
+  function onPointerLeave() {
+    pointer.active = false;
+  }
+
+  function tick() {
+    ctx.clearRect(0, 0, W, H);
+    const t = performance.now();
+
+    scrollEnergy *= 0.94;
+    if (scrollEnergy < 0.004) scrollEnergy = 0;
+
+    for (let s = 0; s < strings.length; s++) {
+      const st = strings[s];
+      ctx.beginPath();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = st.color;
+      ctx.strokeStyle = st.color;
+      ctx.globalAlpha = st.alpha;
+      ctx.lineWidth = st.width;
+      ctx.lineCap = 'round';
+
+      for (let i = 0; i <= SEGMENTS; i++) {
+        const fx = i / SEGMENTS;
+        const x = fx * W;
+
+        // Ondulación orgánica ambiente
+        let y = st.baseY
+          + Math.sin(x * st.freq + t * st.speed + st.phase) * st.amp
+          + Math.sin(x * st.freq * 2.3 - t * st.speed * 0.55 + st.phase * 2.1) * st.amp * 0.4;
+
+        // Onda viajera inyectada por la velocidad del scroll
+        if (scrollEnergy > 0) {
+          const travel = (t * 0.0006) % 1;
+          const d = Math.abs(fx - travel);
+          const envelope = d < 0.5 ? Math.cos((d / 0.5) * Math.PI) : 0;
+          y += Math.sin(d * Math.PI * 6 - t * 0.004) * envelope * scrollEnergy * 26;
+        }
+
+        // Deflexión orgánica hacia el cursor / dedo (mayor tensión al mover rápido)
+        if (pointer.active) {
+          const dx = x - pointer.x;
+          const dy = pointer.y - st.baseY;
+          if (Math.abs(dx) < DEFLECT_REACH) {
+            const g = Math.exp(-(dx * dx) / (2 * 38 * 38));
+            const pull = Math.exp(-(dy * dy) / (2 * 62 * 62));
+            const velBoost = Math.min(1.4, 1 + (Math.abs(pointer.velX) + Math.abs(pointer.velY)) * 0.02);
+            y += Math.sign(dy) * g * pull * 32 * velBoost;
+          }
+        }
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (rafId != null || reducedMotion) return;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (rafId == null) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  // El bucle solo corre mientras el Hero sea visible (ahorro de batería en móviles)
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      heroInView = entry.isIntersecting;
+      heroInView ? start() : stop();
+    });
+  }, { rootMargin: '120px' });
+  observer.observe(hero);
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  hero.addEventListener('mousemove', onPointerMove, { passive: true });
+  hero.addEventListener('touchstart', onPointerMove, { passive: true });
+  hero.addEventListener('touchmove', onPointerMove, { passive: true });
+  hero.addEventListener('mouseleave', onPointerLeave);
+  hero.addEventListener('touchend', onPointerLeave, { passive: true });
+
+  resize();
+  start();
+  window.addEventListener('resize', resize);
 }

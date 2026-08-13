@@ -85,6 +85,9 @@
   <!-- Hero Section -->
   <section id="hero" class="relative pt-10 pb-24 md:pt-20 md:pb-36 z-10 overflow-hidden">
 
+    <!-- Cuerdas de Guitarra Neón Interactivas (motor Canvas reactivo a scroll y cursor) -->
+    <canvas id="heroStringsCanvas" aria-hidden="true"></canvas>
+
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
 
       <!-- Hero Title with Enveloping Ambient Glow -->
@@ -121,26 +124,26 @@
     </div>
   </section>
 
-  <!-- Garantías & Valor Percibido (Glassmorphism Benefit Bar) -->
+  <!-- Garantías & Valor Percibido (Halftone Gradient Mesh Bar) -->
   <section class="relative z-20 py-8 bg-[#0b0914]/80 backdrop-blur-xl">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
         <!-- Benefit 1: 2 Horas Base -->
         <div
-          class="glass-panel p-6 rounded-2xl flex items-center space-x-4 group hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-900/20 transition-all">
+          class="benefit-card benefit-mesh-1 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
           <div
-            class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600/20 to-purple-900/40 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 group-hover:border-purple-400 transition-all shrink-0">
+            class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600/20 to-purple-900/40 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 group-hover:border-purple-400 transition-all shrink-0">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
           </div>
-          <div>
+          <div class="relative z-10">
             <div class="flex items-center space-x-2">
               <span class="text-lg font-extrabold text-white tracking-tight">2 Horas Base</span>
               <span
-                class="px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 text-[10px] font-bold uppercase tracking-wider border border-purple-500/20">Estándar</span>
+                class="neon-pill px-2.5 py-0.5 rounded-full bg-purple-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-purple-400/70">Estándar</span>
             </div>
             <p class="text-xs text-gray-400 mt-1 leading-relaxed">Show en vivo completo con ecualización en tiempo real
               y sonido pro.</p>
@@ -149,20 +152,20 @@
 
         <!-- Benefit 2: 50% SINPE -->
         <div
-          class="glass-panel p-6 rounded-2xl flex items-center space-x-4 group hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-900/20 transition-all">
+          class="benefit-card benefit-mesh-2 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
           <div
-            class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-900/40 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-110 group-hover:border-emerald-400 transition-all shrink-0">
+            class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-900/40 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-110 group-hover:border-emerald-400 transition-all shrink-0">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
               </path>
             </svg>
           </div>
-          <div>
+          <div class="relative z-10">
             <div class="flex items-center space-x-2">
               <span class="text-lg font-extrabold text-emerald-400 tracking-tight">50% Reserva SINPE</span>
               <span
-                class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/20">Garantizado</span>
+                class="neon-pill neon-pill-emerald px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-emerald-400/70">Garantizado</span>
             </div>
             <p class="text-xs text-gray-400 mt-1 leading-relaxed">Congela la fecha de tu evento al instante con pago
               seguro vía SINPE Móvil.</p>
@@ -171,9 +174,9 @@
 
         <!-- Benefit 3: GAM ₡0 Cobertura -->
         <div
-          class="glass-panel p-6 rounded-2xl flex items-center space-x-4 group hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-900/20 transition-all">
+          class="benefit-card benefit-mesh-3 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
           <div
-            class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600/20 to-indigo-900/40 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:border-indigo-400 transition-all shrink-0">
+            class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600/20 to-indigo-900/40 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:border-indigo-400 transition-all shrink-0">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
@@ -181,11 +184,11 @@
                 d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
             </svg>
           </div>
-          <div>
+          <div class="relative z-10">
             <div class="flex items-center space-x-2">
               <span class="text-lg font-extrabold text-indigo-400 tracking-tight">Cobertura GAM ₡0</span>
               <span
-                class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/20">Sin
+                class="neon-pill neon-pill-indigo px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-indigo-400/70">Sin
                 Viáticos</span>
             </div>
             <p class="text-xs text-gray-400 mt-1 leading-relaxed">San José, Heredia, Alajuela y Cartago incluidos con
@@ -200,47 +203,33 @@
   <!-- Nuestra Esencia / Quiénes Somos (Humanización & Alta Confianza) -->
   <section id="esencia" class="relative z-10 py-4 md:py-6">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div
-        class="relative overflow-hidden glass-panel bg-purple-950/20 border border-purple-500/20 rounded-2xl p-8 md:p-12 my-12">
+      <div class="esencia-sphere-card relative overflow-hidden rounded-3xl p-8 md:p-12 my-12 border border-purple-500/30 shadow-2xl">
         <!-- Ambient Neon Glows -->
         <div class="absolute -top-28 -right-28 w-80 h-80 bg-glow-purple pointer-events-none"></div>
         <div class="absolute -bottom-28 -left-28 w-80 h-80 bg-glow-pink opacity-40 pointer-events-none"></div>
 
         <div class="relative z-10">
 
-          <!-- Trust Badge (patrón de confianza de la referencia) -->
-          <div class="text-center">
-            <span
-              class="inline-flex items-center gap-2 rounded-full bg-purple-500/10 border border-purple-500/25 px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-purple-200">
-              <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
-                </path>
-              </svg>
-              Trato directo · Músicos profesionales
-            </span>
-          </div>
-
           <div class="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
 
-            <!-- Col 1: Historia del proyecto -->
-            <div>
+            <!-- Col 1: Historia del proyecto (capa de protección de legibilidad sobre la trama neón) -->
+            <div class="bg-[#080511]/65 backdrop-blur-md border border-white/5 rounded-3xl p-6 md:p-8 shadow-xl">
               <span class="text-xs font-bold text-pink-400 tracking-widest uppercase">Nuestra Esencia</span>
               <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-2 leading-tight text-balance">Un proyecto
                 local de músicos con sonido de alta gama</h2>
 
-              <div class="mt-6 space-y-4 text-sm md:text-base text-gray-300 leading-relaxed">
+              <div class="mt-6 space-y-4 text-slate-200 text-base leading-relaxed">
                 <p>
                   Somos <span class="font-semibold text-white">Juan José Ramírez</span> y un equipo de músicos e
-                  ingenieros de sonido nacidos en Granadilla, San José. Lo que empezó como un proyecto local hoy produce
-                  la banda sonora de bodas, fiestas y eventos corporativos en todo Costa Rica, con el mismo compromiso
-                  que el primer día: que cada presentación sea inolvidable.
+                  ingenieros de sonido nacidos en <span class="font-semibold text-cyan-300">Granadilla, San José</span>.
+                  Lo que empezó como un proyecto local hoy produce la banda sonora de bodas, fiestas y eventos
+                  corporativos en todo Costa Rica, con el mismo compromiso que el primer día: que cada presentación sea
+                  inolvidable.
                 </p>
                 <p>
                   Aquí no hay scripts de call center: al escribirnos hablas directo con quienes estarán esa noche sobre
-                  el escenario. Desde la primera cotización hasta el último acorde, un trato personal, cercano y sin
-                  intermediarios.
+                  el escenario. Desde la primera cotización hasta el último acorde, un trato personal, cercano y <span
+                    class="font-semibold text-white">sin intermediarios</span>.
                 </p>
               </div>
 
@@ -256,8 +245,8 @@
                     </svg>
                   </div>
                   <div>
-                    <strong class="block text-sm font-extrabold text-white">Música en vivo de alto nivel</strong>
-                    <span class="mt-0.5 block text-xs font-medium text-gray-400">Banda completa, tríos, dúos y solistas
+                    <strong class="block text-lg font-semibold text-white">Música en vivo de alto nivel</strong>
+                    <span class="mt-0.5 block text-sm text-slate-300">Banda completa, tríos, dúos y solistas
                       con músicos profesionales en escena.</span>
                   </div>
                 </div>
@@ -272,8 +261,8 @@
                     </svg>
                   </div>
                   <div>
-                    <strong class="block text-sm font-extrabold text-white">Sonido de alta gama</strong>
-                    <span class="mt-0.5 block text-xs font-medium text-gray-400">Consolas digitales, monitoreo in-ear y
+                    <strong class="block text-lg font-semibold text-white">Sonido de alta gama</strong>
+                    <span class="mt-0.5 block text-sm text-slate-300">Consolas digitales, monitoreo in-ear y
                       sistema PA con ecualización en tiempo real.</span>
                   </div>
                 </div>
@@ -288,8 +277,8 @@
                     </svg>
                   </div>
                   <div>
-                    <strong class="block text-sm font-extrabold text-white">Trato directo, sin intermediarios</strong>
-                    <span class="mt-0.5 block text-xs font-medium text-gray-400">Hablas con el equipo que estará en tu
+                    <strong class="block text-lg font-semibold text-white">Trato directo, sin intermediarios</strong>
+                    <span class="mt-0.5 block text-sm text-slate-300">Hablas con el equipo que estará en tu
                       evento, no con un call center.</span>
                   </div>
                 </div>
@@ -297,15 +286,15 @@
             </div>
 
             <!-- Col 2: Mensaje directo de Juan José -->
-            <div class="relative glass-panel rounded-2xl border border-pink-500/25 p-6 md:p-8 overflow-hidden">
-              <div class="absolute -top-12 -right-12 w-44 h-44 bg-glow-pink pointer-events-none"></div>
+            <div class="relative rounded-2xl p-6 md:p-8 bg-[#0a0714]/90 backdrop-blur-2xl border border-white/10">
+              <!-- Cita, comillas y firma con contraste superior sobre vidrio oscuro -->
               <div class="relative z-10">
-                <svg class="w-8 h-8 text-pink-400/80" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <svg class="w-8 h-8 text-purple-400/90" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path
                     d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z">
                   </path>
                 </svg>
-                <blockquote class="mt-4 text-lg md:text-xl font-semibold text-white leading-relaxed">
+                <blockquote class="mt-4 text-white/95 font-medium text-lg leading-relaxed">
                   «Detrás de cada reserva hay músicos de verdad, sonido de alta gama y años de experiencia sobre el
                   escenario. Por eso hablas directo con el equipo, sin scripts ni call centers: tu evento queda en las
                   mejores manos desde el primer mensaje.»
@@ -316,14 +305,15 @@
                     <button type="button" onclick="openExecutiveModal()"
                       aria-label="Ver tarjeta ejecutiva de Juan José Ramírez Chaves"
                       class="w-12 h-12 rounded-full overflow-hidden border border-black/40 block">
-                      <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor General & Músico Líder"
+                      <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor musical y audiovisual"
                         class="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-110"
                         loading="lazy" width="96" height="96" />
                     </button>
                   </div>
                   <div>
                     <p class="font-bold text-white">Juan José Ramírez</p>
-                    <p class="text-xs text-gray-400">Productor & Líder · Granadilla, San José</p>
+                    <p class="text-xs font-semibold text-purple-300">Productor musical y audiovisual · Granadilla, San
+                      José</p>
                   </div>
                 </footer>
               </div>
@@ -492,8 +482,8 @@
                   </svg>
                 </div>
                 <div>
-                  <strong class="block text-sm font-extrabold text-white">Cobertura GAM · Viáticos ₡0</strong>
-                  <span class="mt-0.5 block text-xs font-medium text-gray-400">San José, Heredia, Alajuela y Cartago sin
+                  <strong class="block text-lg font-semibold text-white">Cobertura GAM · Viáticos ₡0</strong>
+                  <span class="mt-0.5 block text-sm text-slate-300">San José, Heredia, Alajuela y Cartago sin
                     costo de transporte.</span>
                 </div>
               </div>
@@ -507,8 +497,8 @@
                   </svg>
                 </div>
                 <div>
-                  <strong class="block text-sm font-extrabold text-white">Fuera del GAM · +12% transparente</strong>
-                  <span class="mt-0.5 block text-xs font-medium text-gray-400">Guanacaste, Puntarenas y Limón con
+                  <strong class="block text-lg font-semibold text-white">Fuera del GAM · +12% transparente</strong>
+                  <span class="mt-0.5 block text-sm text-slate-300">Guanacaste, Puntarenas y Limón con
                     recargo calculado al instante, sin sorpresas.</span>
                 </div>
               </div>
@@ -523,8 +513,8 @@
                   </svg>
                 </div>
                 <div>
-                  <strong class="block text-sm font-extrabold text-white">Equipo & sonido propios</strong>
-                  <span class="mt-0.5 block text-xs font-medium text-gray-400">Parlantes activos, consolas digitales y
+                  <strong class="block text-lg font-semibold text-white">Equipo & sonido propios</strong>
+                  <span class="mt-0.5 block text-sm text-slate-300">Parlantes activos, consolas digitales y
                     microfonía inalámbrica, operados por nuestro crew.</span>
                 </div>
               </div>
@@ -538,8 +528,8 @@
                   </svg>
                 </div>
                 <div>
-                  <strong class="block text-sm font-extrabold text-white">Puntualidad total</strong>
-                  <span class="mt-0.5 block text-xs font-medium text-gray-400">Montaje y prueba de sonido previos a la
+                  <strong class="block text-lg font-semibold text-white">Puntualidad total</strong>
+                  <span class="mt-0.5 block text-sm text-slate-300">Montaje y prueba de sonido previos a la
                     hora pactada en cada evento.</span>
                 </div>
               </div>
@@ -566,7 +556,7 @@
                   </svg>
                 </span>
                 <span class="flex-1 min-w-0">
-                  <strong class="block text-sm font-extrabold text-white">WhatsApp Directo</strong>
+                  <strong class="block text-lg font-semibold text-white">WhatsApp Directo</strong>
                   <span class="block text-xs text-gray-400">+506 6227-4984 · Respuesta ágil</span>
                 </span>
                 <svg
@@ -587,7 +577,7 @@
                   </svg>
                 </span>
                 <span class="flex-1 min-w-0">
-                  <strong class="block text-sm font-extrabold text-white">Teléfono</strong>
+                  <strong class="block text-lg font-semibold text-white">Teléfono</strong>
                   <span class="block text-xs text-gray-400">+506 6227-4984</span>
                 </span>
                 <svg
@@ -608,7 +598,7 @@
                   </svg>
                 </span>
                 <span class="flex-1 min-w-0">
-                  <strong class="block text-sm font-extrabold text-white">Correo Electrónico</strong>
+                  <strong class="block text-lg font-semibold text-white">Correo Electrónico</strong>
                   <span class="block text-xs text-gray-400">arkikproduc2023@gmail.com</span>
                 </span>
                 <svg
@@ -657,12 +647,16 @@
   </section>
 
   <!-- Footer -->
-  <footer class="relative z-10 bg-[#0a0712] overflow-hidden">
+  <footer id="site-footer" class="relative z-10 bg-[#0a0712] overflow-hidden">
+    <!-- Fluid Neon Wave Canvas (renderiza el motor de fluido reactivo) -->
+    <canvas id="footerFluidCanvas" aria-hidden="true"></canvas>
+
     <!-- Lit Top Border -->
-    <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/60 to-transparent">
+    <div class="absolute top-0 left-0 right-0 z-10 h-px bg-gradient-to-r from-transparent via-purple-500/60 to-transparent">
     </div>
 
-    <div class="relative max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 pt-16"
+    <!-- Contenido con cristal Glassmorphism sobre el fluido -->
+    <div class="relative z-10 max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 pt-16 bg-[#0a0712]/80 backdrop-blur-md border-t border-purple-500/30"
       style="padding-bottom: calc(3rem + env(safe-area-inset-bottom, 0px))">
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10 lg:gap-14">
@@ -865,7 +859,7 @@
       <!-- Fotografía limpia y bien encuadrada (sin overlays ni degradados) -->
       <div class="relative">
         <div class="h-64 sm:h-72 overflow-hidden bg-[#0c0814]">
-          <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor General & Músico Líder"
+          <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor musical y audiovisual"
             class="w-full h-full object-cover object-top" loading="lazy" width="667" height="1000" />
         </div>
 
@@ -889,7 +883,7 @@
               d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.68-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34zm-11.71 4.2L6.8 12.46l1.41-1.42 2.26 2.26 4.8-5.23 1.47 1.36-6.2 6.77z" />
           </svg>
         </h3>
-        <p class="mt-1.5 text-sm font-medium text-purple-300">Productor General & Músico Líder</p>
+        <p class="mt-1.5 text-sm font-medium text-purple-300">Productor musical y audiovisual</p>
         <p class="mt-1 text-xs text-gray-400">📍 Granadilla, San José · Costa Rica</p>
 
         <div class="mt-4 flex justify-center">
@@ -930,7 +924,7 @@
     onclick="if (event.target === this) closeBrandModal()"
     class="fixed inset-0 z-[60] hidden overflow-y-auto p-4 bg-black/85 backdrop-blur-md">
     <div
-      class="brand-lightbox relative m-auto max-w-md w-11/12 rounded-3xl border border-purple-500/30 bg-[#0c0814]/95 backdrop-blur-2xl shadow-2xl p-6 md:p-8">
+      class="brand-lightbox relative m-auto max-w-sm w-11/12 rounded-3xl border border-purple-500/20 bg-[#0c0814]/95 backdrop-blur-2xl shadow-2xl p-6">
 
       <!-- Botón Cerrar 'X' accesible en la esquina superior -->
       <button type="button" onclick="closeBrandModal()" aria-label="Cerrar presentación de marca"
@@ -940,49 +934,18 @@
         </svg>
       </button>
 
-      <!-- Visualizador del Logotipo (emblema metálico con resplandor neón envolvente) -->
-      <div class="brand-emblem rounded-2xl p-4 md:p-5 mb-6">
+      <!-- Visualizador del Logotipo (marco de resplandor neón sutil) -->
+      <div class="brand-emblem rounded-2xl p-4 mb-5">
         <img src="img/arkik_logo.jpg" alt="Emblema oficial de Arkik Producciones"
           class="w-full h-auto object-contain rounded-xl" loading="lazy" width="512" height="300" />
       </div>
 
-      <!-- Ficha Oficial de Marca -->
+      <!-- Identidad de Marca -->
       <div class="text-center">
-        <h3 id="brand-modal-title"
-          class="text-2xl md:text-3xl font-extrabold text-white tracking-tight leading-tight">
-          Arkik <span class="text-gradient-purple">Producciones</span>
+        <h3 id="brand-modal-title" class="text-xl font-bold text-white tracking-tight leading-tight">
+          Arkik Producciones
         </h3>
-        <p class="mt-2 text-sm md:text-base font-medium text-purple-300">Sonido Profesional para Eventos & Live
-          Performance</p>
-        <p class="mt-1.5 text-xs text-gray-400">📍 Granadilla, San José · Costa Rica</p>
-
-        <div class="mt-4 flex justify-center">
-          <span
-            class="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 border border-purple-500/25 text-purple-200 px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider">
-            ✨ Live Sound System · 24-Bit Audio Matrix
-          </span>
-        </div>
-      </div>
-
-      <!-- Botones de Acción (CTAs) -->
-      <div class="mt-6 space-y-2.5">
-        <button type="button" onclick="closeBrandModal(); openBookingModal(1)"
-          class="w-full min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/50 hover:shadow-purple-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path
-              d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
-          </svg>
-          <span>Cotizar por WhatsApp</span>
-        </button>
-
-        <a href="#formatos" onclick="closeBrandModal()"
-          class="flex items-center justify-center gap-2 w-full min-h-[48px] rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 text-xs font-semibold px-5 py-3 transition-all active:scale-[0.98]">
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>Ver Formatos Musicales</span>
-        </a>
+        <p class="mt-2 text-sm font-medium text-purple-300">Sonido Profesional para Eventos</p>
       </div>
     </div>
   </div>
@@ -1062,28 +1025,28 @@
           <form id="booking-form-step2" onsubmit="event.preventDefault(); goToStep(3);" class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Nombre Completo *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Nombre Completo *</label>
                 <input type="text" id="client-name" required placeholder="Ej. Carlos Rodríguez"
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Teléfono (WhatsApp) *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Teléfono (WhatsApp) *</label>
                 <input type="tel" id="client-phone" required placeholder="Ej. 8888-8888" inputmode="tel"
                   pattern="(\+?506[\s-]?)?[2-8]\d{3}[\s-]?\d{4}" title="Formato: 8888-8888 o +506 8888-8888"
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Correo Electrónico *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Correo Electrónico *</label>
                 <input type="email" id="client-email" required placeholder="carlos@ejemplo.com"
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Tipo de Evento *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Tipo de Evento *</label>
                 <select id="event-type" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <option value="Boda">Boda / Matrimonio</option>
                   <option value="Cumpleaños / Festejo">Cumpleaños / Festejo</option>
                   <option value="Evento Corporativo">Evento Corporativo</option>
@@ -1095,29 +1058,29 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Fecha del Evento *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Fecha del Evento *</label>
                 <input type="date" id="booking-date" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Hora Inicio *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Hora Inicio *</label>
                 <input type="time" id="booking-time" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Provincia *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Provincia *</label>
                 <select id="booking-province" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <!-- Populated by JS -->
                 </select>
               </div>
               <div>
-                <label class="block text-sm font-semibold text-gray-200 mb-1.5">Cantón *</label>
+                <label class="block text-sm font-medium text-purple-200 mb-1.5">Cantón *</label>
                 <select id="booking-canton" required
-                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                  class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                   <option value="">Seleccione primero provincia</option>
                 </select>
               </div>
@@ -1127,11 +1090,11 @@
             <div id="surcharge-notice-box"></div>
 
             <div>
-              <label class="block text-sm font-semibold text-gray-200 mb-1.5">Dirección Exacta o Salón de Eventos
+              <label class="block text-sm font-medium text-purple-200 mb-1.5">Dirección Exacta o Salón de Eventos
                 *</label>
               <textarea id="booking-address" rows="2" required
                 placeholder="Ej. Hotel Real Intercontinental, Escazú / Quinta San José, Granadilla"
-                class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input"></textarea>
+                class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input"></textarea>
             </div>
 
             <div class="flex justify-between pt-2">
@@ -1178,10 +1141,10 @@
 
           <div class="space-y-4">
             <div>
-              <label class="block text-sm font-semibold text-gray-200 mb-1.5">Número de Referencia SINPE
+              <label class="block text-sm font-medium text-purple-200 mb-1.5">Número de Referencia SINPE
                 (Opcional)</label>
               <input type="text" id="sinpe-reference" placeholder="Ej. 94820194" maxlength="50"
-                class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white placeholder-gray-400 shadow-inner focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-all glass-input">
+                class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
             </div>
 
             <div

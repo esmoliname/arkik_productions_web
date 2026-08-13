@@ -82,8 +82,8 @@ body {
 
 .glass-input:focus {
   outline: none;
-  border-color: transparent;
-  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.9);
+  border-color: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2);
   background: rgba(30, 24, 51, 0.95);
 }
 
@@ -392,12 +392,12 @@ html {
   overscroll-behavior: contain;
 }
 
-/* Visualizador del emblema: marco metálico + resplandor neón envolvente */
+/* Visualizador del emblema: marco metálico + resplandor neón sutil */
 .brand-emblem {
   position: relative;
-  background: linear-gradient(160deg, rgba(168, 85, 247, 0.18) 0%, rgba(34, 211, 238, 0.06) 50%, rgba(168, 85, 247, 0.14) 100%);
-  border: 1px solid rgba(168, 85, 247, 0.35);
-  box-shadow: inset 0 0 18px rgba(168, 85, 247, 0.15), 0 0 30px rgba(168, 85, 247, 0.35), 0 0 60px rgba(34, 211, 238, 0.12);
+  background: linear-gradient(160deg, rgba(168, 85, 247, 0.12) 0%, rgba(34, 211, 238, 0.04) 50%, rgba(168, 85, 247, 0.1) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  box-shadow: inset 0 0 12px rgba(168, 85, 247, 0.1), 0 0 22px rgba(168, 85, 247, 0.18), 0 0 40px rgba(34, 211, 238, 0.07);
 }
 
 .brand-emblem::after {
@@ -413,6 +413,203 @@ html {
 
 .brand-emblem:hover::after {
   transform: translateX(130%);
+}
+
+/* ---- Barra de Garantías: Halftone Gradient Mesh (Neon) ---- */
+
+/* Tarjeta de beneficio: cristal oscuro + trama de puntos neón + borde degradado fluido */
+.benefit-card {
+  --border-grad: linear-gradient(120deg, rgba(34, 211, 238, 0.4) 0%, rgba(168, 85, 247, 0.4) 40%, rgba(236, 72, 153, 0.4) 75%, rgba(251, 191, 36, 0.35) 100%);
+  --mesh-dot: rgba(168, 85, 247, 0.4);
+  position: relative;
+  overflow: hidden;
+  background: rgba(15, 12, 26, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Borde con degradado neón multicolor (pseudo-elemento enmascarado, respeta el redondeo) */
+.benefit-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--border-grad);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+
+/* Trama de puntos vectorial (halftone mesh) que se ilumina al pasar el cursor */
+.benefit-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: radial-gradient(var(--mesh-dot) 1.2px, transparent 1.6px);
+  background-size: 15px 15px;
+  pointer-events: none;
+  opacity: 0.28;
+  transition: opacity 0.3s ease;
+}
+
+.benefit-card:hover::before {
+  opacity: 1;
+}
+
+.benefit-card:hover::after {
+  opacity: 0.65;
+}
+
+/* Malla con gradiente: densidad de puntos desplazada por tarjeta (efecto gradient mesh) */
+.benefit-mesh-1::after {
+  mask-image: radial-gradient(ellipse 130% 100% at 12% 8%, black 25%, transparent 72%);
+}
+
+.benefit-mesh-2::after {
+  mask-image: radial-gradient(ellipse 130% 100% at 88% 15%, black 25%, transparent 72%);
+}
+
+.benefit-mesh-3::after {
+  mask-image: radial-gradient(ellipse 130% 100% at 50% 95%, black 25%, transparent 72%);
+}
+
+/* Identidad cromática propia por tarjeta (evita el look genérico) */
+.benefit-mesh-2 {
+  --mesh-dot: rgba(34, 211, 238, 0.4);
+  --border-grad: linear-gradient(120deg, rgba(168, 85, 247, 0.4) 0%, rgba(16, 185, 129, 0.4) 55%, rgba(34, 211, 238, 0.35) 100%);
+}
+
+.benefit-mesh-3 {
+  --mesh-dot: rgba(236, 72, 153, 0.4);
+  --border-grad: linear-gradient(120deg, rgba(34, 211, 238, 0.4) 0%, rgba(99, 102, 241, 0.45) 50%, rgba(236, 72, 153, 0.4) 100%);
+}
+
+/* Píldora de badge neón encendida (tipografía nítida de alto contraste) */
+.neon-pill {
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.45), inset 0 0 8px rgba(168, 85, 247, 0.18);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+}
+
+.neon-pill-emerald {
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.45), inset 0 0 8px rgba(16, 185, 129, 0.18);
+}
+
+.neon-pill-indigo {
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.45), inset 0 0 8px rgba(99, 102, 241, 0.18);
+}
+
+/* ---- Marco de Esencia: Esferas 3D de Cristal & Matriz de Luz Neón ---- */
+
+/* Cuadro grande principal (#esencia): vidrio profundo + resplandor ambiental en bordes */
+.esencia-sphere-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(13, 8, 24, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 50px rgba(168, 85, 247, 0.2), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
+  transition: box-shadow 0.3s ease;
+}
+
+/* Borde con degradado neón multicolor fluido (anillo enmascarado sobre el borde púrpura) */
+.esencia-sphere-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(120deg, rgba(236, 72, 153, 0.5) 0%, rgba(168, 85, 247, 0.5) 30%, rgba(139, 92, 246, 0.45) 55%, rgba(34, 211, 238, 0.4) 80%, rgba(236, 72, 153, 0.45) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.65;
+  transition: opacity 0.3s ease;
+}
+
+/* Matriz de microesferas 3D luminosas (magenta, cian, púrpura y violeta) */
+.esencia-sphere-card::after {
+  content: "";
+  position: absolute;
+  inset: -80px;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.55) 0%, rgba(236, 72, 153, 0.5) 14%, rgba(236, 72, 153, 0) 42%),
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.5) 0%, rgba(34, 211, 238, 0.45) 14%, rgba(34, 211, 238, 0) 42%),
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.45) 0%, rgba(168, 85, 247, 0.45) 14%, rgba(168, 85, 247, 0) 42%),
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.45) 0%, rgba(139, 92, 246, 0.45) 14%, rgba(139, 92, 246, 0) 42%);
+  background-size: 80px 80px;
+  background-position: 0 0, 40px 0, 0 40px, 40px 40px;
+  animation: sphereDrift 16s linear infinite;
+  transition: opacity 0.3s ease;
+}
+
+.esencia-sphere-card:hover {
+  box-shadow: 0 0 65px rgba(168, 85, 247, 0.3), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
+}
+
+.esencia-sphere-card:hover::before {
+  opacity: 1;
+}
+
+.esencia-sphere-card:hover::after {
+  opacity: 0.7;
+}
+
+/* Deriva sutil de la matriz de esferas (solo transform: compositor GPU, 60 FPS) */
+@keyframes sphereDrift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(80px, 80px, 0);
+  }
+}
+
+/* ---- Footer: Fluid Neon Wave Canvas ---- */
+
+/* Lienzo de fluido: fondo absoluto, sin capturar eventos, legibilidad del contenido por encima */
+#footerFluidCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.75;
+}
+
+/* ---- Hero: Cuerdas de Guitarra Neón / Ondas Acústicas (Canvas Interactivo) ---- */
+
+/* Lienzo de cuerdas: fondo absoluto pasivo, sin capturar eventos, detrás del contenido (z-1) */
+#heroStringsCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.65;
+}
+
+/* Aislamiento tipográfico: sombreado fino sobre las líneas para contraste nítido */
+#hero h1,
+#hero p {
+  text-shadow: 0 1px 2px rgba(11, 9, 20, 0.5), 0 0 14px rgba(11, 9, 20, 0.3);
+}
+
+#hero a {
+  text-shadow: 0 1px 2px rgba(11, 9, 20, 0.45);
 }
 
 
