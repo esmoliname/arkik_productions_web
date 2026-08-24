@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg-dark: #0b0914;
+  --bg-dark: #0a0712;
   --glass-bg: rgba(22, 18, 36, 0.75);
   --glass-bg-hover: rgba(30, 24, 48, 0.85);
   --glass-border: rgba(168, 85, 247, 0.2);
@@ -10,13 +10,47 @@
   --accent-pink: #ec4899;
   --accent-indigo: #6366f1;
   --accent-emerald: #10b981;
+
+  /* Fluid Typography Tokens (clamp) */
+  --fluid-h1: clamp(2rem, 5vw + 1rem, 3.75rem);
+  --fluid-h2: clamp(1.5rem, 3.5vw + 0.5rem, 2.5rem);
+  --fluid-h3: clamp(1.15rem, 2vw + 0.4rem, 1.6rem);
+  --fluid-body: clamp(0.925rem, 1vw + 0.5rem, 1.05rem);
+}
+
+html, body, main {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  position: relative;
 }
 
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
   background-color: var(--bg-dark);
   color: #f3f4f6;
-  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Fluid Typography Classes */
+.fluid-h1 {
+  font-size: var(--fluid-h1);
+  line-height: 1.15;
+}
+
+.fluid-h2 {
+  font-size: var(--fluid-h2);
+  line-height: 1.25;
+}
+
+.fluid-h3 {
+  font-size: var(--fluid-h3);
+  line-height: 1.35;
+}
+
+.fluid-body {
+  font-size: var(--fluid-body);
+  line-height: 1.6;
 }
 
 /* Ambient Neon Glow Backdrops */
@@ -228,16 +262,67 @@ html {
   }
 }
 
-/* Native smooth scrolling on iOS for scrollable surfaces */
-#booking-modal {
+/* Native smooth scrolling on iOS & modal viewport ergonomics */
+#booking-modal,
+#adminLoginModal,
+#adminPortalModal,
+#executive-modal,
+#brand-modal {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
 
-/* Touch targets: min 44px (Apple HIG) for extras counters rendered by app.js */
+/* Modal Bottom-Sheet and Full Viewport Ergonomics on Mobile */
+/* Fluid bottom-sheet (≤640px) → centered dialog (≥640px), con soporte dvh iOS Safari */
+.modal-sheet-panel {
+  max-height: 92vh;
+  max-height: 92svh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 640px) {
+  .modal-sheet-panel {
+    max-height: 85vh;
+    max-height: 85svh;
+  }
+}
+
+/* Home-indicator / gesture-bar clearance en bottom sheets */
+@supports (padding: env(safe-area-inset-bottom, 0px)) {
+  .modal-sheet-panel {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  @media (min-width: 640px) {
+    .modal-sheet-panel {
+      padding-bottom: 0;
+    }
+  }
+}
+
+/* Touch targets: min 44px (Apple HIG & Material Design) */
+button,
+input[type="button"],
+input[type="submit"],
+.keypad-btn,
+.ark-time-chip,
+.cal-nav-btn,
+.filter-btn,
+.gallery-filter-btn,
+.admin-tab-btn,
+.admin-act-btn,
+.admin-role-btn {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
 #extras-container button {
   min-width: 44px;
   min-height: 44px;
+  touch-action: manipulation;
 }
 
 /* Logotipo oficial de la marca (navbar & footer): proporcional y sin desbordes */
@@ -576,30 +661,35 @@ html {
   }
 }
 
-/* ---- Footer: Fluid Neon Wave Canvas ---- */
-
-/* Lienzo de fluido: fondo absoluto, sin capturar eventos, legibilidad del contenido por encima */
-#footerFluidCanvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.75;
+/* ---- Full-Bleed Section Continuity (no gaps at any zoom level) ---- */
+/* Secciones con fondo continuo + resplandor ambiental sutil que llega a 100vw */
+#esencia,
+#formatos,
+#proceso,
+#cobertura {
+  background-color: var(--bg-dark);
+  background-image: radial-gradient(1100px 460px at 50% -140px, rgba(99, 102, 241, 0.07) 0%, rgba(168, 85, 247, 0.04) 45%, rgba(11, 9, 20, 0) 75%);
 }
 
-/* ---- Hero: Cuerdas de Guitarra Neón / Ondas Acústicas (Canvas Interactivo) ---- */
-
-/* Lienzo de cuerdas: fondo absoluto pasivo, sin capturar eventos, detrás del contenido (z-1) */
+/* ---- Canvas & Background Dynamic Rescaling Strategy (No Corner Artifact) ---- */
+#footerFluidCanvas,
 #heroStringsCanvas {
   position: absolute;
   inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 1;
+  z-index: 0;
+  object-fit: cover;
+}
+
+#heroStringsCanvas {
   opacity: 0.65;
+}
+
+#footerFluidCanvas {
+  opacity: 0.75;
 }
 
 /* Aislamiento tipográfico: sombreado fino sobre las líneas para contraste nítido */
@@ -642,8 +732,8 @@ html {
 }
 
 .cal-nav-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -684,6 +774,16 @@ html {
 
 .ark-cal-day--empty {
   aspect-ratio: 1;
+}
+
+/* Móvil: celdas ≥44px de alto (Apple HIG) sin depender del ancho disponible */
+@media (max-width: 640px) {
+
+  .ark-cal-day,
+  .ark-cal-day--empty {
+    aspect-ratio: auto;
+    min-height: 44px;
+  }
 }
 
 .ark-cal-day {
@@ -1329,6 +1429,30 @@ html {
     border: 1px solid #e5e7eb !important;
     box-shadow: none !important;
   }
+}
+
+/* ---- Floating WhatsApp Safe Area Anchor ---- */
+.floating-wa-btn {
+  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  right: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .floating-wa-btn {
+    bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    right: 2rem;
+  }
+}
+
+/* ---- Section Adaptive Vertical Spacing System ---- */
+.section-rhythm {
+  padding-top: clamp(3rem, 6vw + 1rem, 6rem);
+  padding-bottom: clamp(3rem, 6vw + 1rem, 6rem);
+}
+
+.section-rhythm-lg {
+  padding-top: clamp(4rem, 8vw + 1rem, 8rem);
+  padding-bottom: clamp(4rem, 8vw + 1rem, 8rem);
 }
 
 

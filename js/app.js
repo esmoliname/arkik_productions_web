@@ -3305,6 +3305,73 @@ function copyBookingCode() {
 }
 
 // ============================================================
+// 17.5 DYNAMIC CANVAS RESCALING ENGINE (DPR-aware, zoom-proof)
+// ============================================================
+
+/**
+ * Fábrica modular de reescalado dinámico para los canvas de fondo.
+ * - Sincroniza el backing store con container.clientWidth/Height × devicePixelRatio.
+ * - ResizeObserver sobre el contenedor padre + window.resize/orientationchange
+ *   con debounce (evita thrashing durante gestos y zoom interactivo).
+ * - El CSS ancla el canvas con position:absolute inset:0 w/h 100%, por lo que el
+ *   render queda cubriendo la sección a cualquier zoom (25%–200%) o pantalla 4K,
+ *   eliminando el artefacto de canvas pegado en la esquina superior izquierda.
+ */
+function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
+  let logicalW = 1;
+  let logicalH = 1;
+
+  const resizeCanvas = () => {
+    const dpr = Math.max(0.1, Number(window.devicePixelRatio) || 1);
+    logicalW = Math.max(1, container.clientWidth);
+    logicalH = Math.max(1, container.clientHeight);
+    canvas.width = Math.round(logicalW * dpr);
+    canvas.height = Math.round(logicalH * dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+    if (typeof onAfterResize === "function") onAfterResize();
+  };
+
+  const debounce = (fn, ms) => {
+    let timer = null;
+    const run = () => {
+      clearTimeout(timer);
+      timer = setTimeout(fn, ms);
+    };
+    run.clear = () => clearTimeout(timer);
+    return run;
+  };
+
+  const debouncedResize = debounce(resizeCanvas, 80);
+
+  let resizeObserver = null;
+  if (window.ResizeObserver) {
+    resizeObserver = new ResizeObserver(debouncedResize);
+    resizeObserver.observe(container);
+  }
+  window.addEventListener("resize", debouncedResize, { passive: true });
+  window.addEventListener("orientationchange", debouncedResize, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", debouncedResize);
+  }
+
+  return {
+    get width() { return logicalW; },
+    get height() { return logicalH; },
+    resizeNow: resizeCanvas,
+    destroy() {
+      debouncedResize.clear();
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener("resize", debouncedResize);
+      window.removeEventListener("orientationchange", debouncedResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", debouncedResize);
+      }
+    }
+  };
+}
+
+// ============================================================
 // 18. FOOTER: FLUID NEON WAVE ENGINE (Canvas 2D, 60 FPS)
 // ============================================================
 
@@ -3317,14 +3384,13 @@ function initFooterFluidEffect() {
   if (!ctx) return;
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const DPR_CAP = 2;
   const NEON = ["#a855f7", "#38bdf8", "#10b981", "#ec4899"];
   const RIBBON_COUNT = 3;
   const RIBBON_POINTS = 64;
   const MAX_PARTICLES = 140;
 
-  let W = 0;
-  let H = 0;
+  let logicalW = 0;
+  let logicalH = 0;
   let rafId = null;
   let footerInView = false;
   let lastBurstAt = 0;
@@ -3337,8 +3403,8 @@ function initFooterFluidEffect() {
     for (let i = 0; i < RIBBON_COUNT; i++) {
       ribbons.push({
         color: NEON[i % NEON.length],
-        baseY: (0.28 + i * 0.2 + Math.random() * 0.12) * H,
-        amp: (0.02 + Math.random() * 0.018) * H,
+        baseY: (0.28 + i * 0.2 + Math.random() * 0.12) * logicalH,
+        amp: (0.02 + Math.random() * 0.018) * logicalH,
         freq: 0.004 + Math.random() * 0.003,
         speed: 0.00022 + Math.random() * 0.00018,
         phase: Math.random() * Math.PI * 2,
@@ -3348,16 +3414,11 @@ function initFooterFluidEffect() {
     }
   }
 
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
-    const rect = footer.getBoundingClientRect();
-    W = Math.max(1, Math.round(rect.width * dpr));
-    H = Math.max(1, Math.round(rect.height * dpr));
-    canvas.width = W;
-    canvas.height = H;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const canvasController = createDynamicCanvasController(canvas, footer, ctx, () => {
+    logicalW = canvasController.width;
+    logicalH = canvasController.height;
     buildRibbons();
-  }
+  });
 
   function spawnBurst(x, y, count, spread) {
     if (particles.length >= MAX_PARTICLES) return;
@@ -3387,7 +3448,7 @@ function initFooterFluidEffect() {
     const rect = footer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    if (x < 0 || y < 0 || x > logicalW || y > logicalH) return;
     spawnBurst(x, y, 5, 26);
   }
 
@@ -3396,19 +3457,18 @@ function initFooterFluidEffect() {
     const now = performance.now();
     if (now - lastScrollAt < 260) return;
     lastScrollAt = now;
-    const rect = footer.getBoundingClientRect();
     for (let i = 0; i < 3; i++) {
-      spawnBurst(Math.random() * rect.width, rect.top * 0.2 + Math.random() * rect.height * 0.25, 4, 40);
+      spawnBurst(Math.random() * logicalW, Math.random() * logicalH * 0.4, 4, 40);
     }
   }
 
   function tick() {
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0, 0, logicalW, logicalH);
 
     for (const r of ribbons) {
       ctx.beginPath();
       for (let i = 0; i <= RIBBON_POINTS; i++) {
-        const x = (i / RIBBON_POINTS) * W;
+        const x = (i / RIBBON_POINTS) * logicalW;
         const y = r.baseY
           + Math.sin(x * r.freq + performance.now() * r.speed + r.phase) * r.amp
           + Math.sin(x * r.freq * 2.7 - performance.now() * r.speed * 0.6 + r.phase * 2) * r.amp * 0.35;
@@ -3433,7 +3493,7 @@ function initFooterFluidEffect() {
       p.life -= 16.67;
       p.history.push({ x: p.x, y: p.y });
       if (p.history.length > 7) p.history.shift();
-      if (p.life <= 0 || p.y > H + 30) {
+      if (p.life <= 0 || p.y > logicalH + 30) {
         particles.splice(i, 1);
         continue;
       }
@@ -3478,9 +3538,8 @@ function initFooterFluidEffect() {
   footer.addEventListener("pointermove", pointerBurst, { passive: true });
   window.addEventListener("scroll", scrollBurst, { passive: true });
 
-  resize();
+  canvasController.resizeNow();
   start();
-  window.addEventListener("resize", resize);
 
   const handle = { start, stop };
   AnimationRegistry.register("footer-fluid", handle);
@@ -3500,14 +3559,13 @@ function initHeroStringsEffect() {
   if (!ctx) return;
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const DPR_CAP = 2;
   const NEON = ["#a855f7", "#38bdf8", "#10b981", "#ec4899"];
   const STRING_COUNT = 4;
   const SEGMENTS = 60;
   const DEFLECT_REACH = 140;
 
-  let W = 0;
-  let H = 0;
+  let logicalW = 0;
+  let logicalH = 0;
   let rafId = null;
   let heroInView = false;
   const strings = [];
@@ -3521,8 +3579,8 @@ function initHeroStringsEffect() {
     for (let i = 0; i < STRING_COUNT; i++) {
       strings.push({
         color: NEON[i % NEON.length],
-        baseY: (0.16 + i * 0.22 + Math.random() * 0.04) * H,
-        amp: (0.008 + Math.random() * 0.006) * H,
+        baseY: (0.16 + i * 0.22 + Math.random() * 0.04) * logicalH,
+        amp: (0.008 + Math.random() * 0.006) * logicalH,
         freq: 0.006 + Math.random() * 0.004,
         speed: 0.0002 + Math.random() * 0.0002,
         phase: Math.random() * Math.PI * 2,
@@ -3532,16 +3590,11 @@ function initHeroStringsEffect() {
     }
   }
 
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
-    const rect = hero.getBoundingClientRect();
-    W = Math.max(1, Math.round(rect.width * dpr));
-    H = Math.max(1, Math.round(rect.height * dpr));
-    canvas.width = W;
-    canvas.height = H;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const canvasController = createDynamicCanvasController(canvas, hero, ctx, () => {
+    logicalW = canvasController.width;
+    logicalH = canvasController.height;
     buildStrings();
-  }
+  });
 
   function onScroll() {
     const now = performance.now();
@@ -3558,7 +3611,7 @@ function initHeroStringsEffect() {
     const rect = hero.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    if (x < -60 || y < -60 || x > rect.width + 60 || y > rect.height + 60) {
+    if (x < -60 || y < -60 || x > logicalW + 60 || y > logicalH + 60) {
       pointer.active = false;
       return;
     }
@@ -3580,7 +3633,7 @@ function initHeroStringsEffect() {
   }
 
   function tick() {
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0, 0, logicalW, logicalH);
     const t = performance.now();
 
     scrollEnergy *= 0.94;
@@ -3598,7 +3651,7 @@ function initHeroStringsEffect() {
 
       for (let i = 0; i <= SEGMENTS; i++) {
         const fx = i / SEGMENTS;
-        const x = fx * W;
+        const x = fx * logicalW;
 
         let y = st.baseY
           + Math.sin(x * st.freq + t * st.speed + st.phase) * st.amp
@@ -3660,9 +3713,8 @@ function initHeroStringsEffect() {
   hero.addEventListener("mouseleave", onPointerLeave);
   hero.addEventListener("touchend", onPointerLeave, { passive: true });
 
-  resize();
+  canvasController.resizeNow();
   start();
-  window.addEventListener("resize", resize);
 
   const handle = { start, stop };
   AnimationRegistry.register("hero-strings", handle);
