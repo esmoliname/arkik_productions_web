@@ -1,0 +1,84 @@
+## Exploration: owner-dashboard-refactor
+
+### Current State
+The owner dashboard is part of the Staff Portal (AdminModule) in the Arkik Productions static SPA. It exists within a single large `js/app.js` file (~3500+ lines) and provides financial analytics and booking management for the owner role (Propietario - Juan José Ramos). The dashboard is accessed via staff login (PIN: 2580) and renders when `AdminModule.setRole("owner")` is called followed by `AdminModule.renderOwner()`.
+
+**Key existing owner dashboard features:**
+- Period filters: hoy, semana, mes, año, total
+- KPI metrics: validated SINPE deposits, receivable balances, projected billing, event occupancy %
+- Sparkline chart of cash flow by date (validated vs receivable bars)
+- Status filters: todas, pendiente, confirmada, realizada, cancelada
+- Bookings list filtered by status and period, with actions per status
+- Role-based UI: owner view vs IT view toggle with distinct badges
+
+**Architecture & Patterns:**
+- All code lives in `js/app.js` - no modular components or separate files
+- HTML generated inline via template literals in JS render methods
+- Reactive dispatch pattern: `StorageEngine.onDataChange("gallery")` etc.
+- LocalStorage persistence for all state (`STORAGE_KEYS.admin`, `STORAGE_KEYS.bookings`, etc.)
+- Security-first: input sanitization (`sanitizeInput`), URL sanitization (`sanitizeUrl`)
+- TailwindCSS CDN with custom config extensions (dark mode, brand colors)
+- Glassmorphism UI: rgba backgrounds + backdrop-blur-xl
+- Neon color scheme: purple (#a855f7), pink (#ec4899), indigo (#6366f1), emerald (#10b981)
+- Fluid typography using CSS `clamp()` values
+- Dark theme: `--bg-dark: #0a0712`
+
+**Affected Areas:**
+- `js/app.js` lines 1003-1513: AdminModule, renderOwner(), renderOwnerMetrics(), renderOwnerSparkline(), renderOwnerFilters(), renderOwnerBookings()
+- `js/data.js` lines 311-332: ADMIN_CONFIG (owner PIN hashKey, defaultPin, it role)
+- `index.html`: Staff portal nav entry, login modals, admin portal structure
+- `css/styles.css`: Admin styling (admin-role-badge, admin-tab-btn, admin-act-btn, status-badge variants)
+
+### Affected Areas
+- `js/app.js` — AdminModule renderOwner() and all owner dashboard sub-functions (lines 1358-1493)
+- `js/data.js` — ADMIN_CONFIG owner role definition, STORAGE_KEYS, default PINs
+- `index.html` — Staff access pill in navigation, admin login/portal modals
+- `css/styles.css` — Admin component styling (role badges, tabs, action buttons)
+
+### Approaches
+
+1. **Modularize renderOwner() into separate UI components** — Split the monolithic renderOwner() method into focused sub-functions: renderOwnerMetrics(), renderOwnerFilters(), renderOwnerSparkline(), renderOwnerBookings(). Each would generate its own HTML fragment and be composable.  
+   - Pros: Improves code readability, easier to maintain/test individual sections, keeps same tech stack  
+   - Cons: Requires refactoring ~150 lines of inline HTML template literals; no build step so component sharing limited  
+   - Effort: Medium
+
+2. **Extract owner dashboard data layer into data.js** — Move the metrics calculations (bookingsInPeriod, periodRange, KPI computations, sparkline data aggregation) into `js/data.js` as pure functions, keeping render methods in `app.js` focused on DOM generation.  
+   - Pros: Separates business logic from UI; enables unit testing of data functions (if test runner added later); reduces app.js complexity  
+   - Cons: data.js would grow significantly; still no modular UI components  
+   - Effort: Medium-High
+
+3. **Refactor owner dashboard HTML into template strings with helper functions** — Create small helper functions for common patterns (kpiCard, bookingCard, statusBadge) and use them within renderOwner() instead of inline template literals.  
+   - Pros: Immediate readability improvement; minimal code movement; maintains vanillaJS compatibility  
+   - Cons: Superficial change; doesn't address the fundamental monolithic structure  
+   - Effort: Low
+
+4. **Add missing owner dashboard features** — Based on gaps identified (e.g., export functionality, date range picker, export to CSV, improved charting, booking edit inline). This could be combined with any of the above approaches.  
+   - Pros: Adds tangible value; addresses real user needs  
+   - Cons: Scope creep if not focused; may require additional state management  
+   - Effort: Variable
+
+### Recommendation
+**Approach 1 (Modularize renderOwner())** is the strongest starting point for a refactor. The owner dashboard currently has 5 distinct sections (period filters, metrics, sparkline, filters, bookings list) that could each be their own function. This improves maintainability without introducing new dependencies or build steps, which is critical for this static VanillaJS + TailwindCSS project.
+
+A phased approach is recommended:
+- **Phase 1**: Modularize renderOwner() into 5 focused functions (metrics, sparkline, filters, bookings, period filters)
+- **Phase 2**: Extract data calculations into data.js helper functions
+- **Phase 3**: Add any missing features (export, improved filtering, date range)
+
+### Risks
+- **Excessive refactoring risk**: The owner dashboard is deeply intertwined with the admin login/modal system; changes to render methods could break modal opening/closing or hash routing
+- **HTML template fragility**: Inline template literals are prone to breaking with even small DOM structure changes; modularization must preserve exact HTML output
+- **No test safety net**: Without a test framework, any regression in the owner dashboard would be hard to catch
+- **TailwindCSS class coupling**: CSS classes are scattered throughout the JS; restructuring may expose unused or duplicate classes
+
+### Ready for Proposal
+Yes — the exploration is complete and ready for the orchestrator to launch an SDD proposal for the "owner-dashboard-refactor" change. The proposal should specify which of the four approaches above (or a custom combination) will be used, the exact scope of what to refactor, and the acceptance criteria for the refactored code.
+
+**Gaps identified:**
+- Owner dashboard is monolithic within a 3500+ line file
+- No separation between data logic and UI rendering
+- Inline HTML template literals make sections hard to isolate/individual testing
+- No modular component structure (constrained by no-bundler/static HTML)
+- IT dashboard has 4 modular tabs but owner dashboard is a single renderOwner() method
+- No export/download functionality for owner metrics beyond the existing PDF report
+- Sparkline chart uses inline SVG with hardcoded dimensions; could benefit from responsive scaling

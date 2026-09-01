@@ -12,9 +12,7 @@ const SINPE_CONFIG = {
 const LOGISTICS_CONFIG = {
   minNoticeHours: 72, // 3 días de antelación mínima obligatoria
   maxHorizonDays: 365, // Horizonte máximo de 1 año calendario
-  maxEventsPerDay: 2, // Máximo 2 eventos por día
-  minIntervalHours: 5, // Margen mínimo de traslado / descanso entre eventos (5 a 6 horas)
-  recommendedIntervalHours: 6,
+  maxEventsPerDay: 2, // Máximo 2 eventos por día — modelo diario puro
   defaultBookingStatus: "pendiente" // Inicia siempre como Pendiente de Aprobación
 };
 
@@ -163,74 +161,134 @@ const DYNAMIC_EXTRAS_CONFIG = {
 // Gallery filter definitions (rendered dynamically in #gallery-filters)
 const GALLERY_FILTERS = [
   { key: "todos", label: "Todos" },
+  { key: "instagram", label: "Instagram / Shows" },
   { key: "banda", label: "Banda en Vivo" },
   { key: "acustico", label: "Show Acústico" },
-  { key: "tecnico", label: "Montaje Técnico" }
+  { key: "tecnico", label: "Montajes Técnicos" }
 ];
 
 // Category labels used on cards and filter counts
 const GALLERY_CATEGORY_LABELS = {
+  instagram: "Instagram / Show",
   banda: "Banda en Vivo",
   acustico: "Show Acústico",
   tecnico: "Montaje Técnico"
 };
 
-// Multimedia Library — add/remove gallery items here only.
-// type: 'video' (YouTube embed URL) | 'image'; category: banda | acustico | tecnico
+// Multimedia Library — Data-driven social cards & media showcases
+// type: 'instagram' | 'video' | 'image'; category: 'instagram' | 'banda' | 'acustico' | 'tecnico'
 const mediaLibrary = [
   {
-    id: 1,
+    id: "ig-1",
+    title: "Noches de Mareas",
+    category: "instagram",
+    type: "instagram",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "img/Foto Kike .jpg",
+    caption: "Granadilla · San José — Show en Vivo & Saxofón Premium",
+    subtitle: "Show en Vivo & Saxofón Premium",
+    date: "Agosto 2026",
+    featured: true
+  },
+  {
+    id: "ig-2",
+    title: "Live Sax & Beats Session",
+    category: "instagram",
+    type: "instagram",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?auto=format&fit=crop&w=800&q=80",
+    caption: "Escazú · San José — Repertorio Pop, House & Jazz",
+    subtitle: "Repertorio Pop, House & Jazz",
+    date: "Agosto 2026",
+    featured: false
+  },
+  {
+    id: "band-1",
+    title: "Show en Vivo Banda RT",
+    category: "banda",
     type: "video",
-    title: "Banda RT en Vivo — Highlights Festival",
+    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80",
+    caption: "Festival de Verano · San José — Juan José & Banda Completa en Acción",
     subtitle: "Juan José & Banda Completa en Acción",
-    category: "banda",
-    url: "https://www.youtube.com/embed/5qap5aO4i9A",
-    thumbnail: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"
+    date: "Julio 2026",
+    featured: true
   },
   {
-    id: 2,
-    type: "image",
-    title: "Trío Acústico Premium — Recepción de Boda",
-    subtitle: "Granadilla / Escazú, Costa Rica",
+    id: "acust-1",
+    title: "Sesión Acústica Íntima",
     category: "acustico",
-    url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
-    thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 3,
     type: "image",
-    title: "Dúo Íntimo Arkik — Ceremonia Romántica",
-    subtitle: "Voz & Teclado Electroacústico",
-    category: "acustico",
-    url: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80",
-    thumbnail: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80"
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
+    caption: "Boda Exclusiva · Santa Ana — Voz, Guitarra & Saxofón Romántico",
+    subtitle: "Voz, Guitarra & Saxofón Romántico",
+    date: "Julio 2026",
+    featured: false
   },
   {
-    id: 4,
-    type: "video",
-    title: "Juan José Ramírez — Performance Solista",
-    subtitle: "Show de Saxofón & Pistas HD",
-    category: "acustico",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    thumbnail: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 5,
-    type: "image",
-    title: "Montaje Técnico de Sonido e Iluminación Pro",
-    subtitle: "Equipos JBL / RCF & Consolas Behringer X32",
+    id: "tech-1",
+    title: "Montaje de Audio 24-Bit",
     category: "tecnico",
-    url: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
-    thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80"
+    type: "image",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+    caption: "Consolas Digitales & RCF Line Array — Equipos JBL / RCF & Consolas Behringer X32",
+    subtitle: "Equipos JBL / RCF & Consolas Behringer X32",
+    date: "Junio 2026",
+    featured: false
   },
   {
-    id: 6,
-    type: "image",
-    title: "Banda RT en Evento Corporativo VIP",
-    subtitle: "San José, Costa Rica",
+    id: "ig-3",
+    title: "Reel: Solo Sax en Atardecer",
+    category: "instagram",
+    type: "instagram",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1525994886773-080587e161c2?auto=format&fit=crop&w=800&q=80",
+    caption: "Papagayo · Guanacaste — Coctel VIP frente al mar con Saxofón Alto",
+    subtitle: "Coctel VIP frente al mar",
+    date: "Junio 2026",
+    featured: true
+  },
+  {
+    id: "band-2",
+    title: "Banda RT — Gala Corporativa",
     category: "banda",
-    url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80",
-    thumbnail: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80"
+    type: "image",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80",
+    caption: "Centro de Convenciones · Heredia — Escenario principal y fiesta bailable",
+    subtitle: "Escenario principal y fiesta bailable",
+    date: "Mayo 2026",
+    featured: false
+  },
+  {
+    id: "tech-2",
+    title: "Estructura Truss & Iluminación DMX",
+    category: "tecnico",
+    type: "image",
+    embedUrl: "",
+    directUrl: "https://www.instagram.com/kikeramirezcr",
+    url: "https://www.instagram.com/kikeramirezcr",
+    thumbnail: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
+    caption: "Show Stage & Cabezas Móviles Pro — Montaje técnico para eventos de alto impacto",
+    subtitle: "Montaje técnico para eventos de alto impacto",
+    date: "Mayo 2026",
+    featured: false
   }
 ];
 
@@ -280,37 +338,14 @@ const STORAGE_KEYS = {
   bookings: "arkik_bookings_v1",
   availability: "arkik_availability_v1",
   prices: "arkik_prices_v1",
+  gallery: "arkik_gallery_v1",
+  customConfig: "arkik_custom_config_v1",
   admin: ADMIN_CONFIG.storageKey,
   audit: "arkik_audit_v1"
 };
 
 // Capacidad diaria máxima de eventos
 const DEFAULT_MAX_EVENTS_PER_DAY = LOGISTICS_CONFIG.maxEventsPerDay; // 2 eventos máx/día
-
-// Franjas horarias del selector de turnos (Mañana / Tarde / Noche)
-const TIME_SLOTS = {
-  morning: {
-    id: "morning",
-    label: "Turno Mañana",
-    range: "08:00 - 12:00",
-    times: ["08:00", "09:00", "10:00", "11:00", "12:00"],
-    icon: "☀️"
-  },
-  afternoon: {
-    id: "afternoon",
-    label: "Turno Tarde",
-    range: "13:00 - 17:00",
-    times: ["13:00", "14:00", "15:00", "16:00", "17:00"],
-    icon: "🌤️"
-  },
-  night: {
-    id: "night",
-    label: "Turno Noche",
-    range: "18:00 - 02:00",
-    times: ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00", "02:00"],
-    icon: "🌙"
-  }
-};
 
 const CALENDAR_LOCALE = {
   months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],

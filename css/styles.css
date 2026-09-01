@@ -1,22 +1,143 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
-:root {
-  --bg-dark: #0a0712;
-  --glass-bg: rgba(22, 18, 36, 0.75);
-  --glass-bg-hover: rgba(30, 24, 48, 0.85);
-  --glass-border: rgba(168, 85, 247, 0.2);
-  --glass-border-glow: rgba(168, 85, 247, 0.6);
-  --accent-purple: #a855f7;
-  --accent-pink: #ec4899;
-  --accent-indigo: #6366f1;
-  --accent-emerald: #10b981;
+/* ============================================================
+   MODAL VISIBILITY & VIEWPORT CENTERING (v2.1)
+   ============================================================
+   - Modals hidden by default; open only on explicit user action
+   - Overlay dims page without blacking out entirely
+   - Modal cards are centered with max-width/max-height constraints
+   - Proper focus trapping and viewport containment
+   ============================================================ */
 
-  /* Fluid Typography Tokens (clamp) */
-  --fluid-h1: clamp(2rem, 5vw + 1rem, 3.75rem);
-  --fluid-h2: clamp(1.5rem, 3.5vw + 0.5rem, 2.5rem);
-  --fluid-h3: clamp(1.15rem, 2vw + 0.4rem, 1.6rem);
-  --fluid-body: clamp(0.925rem, 1vw + 0.5rem, 1.05rem);
+   /* Modal Overlay - dims page background, doesn't fully black out.
+      Visibility is controlled by the PARENT modal container's Tailwind
+      classes (hidden / opacity-* / pointer-events-* / invisible) which are
+      toggled deterministically by ModalController. This rule only supplies
+      the dim backdrop + centering; it must NOT force an invisible state. */
+   .modal-overlay {
+     position: absolute;
+     inset: 0;
+     z-index: 50;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     padding: 1rem;
+     background-color: rgba(0, 0, 0, 0.85);
+     backdrop-filter: blur(12px);
+     -webkit-backdrop-filter: blur(12px);
+     pointer-events: auto;
+   }
+
+   /* Modal Card - centered, constrained size */
+   .modal-card {
+     width: 100%;
+     max-width: 56rem;
+     max-height: 90vh;
+     margin: auto;
+     overflow-y: auto;
+     -webkit-overflow-scrolling: touch;
+     border-radius: 1.5rem;
+     background: #0b0717;
+     border: 1px solid rgba(168, 85, 247, 0.2);
+     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+     position: relative;
+   }
+
+   /* Focus trap area within modal */
+   .modal-card *:focus-visible {
+     outline: 2px solid rgba(168, 85, 247, 0.9);
+     outline-offset: 2px;
+   }
+
+   /* Close button absolute positioning */
+   .modal-close-btn {
+     position: absolute;
+     top: 0.75rem;
+     right: 0.75rem;
+     z-index: 10;
+     width: 1.5rem;
+     height: 1.5rem;
+     border-radius: 9999px;
+     background: rgba(255, 255, 255, 0.1);
+     border: 1px solid rgba(255, 255, 255, 0.2);
+     color: #fff;
+     font-size: 1.25rem;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     cursor: pointer;
+     transition: all 0.2s ease;
+   }
+
+   .modal-close-btn:hover {
+     background: rgba(255, 255, 255, 0.2);
+     transform: rotate(90deg);
+   }
+
+   /* Prevent page scroll when modal is open */
+   body.modal-open {
+     overflow: hidden;
+   }
+
+   /* Step 2 Grid - 2-column balanced layout */
+   .step-2-grid {
+     display: grid;
+     grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+     gap: 1.5rem;
+     align-items: start;
+   }
+
+   /* Left Column: Calendar (7/12 width on desktop) */
+   .step-2-calendar {
+     grid-column: span 7;
+   }
+
+   /* Right Column removed — calendar is now centered single-column */
+  z-index: 0;
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
 }
+
+/* Ensure all animated benefit cards have explicit transition disallow on demand */
+.benefit-card,
+.gallery-card,
+.executive-lightbox,
+.brand-lightbox,
+.admin-lightbox {
+  /* Store original transition for potential revert */
+  transition-property: none;
+}
+
+/* Layout containment for section isolation */
+.section-rhythm,
+.section-rhythm-lg,
+#hero,
+#biblioteca,
+#proceso,
+#cobertura,
+footer {
+  contain: style layout;
+  /* Isolates section styles from canvas resize thrashing */
+}
+
+/* Fix: Prevent horizontal overflow from canvas elements */
+html, body, main, #hero, #biblioteca, #proceso, #cobertura, footer {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Focus-visible accessibility preserved during stability patches */
+:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.9);
+  outline-offset: 3px;
+}
+
+/* ============================================================
+   END STABILITY & PERFORMANCE PATCHES
+   ============================================================ */
+
+/* Original CSS continues below... */
 
 html, body, main {
   width: 100%;
@@ -100,9 +221,10 @@ body {
   box-shadow: 0 0 25px rgba(168, 85, 247, 0.25);
 }
 
-/* Input Fields Glass Styling */
+/* Obsidian Glass Card Container - Dark form fields with high contrast */
+/* Supported on physical person or company/business name (3–70 chars) */
 .glass-input {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
   backdrop-filter: blur(8px);
@@ -121,11 +243,42 @@ body {
   background: rgba(30, 24, 51, 0.95);
 }
 
+/* Strict Costa Rica Phone Regex validation input style */
+.cr-phone-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-phone-input:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2);
+  background: rgba(30, 24, 51, 0.95);
+}
+
+/* Honeypot bot trap input - invisible but present */
+#website_hp {
+  position: absolute;
+  left: -9999px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap; /* added via jQuery */;
+}
+
 /* iOS: 16px base font prevents auto-zoom on field focus */
 input,
 select,
 textarea {
   font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Prevent iOS text resize on orientation change */
@@ -272,6 +425,56 @@ html {
   overscroll-behavior: contain;
 }
 
+/* Modal Wrapper Viewport Constraints */
+#booking-modal {
+  inset: 0;
+  z-index: 50;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Modal Card Container */
+.modal-card {
+  width: 100%;
+  max-width: 56rem;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.5rem;
+  background: #0b0717;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Instant Modal Launch Classes (< 16ms activation) */
+/* Pre-mounted modals toggle visibility via GPU-accelerated CSS classes */
+.modal-instant-show {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transition: opacity 150ms ease-out !important;
+}
+
+.modal-instant-hide {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 150ms ease-out !important;
+}
+
+/* Pre-mounted modal base - initially hidden but present in DOM */
+.modal-premounted {
+  will-change: opacity, pointer-events;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Modal Bottom-Sheet and Full Viewport Ergonomics on Mobile */
 /* Fluid bottom-sheet (≤640px) → centered dialog (≥640px), con soporte dvh iOS Safari */
 .modal-sheet-panel {
@@ -308,7 +511,6 @@ button,
 input[type="button"],
 input[type="submit"],
 .keypad-btn,
-.ark-time-chip,
 .cal-nav-btn,
 .filter-btn,
 .gallery-filter-btn,
@@ -666,9 +868,57 @@ html {
 #esencia,
 #formatos,
 #proceso,
-#cobertura {
+#cobertura,
+#hero,
+#biblioteca,
+footer {
   background-color: var(--bg-dark);
-  background-image: radial-gradient(1100px 460px at 50% -140px, rgba(99, 102, 241, 0.07) 0%, rgba(168, 85, 247, 0.04) 45%, rgba(11, 9, 20, 0) 75%);
+  background-image: var(--section-gap);
+  width: 100%;
+  position: relative;
+}
+
+/* Hero background override - full bleed with gradient */
+#hero {
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, rgba(11, 9, 20, 1) 80%);
+}
+
+/* Footer background override */
+footer {
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.03) 40%, rgba(11, 9, 20, 1) 80%);
+}
+
+/* Inner content wrapper - never wider than max-w-7xl, always centered */
+section > .max-w-7xl,
+footer > .max-w-7xl {
+  margin: 0 auto;
+  max-width: 80rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  section > .max-w-7xl,
+  footer > .max-w-7xl {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  section > .max-w-7xl,
+  footer > .max-w-7xl {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  section > .max-w-7xl,
+  footer > .max-w-7xl {
+    padding-left: 3rem;
+    padding-right: 3rem;
+  }
 }
 
 /* ---- Canvas & Background Dynamic Rescaling Strategy (No Corner Artifact) ---- */
@@ -915,47 +1165,6 @@ html {
 .legend-past {
   background: rgba(148, 163, 184, 0.25);
   border: 1px solid rgba(148, 163, 184, 0.5);
-}
-
-/* ---- Franjas horarias (chips interactivos) ---- */
-
-.ark-time-group {
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.ark-time-chip {
-  padding: 10px 16px;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #e5e7eb;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: all 0.2s ease;
-  min-height: 44px;
-  min-width: 72px;
-  cursor: pointer;
-}
-
-.ark-time-chip:hover:not(:disabled) {
-  border-color: rgba(168, 85, 247, 0.55);
-  background: rgba(168, 85, 247, 0.12);
-  transform: translateY(-1px);
-}
-
-.ark-time-chip--selected {
-  border-color: rgba(168, 85, 247, 0.9);
-  background: rgba(168, 85, 247, 0.25);
-  box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);
-  color: #fff;
-}
-
-.ark-time-chip--past {
-  opacity: 0.3;
-  cursor: not-allowed;
 }
 
 /* ============================================================
@@ -1392,7 +1601,6 @@ html {
 .executive-lightbox,
 .brand-lightbox,
 .ark-cal-day,
-.ark-time-chip,
 .toast-item {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
@@ -1455,5 +1663,214 @@ html {
   padding-bottom: clamp(4rem, 8vw + 1rem, 8rem);
 }
 
+/* ---- Bento Grid for #biblioteca Multimedia Showcase ---- */
+/* Elegant Bento grid of live performance cards for @kikeramirezcr */
+.bento-grid {
+  display: grid;
+  gap: 1.5rem;
+}
 
+@media (min-width: 640px) {
+  .bento-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 
+@media (min-width: 768px) {
+  .bento-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .bento-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.bento-card {
+  border-radius: 1rem;
+  overflow: hidden;
+  background: rgba(13, 8, 24, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  transition: box-shadow 0.3s ease;
+}
+
+.bento-card:hover {
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.2);
+}
+
+.bento-card.featured {
+  border-color: rgba(236, 72, 153, 0.35);
+  box-shadow: 0 0 25px rgba(236, 72, 153, 0.15);
+}
+
+.bento-card.featured:hover {
+  border-color: rgba(236, 72, 153, 0.7);
+  box-shadow: 0 0 35px rgba(236, 72, 153, 0.35);
+}
+
+/* Instagram gradient badge on bento cards */
+.bento-card .instagram-badge {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  box-shadow: 0 4px 20px rgba(220, 39, 67, 0.35);
+}
+
+/* ---- Sede & Contact Hub (#cobertura) 2-Column Layout ---- */
+#cobertura .grid-cols-1 {
+  @media (min-width: 1024px) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.cobertura-left {
+  @media (min-width: 1024px) {
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+  }
+}
+
+.cobertura-right {
+  @media (min-width: 1024px) {
+    padding-left: 2rem;
+  }
+}
+
+/* ---- Zero Regression: Full-Bleed Section Padding Utilities ---- */
+/* Ensures no margin clipping at any zoom level */
+.section-padded {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .section-padded {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .section-padded {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .section-padded {
+    padding-left: 3rem;
+    padding-right: 3rem;
+  }
+}
+
+/* ---- Presentational Helpers ---- */
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* --- Arkik Refactoring Custom Utilities --- */
+
+.format-card-active {
+  border-color: #a855f7 !important;
+  background-color: rgba(59, 7, 100, 0.4) !important;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.35) !important;
+}
+
+.format-card-active .neon-ring {
+  animation: pulse-ring-subtle 2s infinite;
+}
+
+@keyframes pulse-ring-subtle {
+  0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(168, 85, 247, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+}
+
+.tactile-btn {
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+.tactile-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+.tactile-btn:disabled, .tactile-btn.disabled-state {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+.sticky-price-pill {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(11, 9, 20, 0.95);
+  border-top: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+  padding: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.price-pulse {
+  animation: pricePulse 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pricePulse {
+  0% { transform: scale(1); text-shadow: 0 0 0 rgba(168, 85, 247, 0); color: inherit; }
+  50% { transform: scale(1.08); text-shadow: 0 0 15px rgba(168, 85, 247, 0.8); color: #c084fc; }
+  100% { transform: scale(1); text-shadow: 0 0 0 rgba(168, 85, 247, 0); color: inherit; }
+}
+
+.micro-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 4px currentColor;
+}
+.dot-green { background-color: #10b981; color: #10b981; }
+.dot-yellow { background-color: #f59e0b; color: #f59e0b; }
+.dot-red { background-color: #ef4444; color: #ef4444; }
+
+.logistics-conflict-badge {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}

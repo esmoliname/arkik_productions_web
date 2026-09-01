@@ -20,6 +20,18 @@ function sanitizeInput(str) {
 
 const sanitizeHTML = sanitizeInput; // alias para compatibilidad interna
 
+/**
+ * Sanitiza URLs para prevenir ataques javascript: y XSS en atributos href/src.
+ */
+function sanitizeUrl(url) {
+  if (!url || typeof url !== "string") return "#";
+  const trimmed = url.trim();
+  if (/^(https?:\/\/|\/|\.\/|img\/)/i.test(trimmed)) {
+    return trimmed.replace(/"/g, "%22").replace(/'/g, "%27").replace(/</g, "%3C").replace(/>/g, "%3E");
+  }
+  return "#";
+}
+
 // Hash FNV-1a de respaldo (en caso de que crypto.subtle no esté disponible)
 function fnv1aHex(text) {
   let h = 0x811c9dc5;
@@ -150,15 +162,227 @@ function setPriceText(el, text) {
 }
 
 // ============================================================
-// 2. PRICE MANAGER (Precios dinámicos modificables en vivo por rol IT)
+// 2. STORAGE ENGINE (Motor Centralizado de Persistencia, Hidratación & CRUD)
+// ============================================================
+
+const StorageEngine = {
+  _gallery: null,
+  _config: null,
+
+  init() {
+    try { PriceManager.load(); } catch (e) { console.warn('PriceManager.load failed:', e); }
+    try { AvailabilityManager.load(); } catch (e) { console.warn('AvailabilityManager.load failed:', e); }
+    try { BookingStore.load(); } catch (e) { console.warn('BookingStore.load failed:', e); }
+    try { this.loadGallery(); } catch (e) { console.warn('StorageEngine.loadGallery failed:', e); }
+    try { this.loadConfig(); } catch (e) { console.warn('StorageEngine.loadConfig failed:', e); }
+  },
+
+  loadGallery() {
+    const stored = safeParse(STORAGE_KEYS.gallery, null);
+    if (Array.isArray(stored) && stored.length > 0) {
+      this._gallery = stored;
+    } else {
+      this._gallery = JSON.parse(JSON.stringify(mediaLibrary));
+      this.persistGallery();
+    }
+  },
+
+  persistGallery() {
+    safeSet(STORAGE_KEYS.gallery, this._gallery);
+  },
+
+  getGalleryItems() {
+    if (!this._gallery) this.loadGallery();
+    return this._gallery;
+  },
+
+  setGalleryItems(items) {
+    this._gallery = Array.isArray(items) ? items : [];
+    this.persistGallery();
+    this.onDataChange("gallery");
+  },
+
+  addGalleryItem(item) {
+    const newItem = {
+      id: "media-" + Date.now().toString(36),
+      title: sanitizeInput(cleanText(item.title, 100)),
+      category: item.category || "instagram",
+      type: item.type || "instagram",
+      embedUrl: sanitizeUrl(item.embedUrl || ""),
+      directUrl: sanitizeUrl(item.directUrl || "https://www.instagram.com/kikeramirezcr"),
+      url: sanitizeUrl(item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr"),
+      thumbnail: sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg"),
+      caption: sanitizeInput(cleanText(item.caption || "", 300)),
+      subtitle: sanitizeInput(cleanText(item.caption || item.subtitle || "", 300)),
+      date: sanitizeInput(cleanText(item.date || "2026", 30)),
+      featured: Boolean(item.featured)
+    };
+    if (!this._gallery) this.loadGallery();
+    this._gallery.unshift(newItem);
+    this.persistGallery();
+    this.onDataChange("gallery");
+    return newItem;
+  },
+
+  updateGalleryItem(id, item) {
+    if (!this._gallery) this.loadGallery();
+    const index = this._gallery.findIndex(m => String(m.id) === String(id));
+    if (index === -1) return false;
+    this._gallery[index] = {
+      ...this._gallery[index],
+      title: item.title !== undefined ? sanitizeInput(cleanText(item.title, 100)) : this._gallery[index].title,
+      category: item.category || this._gallery[index].category,
+      type: item.type || this._gallery[index].type,
+      embedUrl: sanitizeUrl(item.embedUrl !== undefined ? item.embedUrl : this._gallery[index].embedUrl),
+      directUrl: sanitizeUrl(item.directUrl || this._gallery[index].directUrl),
+      url: sanitizeUrl(item.directUrl || item.url || this._gallery[index].directUrl),
+      thumbnail: sanitizeUrl(item.thumbnail || this._gallery[index].thumbnail),
+      caption: item.caption !== undefined ? sanitizeInput(cleanText(item.caption, 300)) : this._gallery[index].caption,
+      subtitle: item.caption !== undefined ? sanitizeInput(cleanText(item.caption, 300)) : this._gallery[index].subtitle,
+      date: item.date !== undefined ? sanitizeInput(cleanText(item.date, 30)) : this._gallery[index].date,
+      featured: item.featured !== undefined ? Boolean(item.featured) : this._gallery[index].featured
+    };
+    this.persistGallery();
+    this.onDataChange("gallery");
+    return true;
+  },
+
+  deleteGalleryItem(id) {
+    if (!this._gallery) this.loadGallery();
+    this._gallery = this._gallery.filter(m => String(m.id) !== String(id));
+    this.persistGallery();
+    this.onDataChange("gallery");
+  },
+
+  toggleFeaturedGalleryItem(id) {
+    if (!this._gallery) this.loadGallery();
+    const item = this._gallery.find(m => String(m.id) === String(id));
+    if (item) {
+      item.featured = !item.featured;
+      this.persistGallery();
+      this.onDataChange("gallery");
+    }
+  },
+
+  resetGalleryItems() {
+    this._gallery = JSON.parse(JSON.stringify(mediaLibrary));
+    this.persistGallery();
+    this.onDataChange("gallery");
+  },
+
+  // Configuration management (extra multiplier, travel surcharge, custom rates)
+  loadConfig() {
+    this._config = safeParse(STORAGE_KEYS.customConfig, {
+      extraHourMultiplier: 0.50,
+      travelSurchargeRate: NON_GAM_SURCHARGE_RATE,
+      subwoofersUnitPrice: DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice,
+      djUnitPrice: DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice
+    });
+  },
+
+  persistConfig() {
+    safeSet(STORAGE_KEYS.customConfig, this._config);
+  },
+
+  getConfig(key, fallback) {
+    if (!this._config) this.loadConfig();
+    return this._config && this._config[key] !== undefined ? this._config[key] : fallback;
+  },
+
+  setConfig(key, value) {
+    if (!this._config) this.loadConfig();
+    this._config[key] = value;
+    this.persistConfig();
+    this.onDataChange("config");
+  },
+
+  // Storage Telemetry
+  getStorageStats() {
+    let totalBytes = 0;
+    const breakdown = {};
+    Object.keys(STORAGE_KEYS).forEach(k => {
+      const key = STORAGE_KEYS[k];
+      const val = localStorage.getItem(key) || "";
+      const bytes = new Blob([val]).size;
+      breakdown[k] = { key, bytes, kb: (bytes / 1024).toFixed(2) };
+      totalBytes += bytes;
+    });
+    return {
+      totalBytes,
+      totalKb: (totalBytes / 1024).toFixed(2),
+      breakdown
+    };
+  },
+
+  // Full Database Backup & Restore
+  exportFullDatabase() {
+    return {
+      app: "arkik-productions",
+      version: "3.2.0",
+      exportedAt: new Date().toISOString(),
+      bookings: BookingStore.all(),
+      availability: AvailabilityManager.all(),
+      prices: PriceManager.exportData(),
+      customConfig: this._config || {},
+      gallery: this.getGalleryItems(),
+      audit: typeof AuditLog !== "undefined" ? AuditLog.load() : {}
+    };
+  },
+
+  importFullDatabase(payload) {
+    validateBackupPayload(payload);
+    if (payload.bookings !== undefined && Array.isArray(payload.bookings)) {
+      BookingStore.replace(payload.bookings);
+    }
+    if (payload.availability !== undefined && typeof payload.availability === "object") {
+      AvailabilityManager.replace(payload.availability);
+    }
+    if (payload.prices !== undefined && typeof payload.prices === "object") {
+      PriceManager.replace(payload.prices);
+    }
+    if (payload.gallery !== undefined && Array.isArray(payload.gallery)) {
+      this.setGalleryItems(payload.gallery);
+    }
+    if (payload.customConfig !== undefined && typeof payload.customConfig === "object") {
+      this._config = { ...this._config, ...payload.customConfig };
+      this.persistConfig();
+    }
+    this.onDataChange("all");
+  },
+
+  // Reactive DOM dispatch
+  onDataChange(source) {
+    if (source === "gallery" || source === "all") {
+      if (typeof renderGalleryFilters === "function") renderGalleryFilters(typeof currentGalleryFilter !== "undefined" ? currentGalleryFilter : "todos");
+      if (typeof renderMediaGallery === "function") renderMediaGallery(this.getGalleryItems(), typeof currentGalleryFilter !== "undefined" ? currentGalleryFilter : "todos");
+    }
+    if (source === "prices" || source === "config" || source === "all") {
+      if (typeof renderCatalog === "function") renderCatalog(CATALOG_SERVICES, typeof currentCatalogCategory !== "undefined" ? currentCatalogCategory : "Todos");
+      if (typeof updateSummaryPrices === "function") updateSummaryPrices();
+    }
+    if (source === "availability" || source === "all") {
+      if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+        CalendarModule.render();
+      }
+    }
+  }
+};
+
+// ============================================================
+// 2.5 PRICE MANAGER (Precios dinámicos modificables en vivo por rol IT)
 // ============================================================
 
 const PriceManager = {
   _data: null,
 
   load() {
-    this._data = safeParse(STORAGE_KEYS.prices, { services: {}, extras: {} });
-    if (!this._data || typeof this._data !== "object") this._data = { services: {}, extras: {} };
+    try {
+      this._data = safeParse(STORAGE_KEYS.prices, { services: {}, extras: {} });
+      if (!this._data || typeof this._data !== "object") this._data = { services: {}, extras: {} };
+    } catch (e) {
+      console.warn('PriceManager.load corruption recovered:', e.message || e);
+      this._data = { services: {}, extras: {} };
+    }
   },
 
   persist() {
@@ -167,11 +391,13 @@ const PriceManager = {
 
   getServicePrice(service) {
     if (!service) return 0;
+    if (!this._data) this.load();
     const p = Number(this._data.services[service.id]);
     return Number.isFinite(p) && p > 0 ? p : service.price_crc;
   },
 
   getExtraPrice(key) {
+    if (!this._data) this.load();
     const p = Number(this._data.extras[key]);
     if (Number.isFinite(p) && p > 0) return p;
     const cfg = DYNAMIC_EXTRAS_CONFIG[key];
@@ -179,11 +405,13 @@ const PriceManager = {
   },
 
   setServicePrice(id, price) {
+    if (!this._data) this.load();
     this._data.services[id] = Math.max(0, Math.round(Number(price) || 0));
     this.persist();
   },
 
   setExtraPrice(key, price) {
+    if (!this._data) this.load();
     const val = Math.max(0, Math.round(Number(price) || 0));
     if (val > 0) this._data.extras[key] = val;
     else delete this._data.extras[key];
@@ -211,6 +439,7 @@ const PriceManager = {
   },
 
   exportData() {
+    if (!this._data) this.load();
     return JSON.parse(JSON.stringify(this._data));
   }
 };
@@ -223,8 +452,13 @@ const AvailabilityManager = {
   _data: null,
 
   load() {
-    this._data = safeParse(STORAGE_KEYS.availability, {});
-    if (!this._data || typeof this._data !== "object") this._data = {};
+    try {
+      this._data = safeParse(STORAGE_KEYS.availability, {});
+      if (!this._data || typeof this._data !== "object") this._data = {};
+    } catch (e) {
+      console.warn('AvailabilityManager.load corruption recovered:', e.message || e);
+      this._data = {};
+    }
   },
 
   persist() {
@@ -232,16 +466,22 @@ const AvailabilityManager = {
   },
 
   get(iso) {
+    if (!this._data) this.load();
     return this._data[iso] || null;
   },
 
   set(iso, status) {
+    if (!this._data) this.load();
     if (status === "available") delete this._data[iso];
     else this._data[iso] = status;
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("availability");
+    }
   },
 
   all() {
+    if (!this._data) this.load();
     return JSON.parse(JSON.stringify(this._data));
   },
 
@@ -266,8 +506,13 @@ const BookingStore = {
   _data: null,
 
   load() {
-    const raw = safeParse(STORAGE_KEYS.bookings, []);
-    this._data = Array.isArray(raw) ? raw : [];
+    try {
+      const raw = safeParse(STORAGE_KEYS.bookings, []);
+      this._data = Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      console.warn('BookingStore.load corruption recovered:', e.message || e);
+      this._data = [];
+    }
   },
 
   persist() {
@@ -316,7 +561,12 @@ const SecurityModule = {
   _data: null,
 
   load() {
-    this._data = safeParse(STORAGE_KEYS.admin, { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0 });
+    try {
+      this._data = safeParse(STORAGE_KEYS.admin, { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0 });
+    } catch (e) {
+      console.warn('SecurityModule.load corruption recovered:', e.message || e);
+      this._data = { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0 };
+    }
   },
 
   persist() {
@@ -370,7 +620,6 @@ class CartState {
     this.clientEmail = "";
     this.eventType = "Boda";
     this.selectedDate = "";
-    this.selectedTime = "";
     this.address = "";
     this.sinpeRef = "";
     this.createdBooking = null;
@@ -381,11 +630,17 @@ class CartState {
 
   // ---- Motor de Precios ----
 
+  get extraHourMultiplier() {
+    return (typeof StorageEngine !== "undefined" && StorageEngine.getConfig)
+      ? StorageEngine.getConfig("extraHourMultiplier", 0.50)
+      : 0.50;
+  }
+
   get extraHoursUnitPrice() {
     if (!this.selectedService) return 0;
     const override = PriceManager.getExtraPrice("extra_hours");
     if (override > 0) return override;
-    return Math.round(PriceManager.getServicePrice(this.selectedService) * 0.50);
+    return Math.round(PriceManager.getServicePrice(this.selectedService) * this.extraHourMultiplier);
   }
 
   get extraHoursTotal() {
@@ -416,8 +671,14 @@ class CartState {
     return Boolean(this.province && this.canton);
   }
 
+  get travelSurchargeRate() {
+    return (typeof StorageEngine !== "undefined" && StorageEngine.getConfig)
+      ? StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE)
+      : NON_GAM_SURCHARGE_RATE;
+  }
+
   get travelSurcharge() {
-    return this.isNonGam ? Math.round(this.subtotal * NON_GAM_SURCHARGE_RATE) : 0;
+    return this.isNonGam ? Math.round(this.subtotal * this.travelSurchargeRate) : 0;
   }
 
   get granTotal() {
@@ -447,7 +708,6 @@ class CartState {
       clientEmail: this.clientEmail,
       eventType: this.eventType,
       selectedDate: this.selectedDate,
-      selectedTime: this.selectedTime,
       address: this.address,
       sinpeRef: this.sinpeRef
     };
@@ -485,8 +745,6 @@ class CartState {
 
       const savedDate = cleanText(data.selectedDate || data.eventDate, 10);
       if (parseISO(savedDate)) this.selectedDate = savedDate;
-      const savedTime = cleanText(data.selectedTime || data.eventTime, 5);
-      if (/^([01]\d|2[0-3]):[0-5]\d$/.test(savedTime)) this.selectedTime = savedTime;
     } catch (err) {
       // payload corrupto
     }
@@ -508,7 +766,6 @@ class CartState {
 const CalendarModule = {
   viewDate: null,
   selectedDate: "",
-  selectedTime: "",
 
   init() {
     if (!cart.selectedDate) {
@@ -518,14 +775,12 @@ const CalendarModule = {
       this.viewDate = startOfMonth(d || new Date());
       this.selectedDate = cart.selectedDate;
     }
-    this.selectedTime = cart.selectedTime || "";
     this.render();
   },
 
   reset() {
     this.viewDate = null;
     this.selectedDate = "";
-    this.selectedTime = "";
   },
 
   // Calcula límites de fecha según reglas operativas
@@ -545,12 +800,14 @@ const CalendarModule = {
   render() {
     const grid = document.getElementById("calendar-grid");
     const label = document.getElementById("cal-month-label");
+    const yearLabel = document.getElementById("cal-year-label");
     if (!grid) return;
 
     this.viewDate = this.viewDate || startOfMonth(new Date());
     const y = this.viewDate.getFullYear();
     const m = this.viewDate.getMonth();
     if (label) label.textContent = `${CALENDAR_LOCALE.months[m]} ${y}`;
+    if (yearLabel) yearLabel.textContent = y;
 
     const { nowISO, minISO, maxISO } = this.getThresholds();
     const daysInMonth = new Date(y, m + 1, 0).getDate();
@@ -582,7 +839,6 @@ const CalendarModule = {
     }
 
     grid.innerHTML = cells;
-    this.renderTimeSlots();
     this.renderSummary();
   },
 
@@ -619,131 +875,27 @@ const CalendarModule = {
 
   selectDate(iso) {
     this.selectedDate = iso;
-    this.selectedTime = "";
     cart.selectedDate = iso;
-    cart.selectedTime = "";
     cart.persist();
     this.render();
 
+    // Habilitar "Continuar a Ubicación & Datos" una vez que hay fecha válida
+    const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
+    if (continueBtn) {
+      continueBtn.disabled = false;
+      continueBtn.classList.remove("opacity-40", "pointer-events-none");
+    }
+
     const existing = BookingStore.getBookingsForDate(iso);
     if (existing.length === 1) {
-      showToast("Fecha con 1 cupo restante. Seleccione turno compatible.", "info");
+      showToast("Fecha con 1 cupo restante. Confirme la reserva del día.", "info");
     } else {
-      showToast("Fecha seleccionada. Elija el turno y hora de inicio.", "success");
+      showToast("Fecha seleccionada. Confirme la reserva del día.", "success");
     }
-  },
-
-  selectTime(time) {
-    this.selectedTime = time;
-    cart.selectedTime = time;
-    cart.persist();
-    this.renderTimeSlots();
-    this.renderSummary();
-    showToast(`Hora seleccionada: ${time}`, "success");
-  },
-
-  // Valida conflicto de intervalo de 5-6 horas respecto a otro evento agendado el mismo día
-  checkTimeConflict(proposedTime) {
-    if (!this.selectedDate) return { hasConflict: false };
-    const existing = BookingStore.getBookingsForDate(this.selectedDate);
-    if (!existing || existing.length === 0) return { hasConflict: false };
-
-    const [propH, propM] = proposedTime.split(":").map(Number);
-    const propMins = (propH < 6 ? propH + 24 : propH) * 60 + propM; // soporte trasnoche (00:00 - 02:00)
-
-    for (const b of existing) {
-      if (!b.selectedTime) continue;
-      const [exH, exM] = b.selectedTime.split(":").map(Number);
-      const exMins = (exH < 6 ? exH + 24 : exH) * 60 + exM;
-
-      // Evento dura 2 horas base + setup/teardown + margen de 5 horas
-      // Intervalo mínimo entre inicio de un show e inicio del siguiente es aprox. 5 a 6 horas
-      const diffHours = Math.abs(propMins - exMins) / 60;
-      if (diffHours < LOGISTICS_CONFIG.minIntervalHours) {
-        return {
-          hasConflict: true,
-          conflictingBooking: b,
-          diffHours: diffHours.toFixed(1),
-          requiredHours: LOGISTICS_CONFIG.minIntervalHours
-        };
-      }
-    }
-    return { hasConflict: false };
-  },
-
-  renderTimeSlots() {
-    const box = document.getElementById("time-slots");
-    const conflictBox = document.getElementById("cal-conflict-notice");
-    if (!box) return;
-
-    if (!this.selectedDate) {
-      if (conflictBox) conflictBox.classList.add("hidden");
-      box.innerHTML = `
-        <div class="p-6 rounded-2xl bg-white/5 border border-white/10 text-center">
-          <p class="text-xs text-gray-400">
-            🗓️ Seleccione un día disponible en el calendario para ver los turnos y horas.
-          </p>
-        </div>`;
-      return;
-    }
-
-    const existing = BookingStore.getBookingsForDate(this.selectedDate);
-    if (existing.length === 1 && conflictBox) {
-      const ex = existing[0];
-      conflictBox.className = "p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 block";
-      conflictBox.innerHTML = `
-        <div class="flex items-start gap-2.5">
-          <span class="text-base shrink-0">⚠️</span>
-          <div>
-            <strong class="text-white">Día con 1 evento ya programado (${ex.selectedTime}):</strong>
-            <p class="text-[11px] text-amber-300 mt-0.5">
-              Por norma operativa de traslado y prueba de sonido, se requiere un margen mínimo de 5 a 6 horas entre eventos. Las horas con conflicto logístico aparecen deshabilitadas.
-            </p>
-          </div>
-        </div>`;
-    } else if (conflictBox) {
-      conflictBox.classList.add("hidden");
-    }
-
-    const isToday = this.selectedDate === isoOf(new Date());
-    const nowMins = isToday ? (new Date().getHours() * 60 + new Date().getMinutes()) : -1;
-
-    box.innerHTML = Object.values(TIME_SLOTS).map(group => {
-      return `
-      <div class="ark-time-group p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
-            <span class="text-base">${group.icon}</span>
-            <span class="text-xs font-bold text-purple-300 uppercase tracking-wider">${group.label}</span>
-          </div>
-          <span class="text-[10px] font-semibold text-gray-400 px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/30">${group.range}</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          ${group.times.map(t => {
-            const [hh, mm] = t.split(":").map(Number);
-            const expired = isToday && (hh * 60 + mm) <= nowMins;
-            const conflictCheck = this.checkTimeConflict(t);
-            const isConflicted = conflictCheck.hasConflict;
-            const sel = t === this.selectedTime;
-
-            const disabled = expired || isConflicted;
-            const disabledCls = expired ? "ark-time-chip--past" : (isConflicted ? "opacity-30 cursor-not-allowed border-amber-500/30" : "");
-            const selectedCls = sel ? "ark-time-chip--selected" : "";
-            const title = isConflicted
-              ? `Conflicto: se requiere margen de 5-6h con el evento de las ${conflictCheck.conflictingBooking.selectedTime}`
-              : (expired ? "Hora pasada" : `Seleccionar ${t}`);
-
-            return `<button type="button" data-time="${t}" ${disabled ? "disabled" : ""}
-              title="${title}"
-              class="ark-time-chip ${disabledCls} ${selectedCls}">${t}${isConflicted ? " ⚠️" : ""}</button>`;
-          }).join("")}
-        </div>
-      </div>`;
-    }).join("");
   },
 
   renderSummary() {
-    const el = document.getElementById("date-summary");
+    const el = document.getElementById("selected-date-display") || document.getElementById("date-summary");
     if (!el) return;
     if (!this.selectedDate) {
       el.textContent = "Ninguna fecha seleccionada";
@@ -752,8 +904,7 @@ const CalendarModule = {
     const [y, m, d] = this.selectedDate.split("-").map(Number);
     const name = CALENDAR_LOCALE.months[m - 1];
     const week = CALENDAR_LOCALE.weekdays[(new Date(y, m - 1, d).getDay() + 6) % 7];
-    const t = this.selectedTime ? ` · Hora: ${this.selectedTime}` : " · (seleccione hora)";
-    el.textContent = `${week} ${d} de ${name} ${y}${t}`;
+    el.textContent = `${week} ${d} de ${name} ${y}`;
   }
 };
 
@@ -869,10 +1020,8 @@ const AdminModule = {
     this.resetLockoutState();
     this.setRole("owner");
     this.clearAuthError();
-    this.renderCryptoBadge();
-    modal.classList.remove("hidden");
-    modal.classList.add("flex");
-    document.body.style.overflow = "hidden";
+    // Instant modal launch via deterministic ModalController
+    ModalController.open("adminLoginModal");
     const pin = document.getElementById("admin-pin");
     if (pin) {
       pin.value = "";
@@ -884,9 +1033,10 @@ const AdminModule = {
   close() {
     const modal = document.getElementById("adminLoginModal");
     if (!modal) return;
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-    document.body.style.overflow = "";
+    const pin = document.getElementById("admin-pin");
+    if (pin) pin.value = "";
+    // Instant modal hide via deterministic ModalController
+    ModalController.close("adminLoginModal");
     this.resetLockoutState();
     clearRouteHashIfNeeded();
     trackModal(false);
@@ -896,13 +1046,10 @@ const AdminModule = {
     const loginModal = document.getElementById("adminLoginModal");
     const portal = document.getElementById("adminPortalModal");
     if (loginModal) {
-      loginModal.classList.add("hidden");
-      loginModal.classList.remove("flex");
+      ModalController.close("adminLoginModal");
     }
     if (!portal) return;
-    portal.classList.remove("hidden");
-    portal.classList.add("flex");
-    document.body.style.overflow = "hidden";
+    ModalController.open("adminPortalModal");
     const sid = document.getElementById("admin-session-id");
     if (sid) sid.textContent = ADMIN_SESSION.token ? ADMIN_SESSION.token.replace("ARK-", "") : "—";
     this.startInactivityTimer();
@@ -912,32 +1059,40 @@ const AdminModule = {
   closePortal() {
     const portal = document.getElementById("adminPortalModal");
     if (portal) {
-      portal.classList.add("hidden");
-      portal.classList.remove("flex");
+      ModalController.close("adminPortalModal");
     }
-    document.body.style.overflow = "";
     this.terminateSession();
     clearRouteHashIfNeeded();
     trackModal(false);
   },
 
-  // ---- Seguridad de Autenticación ----
-
-  renderCryptoBadge() {
-    const badge = document.getElementById("admin-crypto-badge");
-    if (!badge) return;
-    const ok = Boolean(window.crypto && window.crypto.subtle);
-    badge.textContent = ok ? "🔐 WebCrypto SHA-256 Activo" : "⚠️ Hash de Respaldo FNV-1a";
-    badge.className = `sha-badge ${ok ? "sha-badge--active" : "sha-badge--fallback"} inline-flex items-center gap-1.5 mt-4`;
-  },
+  // ---- Seguridad de Autenticación & Segmented Control ----
 
   setRole(roleId) {
     this.role = roleId;
     const ownerBtn = document.getElementById("admin-role-owner");
     const itBtn = document.getElementById("admin-role-it");
-    if (ownerBtn) ownerBtn.classList.toggle("admin-role-btn--active", roleId === "owner");
-    if (itBtn) itBtn.classList.toggle("admin-role-btn--active", roleId === "it");
+    if (ownerBtn) {
+      const active = roleId === "owner";
+      ownerBtn.classList.toggle("role-btn--active", active);
+      ownerBtn.classList.toggle("text-white", active);
+      ownerBtn.classList.toggle("font-semibold", active);
+      ownerBtn.classList.toggle("text-gray-400", !active);
+      ownerBtn.classList.toggle("font-medium", !active);
+    }
+    if (itBtn) {
+      const active = roleId === "it";
+      itBtn.classList.toggle("role-btn--active", active);
+      itBtn.classList.toggle("text-white", active);
+      itBtn.classList.toggle("font-semibold", active);
+      itBtn.classList.toggle("text-gray-400", !active);
+      itBtn.classList.toggle("font-medium", !active);
+    }
     this.clearAuthError();
+    const pin = document.getElementById("admin-pin");
+    if (pin && !pin.disabled) {
+      pin.focus();
+    }
   },
 
   resetLockoutState() {
@@ -954,9 +1109,12 @@ const AdminModule = {
   enablePinUI(enabled) {
     const pin = document.getElementById("admin-pin");
     if (pin) pin.disabled = !enabled;
-    document.querySelectorAll("#admin-keypad button").forEach(b => { b.disabled = !enabled; });
     const submit = document.getElementById("admin-login-submit");
-    if (submit) submit.disabled = !enabled;
+    if (submit) {
+      submit.disabled = !enabled;
+      submit.classList.toggle("opacity-50", !enabled);
+      submit.classList.toggle("cursor-not-allowed", !enabled);
+    }
   },
 
   clearAuthError() {
@@ -975,21 +1133,6 @@ const AdminModule = {
     }
   },
 
-  appendKeypadDigit(digit) {
-    const pin = document.getElementById("admin-pin");
-    if (!pin || pin.disabled) return;
-    if (pin.value.length >= 8) return;
-    pin.value += digit;
-    this.clearAuthError();
-  },
-
-  keypadBackspace() {
-    const pin = document.getElementById("admin-pin");
-    if (!pin || pin.disabled) return;
-    pin.value = pin.value.slice(0, -1);
-    this.clearAuthError();
-  },
-
   async attemptLogin() {
     const pin = document.getElementById("admin-pin");
     const value = pin ? pin.value.trim() : "";
@@ -999,6 +1142,7 @@ const AdminModule = {
     }
     if (!value) {
       this.showAuthError("Ingrese su PIN de acceso.");
+      if (pin) pin.focus();
       return;
     }
 
@@ -1018,20 +1162,24 @@ const AdminModule = {
       return;
     }
     this.showAuthError(result.remaining > 0
-      ? `PIN incorrecto. Intentos restantes antes del bloqueo: ${result.remaining}.`
+      ? `PIN incorrecto. Intentos restantes: ${result.remaining}.`
       : "PIN incorrecto.");
-    if (pin) pin.value = "";
+    if (pin) {
+      pin.value = "";
+      pin.focus();
+    }
   },
 
   startLockoutCountdown(waitMs) {
     this.enablePinUI(false);
+    this.clearAuthError();
     const box = document.getElementById("admin-lockout-box");
     const msg = document.getElementById("admin-lockout-msg");
     if (!box) return;
     box.classList.remove("hidden");
     let remaining = Math.ceil(waitMs / 1000);
     const tick = () => {
-      if (msg) msg.textContent = `🔒 Bloqueo de seguridad activo. Reintente en ${remaining}s.`;
+      if (msg) msg.textContent = `Bloqueo de seguridad activo. Reintente en ${remaining}s.`;
       remaining -= 1;
       if (remaining < 0) {
         clearInterval(this.lockoutTimer);
@@ -1246,10 +1394,10 @@ const AdminModule = {
     box.innerHTML = list.map(bookingCard).join("");
   },
 
-  // ---- Rol Ingeniero de TI: Suite de Control Técnico ----
+  // ---- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) ----
 
   renderIT() {
-    const tabs = ["prices", "availability", "backup"];
+    const tabs = ["prices", "gallery", "availability", "backup"];
     tabs.forEach(p => {
       const el = document.getElementById(`admin-it-${p}`);
       if (el) el.classList.toggle("hidden", p !== this.itTab);
@@ -1258,11 +1406,13 @@ const AdminModule = {
       t.classList.toggle("admin-tab-btn--active", t.getAttribute("data-it-tab") === this.itTab);
     });
     const pricesEl = document.getElementById("admin-it-prices");
+    const galleryEl = document.getElementById("admin-it-gallery");
     const availEl = document.getElementById("admin-it-availability");
     const backupEl = document.getElementById("admin-it-backup");
-    if (pricesEl) pricesEl.innerHTML = this.itPricesHtml();
-    if (availEl) availEl.innerHTML = this.itAvailabilityHtml();
-    if (backupEl) backupEl.innerHTML = this.itBackupHtml();
+    if (pricesEl && this.itTab === "prices") pricesEl.innerHTML = this.itPricesHtml();
+    if (galleryEl && this.itTab === "gallery") galleryEl.innerHTML = this.itGalleryHtml();
+    if (availEl && this.itTab === "availability") availEl.innerHTML = this.itAvailabilityHtml();
+    if (backupEl && this.itTab === "backup") backupEl.innerHTML = this.itBackupHtml();
   },
 
   setItTab(tab) {
@@ -1271,6 +1421,11 @@ const AdminModule = {
   },
 
   itPricesHtml() {
+    const extraMultiplier = StorageEngine.getConfig("extraHourMultiplier", 0.50);
+    const travelRate = StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE);
+    const djPrice = PriceManager.getExtraPrice("dj_service") || DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice;
+    const subPrice = PriceManager.getExtraPrice("subwoofers") || DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice;
+
     const serviceRows = CATALOG_SERVICES.map(s => `
       <tr class="border-b border-white/5">
         <td class="py-2.5 pr-2">
@@ -1287,47 +1442,143 @@ const AdminModule = {
         </td>
       </tr>`).join("");
 
-    const extraRows = [
-      ["extra_hours", "Hora(s) Adicional(es) de Show", `Por defecto: 50% de la tarifa base · Vigente: ${formatCRC(PriceManager.getExtraPrice("extra_hours") || 0)}`],
-      ["dj_service", "Servicio de DJ para Recesos (por hora)", `Original: ${formatCRC(DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice)}`],
-      ["subwoofers", 'Subwoofers Extra de 18" (por unidad)', `Original: ${formatCRC(DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice)}`]
-    ].map(([key, name, hint]) => `
-      <tr class="border-b border-white/5">
-        <td class="py-2.5 pr-2">
-          <p class="text-sm font-bold text-white">${name}</p>
-          <p class="text-[10px] text-gray-500">${hint}</p>
-        </td>
-        <td class="py-2.5 px-2 text-right text-xs text-gray-400 whitespace-nowrap">—</td>
-        <td class="py-2.5 pl-2">
-          <div class="flex items-center gap-1.5 justify-end">
-            <span class="text-xs text-gray-400 font-bold">₡</span>
-            <input type="number" data-price="extra-${key}" value="${PriceManager.getExtraPrice(key) || ""}"
-              min="0" step="5000" placeholder="Auto" class="glass-input rounded-xl px-3 py-2 w-32 sm:w-36 text-sm font-bold">
-          </div>
-        </td>
-      </tr>`).join("");
-
     return `
-      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 overflow-x-auto">
-        <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Matriz de Precios en Vivo (6 Formatos + Extras)</p>
-        <table class="w-full min-w-[520px] text-xs">
-          <thead>
-            <tr class="text-left text-[10px] uppercase tracking-wider text-gray-500 border-b border-white/10">
-              <th class="py-2 pr-2">Formato / Servicio</th>
-              <th class="py-2 px-2 text-right">Tarifa Original</th>
-              <th class="py-2 pl-2 text-right">Tarifa Vigente (Tiempo Real)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${serviceRows}
-            ${extraRows}
-          </tbody>
-        </table>
-        <div class="flex flex-wrap gap-3 pt-4">
+      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 overflow-x-auto space-y-6">
+        <div>
+          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Matriz de Tarifas Base en Vivo (6 Formatos)</p>
+          <table class="w-full min-w-[520px] text-xs">
+            <thead>
+              <tr class="text-left text-[10px] uppercase tracking-wider text-gray-500 border-b border-white/10">
+                <th class="py-2 pr-2">Formato / Servicio</th>
+                <th class="py-2 px-2 text-right">Tarifa Catálogo</th>
+                <th class="py-2 pl-2 text-right">Tarifa Vigente (Tiempo Real)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${serviceRows}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="border-t border-white/10 pt-5">
+          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Parámetros Dinámicos de Extras & Viáticos</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
+              <label class="block text-[11px] font-bold text-purple-300" for="admin-extra-multiplier">Multiplicador Hora Extra</label>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="admin-extra-multiplier" value="${extraMultiplier}" min="0.1" max="2.0" step="0.05"
+                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                <span class="text-xs text-gray-400 font-bold">(${(extraMultiplier * 100).toFixed(0)}%)</span>
+              </div>
+              <p class="text-[10px] text-gray-500">Por defecto: 0.50 (50% de la tarifa base)</p>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
+              <label class="block text-[11px] font-bold text-pink-300" for="admin-travel-rate">Recargo Fuera de GAM (%)</label>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="admin-travel-rate" value="${(travelRate * 100).toFixed(0)}" min="0" max="100" step="1"
+                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                <span class="text-xs text-gray-400 font-bold">%</span>
+              </div>
+              <p class="text-[10px] text-gray-500">Por defecto: 12% viáticos de transporte</p>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
+              <label class="block text-[11px] font-bold text-cyan-300" for="admin-subwoofer-price">Subwoofer Extra (Unidad)</label>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 font-bold">₡</span>
+                <input type="number" id="admin-subwoofer-price" data-price="extra-subwoofers" value="${subPrice}" min="0" step="5000"
+                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+              </div>
+              <p class="text-[10px] text-gray-500">Original: ₡80,000 / unidad</p>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
+              <label class="block text-[11px] font-bold text-emerald-300" for="admin-dj-price">Servicio DJ Recesos (Hora)</label>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 font-bold">₡</span>
+                <input type="number" id="admin-dj-price" data-price="extra-dj_service" value="${djPrice}" min="0" step="5000"
+                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+              </div>
+              <p class="text-[10px] text-gray-500">Original: ₡75,000 / hora</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-3 pt-2">
           <button type="button" id="admin-save-prices" class="admin-act-btn admin-act-btn--confirm">💾 Guardar y Aplicar Precios</button>
           <button type="button" id="admin-reset-prices" class="admin-act-btn admin-act-btn--neutral">↺ Restaurar Precios de Fábrica</button>
         </div>
       </div>`;
+  },
+
+  itGalleryHtml() {
+    const items = StorageEngine.getGalleryItems();
+    const featuredCount = items.filter(i => i.featured).length;
+
+    const rows = items.map(item => `
+      <div class="admin-media-row flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/10" data-media-id="${item.id}">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-12 h-12 rounded-xl overflow-hidden bg-black/50 flex-shrink-0 border border-white/15">
+            <img src="${sanitizeUrl(item.thumbnail)}" alt="${sanitizeInput(item.title)}" class="w-full h-full object-cover">
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-sm font-bold text-white truncate">${sanitizeInput(item.title)}</p>
+              ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/20 text-pink-300 border border-pink-500/40">⭐ Destacado</span>' : ''}
+            </div>
+            <div class="flex items-center gap-2 text-[11px] text-gray-400 mt-0.5">
+              <span class="px-2 py-0.5 rounded-md bg-purple-950/60 text-purple-300 font-semibold uppercase text-[10px]">${sanitizeInput(GALLERY_CATEGORY_LABELS[item.category] || item.category)}</span>
+              <span>·</span>
+              <span class="uppercase text-[10px] text-gray-500 font-bold">${sanitizeInput(item.type)}</span>
+              <span>·</span>
+              <span class="text-gray-400">${sanitizeInput(item.date || "")}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button type="button" onclick="AdminModule.toggleFeaturedMedia('${item.id}')"
+            class="admin-act-btn ${item.featured ? 'admin-act-btn--confirm' : 'admin-act-btn--neutral'} text-xs py-1.5 px-3 min-h-[38px]"
+            title="Alternar estado destacado">
+            ${item.featured ? '★ Quitar Destacado' : '☆ Destacar'}
+          </button>
+          <button type="button" onclick="AdminModule.openMediaModal('${item.id}')"
+            class="admin-act-btn admin-act-btn--neutral text-xs py-1.5 px-3 min-h-[38px]">
+            ✏️ Editar
+          </button>
+          <button type="button" onclick="AdminModule.deleteMediaItem('${item.id}')"
+            class="admin-act-btn admin-act-btn--cancel text-xs py-1.5 px-3 min-h-[38px]">
+            🗑️ Eliminar
+          </button>
+        </div>
+      </div>
+    `).join("");
+
+    return `
+      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Gestor Dinámico de Galería & Social Showcase</p>
+            <p class="text-[11px] text-gray-400">Total: <strong>${items.length}</strong> elementos registrados · <strong>${featuredCount}</strong> destacados</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button type="button" onclick="AdminModule.openMediaModal()"
+              class="admin-act-btn admin-act-btn--confirm flex items-center gap-1.5 text-xs py-2 px-4 shadow-lg">
+              <span>➕ Añadir Nuevo Contenido</span>
+            </button>
+            <button type="button" onclick="AdminModule.resetMediaItems()"
+              class="admin-act-btn admin-act-btn--neutral text-xs py-2 px-3">
+              ↺ Restaurar Inicial
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-2.5 max-h-[550px] overflow-y-auto pr-1">
+          ${rows.length ? rows : '<p class="text-xs text-gray-500 text-center py-6">No hay elementos en la galería. Añada uno nuevo con el botón superior.</p>'}
+        </div>
+      </div>
+    `;
   },
 
   itAvailabilityHtml() {
@@ -1356,7 +1607,7 @@ const AdminModule = {
                 </span>
                 <button type="button" data-avail-remove="${k}" class="text-xs text-red-400 hover:text-red-300 font-semibold">Quitar Bloqueo</button>
               </div>`).join("")
-              : `<p class="text-xs text-gray-500">Sin bloqueos manuales. Disponibilidad calculada automáticamente (máx. 2 eventos/día · antelación mínima 72 h).</p>`}
+        : `<p class="text-xs text-gray-500">Sin bloqueos manuales. Disponibilidad calculada automáticamente (máx. 2 eventos/día · antelación mínima 72 h).</p>`}
           </div>
         </div>
       </div>`;
@@ -1366,6 +1617,8 @@ const AdminModule = {
     const audit = AuditLog.load();
     const integrity = AuditLog.storageIntegrity();
     const lastLogin = audit.lastLogin ? new Date(audit.lastLogin).toLocaleString("es-CR") : "Nunca";
+    const storageStats = StorageEngine.getStorageStats();
+
     const integrityRows = integrity.map(i => `
       <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-white/5 border border-white/10">
         <span class="text-xs font-bold text-gray-200 font-mono">${i.name}</span>
@@ -1377,43 +1630,54 @@ const AdminModule = {
     return `
       <div class="space-y-5">
         <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
-          <p class="text-sm font-bold text-white">Backup Suite — Base de Datos Local</p>
-          <p class="text-xs text-gray-400 leading-relaxed">Exporte la base de datos completa (reservas, disponibilidad y precios) como JSON con esquema validable, o restaure el sistema desde un respaldo previo con verificación de integridad.</p>
+          <p class="text-sm font-bold text-white">Database Vault — Respaldo & Restauración Total</p>
+          <p class="text-xs text-gray-400 leading-relaxed">Exporte la base de datos completa (reservas, tarifas en vivo, agenda de bloqueos, biblioteca multimedia y configuración) en un archivo JSON validable.</p>
           <div class="flex flex-wrap gap-3">
             <button type="button" id="admin-export-backup" class="admin-act-btn admin-act-btn--confirm">⬇ Exportar Base de Datos (JSON)</button>
             <label class="admin-act-btn admin-act-btn--neutral cursor-pointer">
-              ⬆ Restaurar Backup (JSON)
+              ⬆ Importar / Restaurar Respaldo (JSON)
               <input type="file" id="admin-import-backup" accept=".json,application/json" class="hidden">
             </label>
           </div>
           <p id="admin-backup-status" class="text-[11px] text-purple-300 pt-1">
-            📊 ${BookingStore.all().length} reservas registradas · ${Object.keys(AvailabilityManager.all()).length} fechas con gestión manual
+            📊 ${BookingStore.all().length} reservas registradas · ${Object.keys(AvailabilityManager.all()).length} fechas bloqueadas · ${StorageEngine.getGalleryItems().length} medios en galería
           </p>
         </div>
 
-        <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25">
-          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Auditoría del Sistema</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
+          <div class="flex items-center justify-between">
+            <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Telemetría de Almacenamiento & Seguridad</p>
+            <span class="text-xs font-mono text-emerald-400 font-bold">Uso LocalStorage: ${storageStats.totalKb} KB</span>
+          </div>
+
+          <!-- Storage Meter Bar -->
+          <div class="w-full bg-black/40 h-2.5 rounded-full overflow-hidden border border-white/10">
+            <div class="storage-meter-fill h-full rounded-full" style="width: ${Math.min(100, Math.max(5, (storageStats.totalBytes / (5 * 1024 * 1024)) * 100 * 50))}%"></div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="p-3 rounded-xl bg-black/30 border border-white/5">
               <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Versión del Motor</p>
               <p class="text-sm font-extrabold text-purple-300 mt-1 font-mono">${ENGINE_VERSION}</p>
             </div>
             <div class="p-3 rounded-xl bg-black/30 border border-white/5">
-              <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Último Acceso</p>
+              <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Último Acceso IT</p>
               <p class="text-sm font-extrabold text-white mt-1">${lastLogin}</p>
             </div>
             <div class="p-3 rounded-xl bg-black/30 border border-white/5">
-              <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Integridad del Almacenamiento</p>
-              <p class="text-sm font-extrabold text-white mt-1">${integrity.filter(i => i.state === "ok").length}/${integrity.length} OK</p>
+              <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Criptografía SHA-256</p>
+              <p class="text-sm font-extrabold text-emerald-400 mt-1">${window.crypto && window.crypto.subtle ? "Hardware Activo" : "FNV-1a Fallback"}</p>
             </div>
           </div>
-          <div class="space-y-2">${integrityRows}</div>
+
+          <div class="space-y-2 pt-2">${integrityRows}</div>
+
           ${audit.logins.length ? `
           <div class="mt-4 pt-3 border-t border-white/10">
-            <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">Historial de Ingresos Recientes</p>
-            <div class="space-y-1.5">
-              ${audit.logins.slice(0, 6).map(l => `
-                <div class="flex items-center justify-between text-[11px]">
+            <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">Historial de Ingresos de Seguridad</p>
+            <div class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              ${audit.logins.slice(0, 10).map(l => `
+                <div class="flex items-center justify-between text-[11px] py-1 border-b border-white/5">
                   <span class="text-gray-300 font-semibold">${sanitizeInput(l.role)}</span>
                   <span class="text-gray-500 font-mono">${new Date(l.at).toLocaleString("es-CR")}</span>
                 </div>`).join("")}
@@ -1421,6 +1685,133 @@ const AdminModule = {
           </div>` : ""}
         </div>
       </div>`;
+  },
+
+  // ---- Métodos CRUD para el Gestor de Galería (Rol IT) ----
+
+  openMediaModal(id) {
+    const modal = document.getElementById("adminMediaModal");
+    if (!modal) return;
+    const idInput = document.getElementById("admin-media-id");
+    const titleInput = document.getElementById("admin-media-title");
+    const catInput = document.getElementById("admin-media-category");
+    const typeInput = document.getElementById("admin-media-type");
+    const thumbInput = document.getElementById("admin-media-thumbnail");
+    const embedInput = document.getElementById("admin-media-embed");
+    const directInput = document.getElementById("admin-media-direct");
+    const dateInput = document.getElementById("admin-media-date");
+    const featInput = document.getElementById("admin-media-featured");
+    const captionInput = document.getElementById("admin-media-caption");
+    const modalTitle = document.getElementById("admin-media-modal-title");
+
+    if (id) {
+      const item = StorageEngine.getGalleryItems().find(m => String(m.id) === String(id));
+      if (item) {
+        if (idInput) idInput.value = item.id;
+        if (titleInput) titleInput.value = item.title || "";
+        if (catInput) catInput.value = item.category || "instagram";
+        if (typeInput) typeInput.value = item.type || "instagram";
+        if (thumbInput) thumbInput.value = item.thumbnail || "";
+        if (embedInput) embedInput.value = item.embedUrl || "";
+        if (directInput) directInput.value = item.directUrl || item.url || "";
+        if (dateInput) dateInput.value = item.date || "";
+        if (featInput) featInput.checked = Boolean(item.featured);
+        if (captionInput) captionInput.value = item.caption || item.subtitle || "";
+        if (modalTitle) modalTitle.textContent = "Editar Contenido";
+      }
+    } else {
+      if (idInput) idInput.value = "";
+      if (titleInput) titleInput.value = "";
+      if (catInput) catInput.value = "instagram";
+      if (typeInput) typeInput.value = "instagram";
+      if (thumbInput) thumbInput.value = "";
+      if (embedInput) embedInput.value = "";
+      if (directInput) directInput.value = "https://www.instagram.com/kikeramirezcr";
+      if (dateInput) dateInput.value = "Agosto 2026";
+      if (featInput) featInput.checked = false;
+      if (captionInput) captionInput.value = "";
+      if (modalTitle) modalTitle.textContent = "Añadir Nuevo Contenido";
+    }
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  },
+
+  closeMediaModal() {
+    const modal = document.getElementById("adminMediaModal");
+    if (modal) {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+  },
+
+  saveMediaItem() {
+    const idInput = document.getElementById("admin-media-id");
+    const titleInput = document.getElementById("admin-media-title");
+    const catInput = document.getElementById("admin-media-category");
+    const typeInput = document.getElementById("admin-media-type");
+    const thumbInput = document.getElementById("admin-media-thumbnail");
+    const embedInput = document.getElementById("admin-media-embed");
+    const directInput = document.getElementById("admin-media-direct");
+    const dateInput = document.getElementById("admin-media-date");
+    const featInput = document.getElementById("admin-media-featured");
+    const captionInput = document.getElementById("admin-media-caption");
+
+    const title = titleInput ? titleInput.value.trim() : "";
+    const thumbnail = thumbInput ? thumbInput.value.trim() : "";
+
+    if (!title || !thumbnail) {
+      showToast("Título y URL de miniatura son obligatorios.", "error");
+      return;
+    }
+
+    const payload = {
+      title: sanitizeInput(title),
+      category: catInput ? catInput.value : "instagram",
+      type: typeInput ? typeInput.value : "instagram",
+      thumbnail: sanitizeUrl(thumbnail),
+      embedUrl: embedInput ? sanitizeUrl(embedInput.value.trim()) : "",
+      directUrl: directInput ? sanitizeUrl(directInput.value.trim()) : "https://www.instagram.com/kikeramirezcr",
+      url: directInput ? sanitizeUrl(directInput.value.trim()) : "https://www.instagram.com/kikeramirezcr",
+      date: dateInput ? sanitizeInput(dateInput.value.trim()) : "2026",
+      featured: featInput ? featInput.checked : false,
+      caption: captionInput ? sanitizeInput(captionInput.value.trim()) : "",
+      subtitle: captionInput ? sanitizeInput(captionInput.value.trim()) : ""
+    };
+
+    const editId = idInput ? idInput.value : "";
+    if (editId) {
+      StorageEngine.updateGalleryItem(editId, payload);
+      showToast("Elemento actualizado correctamente.", "success");
+    } else {
+      StorageEngine.addGalleryItem(payload);
+      showToast("Nuevo elemento añadido a la galería.", "success");
+    }
+
+    this.closeMediaModal();
+    this.renderIT();
+  },
+
+  deleteMediaItem(id) {
+    if (confirm("¿Está seguro de eliminar este elemento de la galería?")) {
+      StorageEngine.deleteGalleryItem(id);
+      showToast("Elemento eliminado de la galería.", "success");
+      this.renderIT();
+    }
+  },
+
+  toggleFeaturedMedia(id) {
+    StorageEngine.toggleFeaturedGalleryItem(id);
+    showToast("Estado destacado actualizado.", "success");
+    this.renderIT();
+  },
+
+  resetMediaItems() {
+    if (confirm("¿Restaurar la galería de contenido original por defecto?")) {
+      StorageEngine.resetGalleryItems();
+      showToast("Galería restaurada a valores por defecto.", "success");
+      this.renderIT();
+    }
   }
 };
 
@@ -1465,7 +1856,7 @@ function bookingCard(b) {
         <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
         ${gamBadge}
       </div>
-      <span class="text-xs text-gray-400">📅 ${b.selectedDate} · ${b.selectedTime}</span>
+      <span class="text-xs text-gray-400">📅 ${b.selectedDate}</span>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-2 text-xs text-gray-300">
@@ -1558,8 +1949,8 @@ function buildVoucherHtml(b) {
         <td style="padding: 6px 0; font-weight: 700; color: #111827;">${sanitizeInput(b.eventType)}</td>
       </tr>
       <tr>
-        <td style="padding: 6px 0; color: #6b7280;">Fecha & Hora del Show:</td>
-        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${b.selectedDate} @ ${b.selectedTime}</td>
+        <td style="padding: 6px 0; color: #6b7280;">Fecha del Show:</td>
+        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${b.selectedDate}</td>
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #6b7280;">Ubicación & Dirección:</td>
@@ -1744,7 +2135,7 @@ function exportOwnerReportPDF() {
       <td style="padding: 6px; font-family: monospace; font-weight: 700;">${b.code}</td>
       <td style="padding: 6px;"><strong>${sanitizeInput(b.clientName)}</strong><br><span style="font-size: 9px; color: #6b7280;">${sanitizeInput(b.clientPhone)}</span></td>
       <td style="padding: 6px;">${sanitizeInput(b.serviceName)}</td>
-      <td style="padding: 6px;">${b.selectedDate}<br><span style="font-size: 9px; color: #7c3aed;">${b.selectedTime}</span></td>
+      <td style="padding: 6px;">${b.selectedDate}</td>
       <td style="padding: 6px;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</td>
       <td style="padding: 6px; text-align: right; font-weight: 700;">${formatCRC(b.granTotal)}</td>
       <td style="padding: 6px; text-align: right; color: #059669; font-weight: 700;">${formatCRC(b.deposit50Amount)}</td>
@@ -1792,7 +2183,7 @@ function exportOwnerReportPDF() {
           <th style="padding: 8px; text-align: left;">Código</th>
           <th style="padding: 8px; text-align: left;">Cliente</th>
           <th style="padding: 8px; text-align: left;">Formato</th>
-          <th style="padding: 8px; text-align: left;">Fecha & Hora</th>
+          <th style="padding: 8px; text-align: left;">Fecha</th>
           <th style="padding: 8px; text-align: left;">Ubicación</th>
           <th style="padding: 8px; text-align: right;">Gran Total</th>
           <th style="padding: 8px; text-align: right;">Adelanto (50%)</th>
@@ -1971,6 +2362,52 @@ function trackModal(open) {
   else if (modalCounter === 0 && AnimationRegistry.paused) AnimationRegistry.resumeAll();
 }
 
+// ---- Helpers Globales de Interfaz & Clipboard ----
+
+function copyEmailToClipboard(email = "arkikproduc2023@gmail.com") {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(email).then(() => {
+      showToast(`Correo copiado al portapapeles: ${email}`, "success");
+    }).catch(() => {
+      fallbackCopyText(email);
+    });
+  } else {
+    fallbackCopyText(email);
+  }
+}
+
+function fallbackCopyText(text) {
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-999999px";
+  textArea.style.top = "-999999px";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    document.execCommand("copy");
+    showToast(`Correo copiado al portapapeles: ${text}`, "success");
+  } catch (err) {
+    showToast(`Correo de contacto: ${text}`, "info");
+  }
+  if (document.body.contains(textArea)) {
+    document.body.removeChild(textArea);
+  }
+}
+
+// Enlace explícito en window para compatibilidad onclick HTML
+window.openAdminLoginModal = () => AdminModule.open();
+window.closeAdminLoginModal = () => AdminModule.close();
+window.attemptAdminLogin = () => AdminModule.attemptLogin();
+window.closeAdminPortalModal = () => AdminModule.closePortal();
+window.copyEmailToClipboard = copyEmailToClipboard;
+window.openMediaLightbox = openMediaLightbox;
+window.closeMediaLightbox = closeMediaLightbox;
+window.copyLightboxUrl = copyLightboxUrl;
+window.AdminModule = AdminModule;
+window.StorageEngine = StorageEngine;
+
 // ============================================================
 // 11. GLOBAL APP INSTANCE & BOOT
 // ============================================================
@@ -1982,13 +2419,13 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initApp() {
-  PriceManager.load();
-  BookingStore.load();
-  AvailabilityManager.load();
+  // Guarantee no leftover modal/backdrop is visible on boot
+  ModalController.closeAll();
+  StorageEngine.init();
   normalizeSpaPath();
   renderCatalog(CATALOG_SERVICES);
   renderGalleryFilters();
-  renderMediaGallery(mediaLibrary, "todos");
+  renderMediaGallery(StorageEngine.getGalleryItems(), "todos");
   setupEventListeners();
   guardInternalPathLinks();
   populateProvinces();
@@ -2068,25 +2505,37 @@ function renderCatalog(services, category = "Todos") {
   `).join("");
 }
 
-// ---- Multimedia Gallery (Biblioteca Multimedia) ----
+// ---- Multimedia Gallery (Biblioteca Multimedia & Bento-Grid Showcase) ----
+
+let currentGalleryFilter = "todos";
 
 function renderGalleryFilters(activeKey = "todos") {
+  currentGalleryFilter = activeKey;
   const container = document.getElementById("gallery-filters");
   if (!container) return;
 
+  const items = StorageEngine.getGalleryItems();
   const counts = {};
-  mediaLibrary.forEach(m => {
+  items.forEach(m => {
     counts[m.category] = (counts[m.category] || 0) + 1;
   });
 
   container.innerHTML = GALLERY_FILTERS.map(filter => {
-    const count = filter.key === "todos" ? mediaLibrary.length : (counts[filter.key] || 0);
+    let count;
+    if (filter.key === "todos") {
+      count = items.length;
+    } else if (filter.key === "instagram") {
+      count = items.filter(m => m.category === "instagram" || m.type === "instagram").length;
+    } else {
+      count = counts[filter.key] || 0;
+    }
+
     const active = filter.key === activeKey;
-    const base = "gallery-filter-btn min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border";
+    const base = "gallery-filter-btn min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 border flex items-center justify-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer";
     const state = active
-      ? " bg-gradient-to-r from-purple-600 to-pink-600 text-white border-transparent shadow-lg shadow-purple-900/40"
-      : " bg-white/5 text-gray-300 border-white/10 hover:text-white hover:border-purple-500/40 hover:bg-purple-500/10";
-    return `<button type="button" data-filter="${filter.key}" class="${base}${state}">${sanitizeInput(filter.label)} <span class="opacity-60 font-semibold">(${count})</span></button>`;
+      ? " bg-gradient-to-r from-purple-600 via-pink-600 to-pink-500 text-white border-transparent shadow-lg shadow-pink-900/40 scale-105"
+      : " bg-white/5 text-gray-300 border-white/10 hover:text-white hover:border-pink-500/40 hover:bg-pink-500/10 hover:scale-102";
+    return `<button type="button" data-filter="${filter.key}" class="${base}${state}">${sanitizeInput(filter.label)} <span class="text-xs opacity-75 font-semibold bg-black/30 px-1.5 py-0.5 rounded-full">(${count})</span></button>`;
   }).join("");
 }
 
@@ -2094,76 +2543,252 @@ function renderMediaGallery(items, filterKey = "todos") {
   const container = document.getElementById("gallery-grid");
   if (!container) return;
 
-  const filtered = filterKey === "todos" ? items : items.filter(item => item.category === filterKey);
+  const filtered = filterKey === "todos"
+    ? items
+    : items.filter(item => item.category === filterKey || (filterKey === "instagram" && item.type === "instagram"));
 
-  container.innerHTML = filtered.map(item =>
-    item.type === "video" ? galleryVideoCard(item) : galleryImageCard(item)
-  ).join("");
+  // Smooth fade-in transition
+  container.classList.remove("gallery-fade-in");
+  void container.offsetWidth;
+
+  container.innerHTML = filtered.map(item => {
+    if (item.type === "instagram") {
+      return galleryInstagramCard(item);
+    } else if (item.type === "video") {
+      return galleryVideoCard(item);
+    } else {
+      return galleryImageCard(item);
+    }
+  }).join("");
+
+  container.classList.add("gallery-fade-in");
 }
 
 function galleryCategoryBadge(item) {
   const label = GALLERY_CATEGORY_LABELS[item.category] || item.category;
   return `
-    <span class="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#0a0712]/80 border border-purple-500/30 text-purple-300 backdrop-blur-sm">
+    <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-[#0a0712]/80 border border-purple-500/30 text-purple-300 backdrop-blur-md shadow-sm">
       ${sanitizeInput(label)}
     </span>
   `;
 }
 
-function galleryCardShell(item, mediaHtml) {
+/**
+ * Bento-Grid Glassmorphic Instagram Card
+ */
+function galleryInstagramCard(item) {
+  const title = sanitizeInput(item.title);
+  const caption = sanitizeInput(item.caption || item.subtitle || "");
+  const date = sanitizeInput(item.date || "");
+  const safeUrl = sanitizeUrl(item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr");
+  const thumbnail = sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg");
+  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+
   return `
-    <article class="gallery-card group relative rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-xl transition-all duration-300 hover:scale-[1.02] hover:border-purple-500/50 hover:shadow-[0_8px_40px_rgba(168,85,247,0.25)]">
-      ${mediaHtml}
-      <div class="p-5">
-        <h4 class="text-sm font-bold text-white group-hover:text-purple-300 transition-colors leading-snug">${sanitizeInput(item.title)}</h4>
-        ${item.subtitle ? `<p class="text-xs text-gray-400 mt-1">${sanitizeInput(item.subtitle)}</p>` : ""}
+    <article class="gallery-card ${featuredClass} group rounded-3xl overflow-hidden relative block border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1.5 hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer"
+             onclick="openMediaLightbox('${item.id}')">
+      
+      <!-- Media Aspect Ratio Container -->
+      <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+        <!-- Background Image with Micro-zoom -->
+        <img src="${thumbnail}" alt="${title}" loading="lazy"
+             class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
+
+        <!-- Smooth Dark Gradient Overlay -->
+        <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none"></div>
+
+        <!-- Top Badges Bar -->
+        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between pointer-events-none z-10">
+          <div class="flex items-center gap-1.5">
+            ${galleryCategoryBadge(item)}
+            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+          </div>
+          ${date ? `
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">
+              ${date}
+            </span>
+          ` : ""}
+        </div>
+
+        <!-- Center Badge: Authentic Instagram Gradient Pill -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-[#f09433] via-[#e6683c] via-[#dc2743] via-[#cc2366] to-[#bc1888] flex items-center justify-center shadow-lg shadow-pink-900/50 group-hover:scale-110 transition-transform duration-300 border border-white/25">
+            <svg class="w-6 h-6 text-white drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- Bottom Typography: Title & Location / Caption -->
+        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
+          <h3 class="text-white font-bold text-base sm:text-lg text-center drop-shadow-md leading-tight group-hover:text-pink-200 transition-colors">
+            ${title}
+          </h3>
+          ${caption ? `
+            <p class="text-xs text-pink-300 font-medium text-center mt-1.5 flex items-center justify-center gap-1 drop-shadow">
+              <svg class="w-3.5 h-3.5 text-pink-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+              <span class="truncate max-w-[280px] sm:max-w-xs">${caption}</span>
+            </p>
+          ` : ""}
+        </div>
       </div>
     </article>
   `;
 }
 
+/**
+ * Bento-Grid Glassmorphic Video Card
+ */
 function galleryVideoCard(item) {
-  const media = `
-    <div id="gallery-media-${item.id}" class="relative aspect-video overflow-hidden">
-      <img src="${item.thumbnail}" alt="${sanitizeInput(item.title)}" loading="lazy"
-        class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-      <div class="absolute inset-0 bg-gradient-to-t from-[#0a0712] via-[#0a0712]/25 to-transparent"></div>
-      ${galleryCategoryBadge(item)}
-      <button type="button" onclick="playGalleryVideo(${item.id})" aria-label="Reproducir video: ${sanitizeInput(item.title)}"
-        class="absolute inset-0 m-auto z-10 w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-900/60 border border-white/20 backdrop-blur-sm transition-transform duration-300 hover:scale-110 active:scale-95">
-        <span class="absolute inset-0 rounded-full bg-purple-500/40 animate-ping opacity-0 group-hover:opacity-100 [animation-duration:1.6s]"></span>
-        <svg class="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-      </button>
-    </div>
+  const title = sanitizeInput(item.title);
+  const subtitle = sanitizeInput(item.caption || item.subtitle || "");
+  const thumbnail = sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg");
+  const date = sanitizeInput(item.date || "");
+  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+
+  return `
+    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-300 hover:scale-[1.02] hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] cursor-pointer"
+             onclick="openMediaLightbox('${item.id}')">
+      <div id="gallery-media-${item.id}" class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+        <img src="${thumbnail}" alt="${title}" loading="lazy"
+          class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
+        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
+          <div class="flex items-center gap-1.5">
+            ${galleryCategoryBadge(item)}
+            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+          </div>
+          ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
+        </div>
+        <div class="absolute inset-0 m-auto z-10 w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-900/60 border border-white/20 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110">
+          <span class="absolute inset-0 rounded-full bg-purple-500/40 animate-ping opacity-0 group-hover:opacity-100 [animation-duration:1.6s]"></span>
+          <svg class="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+        </div>
+        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
+          <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
+          ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
+        </div>
+      </div>
+    </article>
   `;
-  return galleryCardShell(item, media);
 }
 
+/**
+ * Bento-Grid Glassmorphic Image Card
+ */
 function galleryImageCard(item) {
-  const media = `
-    <div class="relative aspect-[4/3] overflow-hidden">
-      <img src="${item.url}" alt="${sanitizeInput(item.title)}" loading="lazy"
-        class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-      <div class="absolute inset-0 bg-gradient-to-t from-[#0a0712]/80 via-transparent to-transparent"></div>
-      ${galleryCategoryBadge(item)}
-    </div>
+  const title = sanitizeInput(item.title);
+  const subtitle = sanitizeInput(item.caption || item.subtitle || "");
+  const url = sanitizeUrl(item.thumbnail || item.directUrl || "img/Foto Kike .jpg");
+  const date = sanitizeInput(item.date || "");
+  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+
+  return `
+    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-300 hover:scale-[1.02] hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] cursor-pointer"
+             onclick="openMediaLightbox('${item.id}')">
+      <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+        <img src="${url}" alt="${title}" loading="lazy"
+          class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
+        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
+          <div class="flex items-center gap-1.5">
+            ${galleryCategoryBadge(item)}
+            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+          </div>
+          ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
+        </div>
+        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
+          <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
+          ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
+        </div>
+      </div>
+    </article>
   `;
-  return galleryCardShell(item, media);
 }
 
-function playGalleryVideo(id) {
-  const item = mediaLibrary.find(m => m.id === id);
-  const mediaBox = document.getElementById(`gallery-media-${id}`);
-  if (!item || item.type !== "video" || !mediaBox) return;
+// Lightbox controller state
+let activeLightboxUrl = "";
 
-  mediaBox.innerHTML = "";
-  const iframe = document.createElement("iframe");
-  iframe.src = item.url + (item.url.includes("?") ? "&" : "?") + "autoplay=1";
-  iframe.title = item.title;
-  iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
-  iframe.setAttribute("allowfullscreen", "");
-  iframe.className = "absolute inset-0 w-full h-full border-0";
-  mediaBox.appendChild(iframe);
+function openMediaLightbox(id) {
+  const items = StorageEngine.getGalleryItems();
+  const item = items.find(m => String(m.id) === String(id));
+  if (!item) return;
+
+  const modal = document.getElementById("mediaLightboxModal");
+  const container = document.getElementById("lightbox-media-container");
+  const titleEl = document.getElementById("lightbox-title");
+  const captionEl = document.getElementById("lightbox-caption");
+  const dateEl = document.getElementById("lightbox-date");
+  const catEl = document.getElementById("lightbox-category-badge");
+  const directLink = document.getElementById("lightbox-direct-link");
+
+  if (titleEl) titleEl.textContent = item.title;
+  if (captionEl) captionEl.textContent = item.caption || item.subtitle || "Muestra en vivo oficial de Arkik Productions.";
+  if (dateEl) dateEl.textContent = item.date || "2026";
+  if (catEl) catEl.textContent = GALLERY_CATEGORY_LABELS[item.category] || item.category;
+
+  activeLightboxUrl = item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr";
+  if (directLink) {
+    directLink.href = activeLightboxUrl;
+  }
+
+  if (container) {
+    container.innerHTML = "";
+    if (item.type === "video" && item.embedUrl) {
+      const iframe = document.createElement("iframe");
+      iframe.src = item.embedUrl + (item.embedUrl.includes("?") ? "&" : "?") + "autoplay=1";
+      iframe.title = item.title;
+      iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
+      iframe.setAttribute("allowfullscreen", "");
+      iframe.className = "w-full h-full border-0 rounded-2xl";
+      container.appendChild(iframe);
+    } else {
+      const img = document.createElement("img");
+      img.src = item.thumbnail || item.directUrl || "img/Foto Kike .jpg";
+      img.alt = item.title;
+      img.className = "w-full h-full object-contain max-h-[55vh] rounded-2xl shadow-2xl";
+      container.appendChild(img);
+    }
+  }
+
+  if (modal) {
+    ModalController.open("mediaLightboxModal");
+  }
+}
+
+function closeMediaLightbox() {
+  const modal = document.getElementById("mediaLightboxModal");
+  const container = document.getElementById("lightbox-media-container");
+  if (container) container.innerHTML = ""; // Stop video playback
+  if (modal) {
+    ModalController.close("mediaLightboxModal");
+  }
+}
+
+function copyLightboxUrl() {
+  const urlToCopy = activeLightboxUrl || "https://www.instagram.com/kikeramirezcr";
+  const done = () => showToast("¡Enlace copiado al portapapeles!", "success");
+  const fail = () => showToast("No se pudo copiar el enlace.", "error");
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(urlToCopy).then(done).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = urlToCopy;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? done() : fail();
+    } catch (err) {
+      fail();
+    }
+  }
 }
 
 // ============================================================
@@ -2193,7 +2818,20 @@ function setupEventListeners() {
       if (!btn) return;
       const filterKey = btn.getAttribute("data-filter");
       renderGalleryFilters(filterKey);
-      renderMediaGallery(mediaLibrary, filterKey);
+      renderMediaGallery(StorageEngine.getGalleryItems(), filterKey);
+    });
+  }
+
+  const nameInput = document.getElementById("client-name");
+  const nameCheck = document.getElementById("name-check");
+  if (nameInput && nameCheck) {
+    nameInput.addEventListener("input", (e) => {
+      const val = e.target.value.trim();
+      if (val.length >= 3 && val.length <= 70) {
+        nameCheck.classList.remove("hidden");
+      } else {
+        nameCheck.classList.add("hidden");
+      }
     });
   }
 
@@ -2232,15 +2870,6 @@ function setupEventListeners() {
     });
   }
 
-  const timeBox = document.getElementById("time-slots");
-  if (timeBox) {
-    timeBox.addEventListener("click", (e) => {
-      const chip = e.target.closest("[data-time]");
-      if (!chip || chip.disabled) return;
-      CalendarModule.selectTime(chip.getAttribute("data-time"));
-    });
-  }
-
   // --- Admin: Autenticación (Login Ejecutivo FinTech) ---
   const roleOwner = document.getElementById("admin-role-owner");
   if (roleOwner) roleOwner.addEventListener("click", () => AdminModule.setRole("owner"));
@@ -2262,22 +2891,15 @@ function setupEventListeners() {
       if (!pin) return;
       const show = pin.type === "password";
       pin.type = show ? "text" : "password";
-      pinToggle.textContent = show ? "🙈" : "👁️";
+      pinToggle.setAttribute("aria-pressed", String(show));
+      pinToggle.innerHTML = show
+        ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>`
+        : `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>`;
+      pin.focus();
     });
   }
   const loginSubmit = document.getElementById("admin-login-submit");
   if (loginSubmit) loginSubmit.addEventListener("click", () => AdminModule.attemptLogin());
-  const keypad = document.getElementById("admin-keypad");
-  if (keypad) {
-    keypad.addEventListener("click", (e) => {
-      const key = e.target.closest("[data-key]");
-      if (!key || key.disabled) return;
-      const value = key.getAttribute("data-key");
-      if (value === "backspace") AdminModule.keypadBackspace();
-      else if (value === "enter") AdminModule.attemptLogin();
-      else AdminModule.appendKeypadDigit(value);
-    });
-  }
   const closeLoginBtn = document.getElementById("admin-login-close");
   if (closeLoginBtn) closeLoginBtn.addEventListener("click", () => AdminModule.close());
   const loginModal = document.getElementById("adminLoginModal");
@@ -2397,14 +3019,34 @@ function setupEventListeners() {
             PriceManager.setExtraPrice(key.split("-")[1], val);
           }
         });
+
+        const extraMultInput = document.getElementById("admin-extra-multiplier");
+        if (extraMultInput) {
+          const val = parseFloat(extraMultInput.value);
+          if (Number.isFinite(val) && val > 0) {
+            StorageEngine.setConfig("extraHourMultiplier", val);
+          }
+        }
+
+        const travelRateInput = document.getElementById("admin-travel-rate");
+        if (travelRateInput) {
+          const val = parseFloat(travelRateInput.value);
+          if (Number.isFinite(val) && val >= 0) {
+            StorageEngine.setConfig("travelSurchargeRate", val / 100);
+          }
+        }
+
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
-        showToast("Precios actualizados en tiempo real.", "success");
+        AdminModule.renderIT();
+        showToast("Precios y configuración actualizados en tiempo real.", "success");
         return;
       }
 
       if (e.target.closest("#admin-reset-prices")) {
         PriceManager.reset();
+        StorageEngine.setConfig("extraHourMultiplier", 0.50);
+        StorageEngine.setConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE);
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
         AdminModule.renderIT();
@@ -2428,6 +3070,16 @@ function setupEventListeners() {
   // --- Teclado Global: ESC cierra modales + Ctrl+Shift+A abre panel admin ---
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const mediaLightbox = document.getElementById("mediaLightboxModal");
+      if (mediaLightbox && !mediaLightbox.classList.contains("hidden")) {
+        closeMediaLightbox();
+        return;
+      }
+      const adminMediaModal = document.getElementById("adminMediaModal");
+      if (adminMediaModal && !adminMediaModal.classList.contains("hidden")) {
+        AdminModule.closeMediaModal();
+        return;
+      }
       const loginModalEl = document.getElementById("adminLoginModal");
       if (loginModalEl && !loginModalEl.classList.contains("hidden")) {
         AdminModule.close();
@@ -2475,25 +3127,27 @@ function validateBackupPayload(payload) {
   if (payload.app !== "arkik-productions") {
     return { ok: false, error: "El archivo no pertenece a Arkik Productions." };
   }
-  if (!Array.isArray(payload.bookings)) {
+  if (payload.bookings && !Array.isArray(payload.bookings)) {
     return { ok: false, error: "Falta la colección de reservas (bookings)." };
   }
   if (payload.availability !== undefined && (typeof payload.availability !== "object" || payload.availability === null)) {
     return { ok: false, error: "El bloque de disponibilidad es inválido." };
   }
   const codeRe = /^ARK-[\dA-Z]{8}$/;
-  for (const b of payload.bookings) {
-    if (!b || typeof b !== "object" || !codeRe.test(b.code || "")) {
-      return { ok: false, error: "Reserva con código inválido (se espera ARK-XXXXXXXX)." };
-    }
-    if (!(b.status in BOOKING_STATUSES)) {
-      return { ok: false, error: `Estado desconocido en reserva ${b.code}: ${b.status}.` };
-    }
-    if (typeof b.selectedDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.selectedDate)) {
-      return { ok: false, error: `Fecha inválida en reserva ${b.code}.` };
-    }
-    if (typeof b.granTotal !== "number" || b.granTotal < 0 || typeof b.deposit50Amount !== "number" || b.deposit50Amount < 0) {
-      return { ok: false, error: `Montos inválidos en reserva ${b.code}.` };
+  if (Array.isArray(payload.bookings)) {
+    for (const b of payload.bookings) {
+      if (!b || typeof b !== "object" || !codeRe.test(b.code || "")) {
+        return { ok: false, error: "Reserva con código inválido (se espera ARK-XXXXXXXX)." };
+      }
+      if (!(b.status in BOOKING_STATUSES)) {
+        return { ok: false, error: `Estado desconocido en reserva ${b.code}: ${b.status}.` };
+      }
+      if (typeof b.selectedDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.selectedDate)) {
+        return { ok: false, error: `Fecha inválida en reserva ${b.code}.` };
+      }
+      if (typeof b.granTotal !== "number" || b.granTotal < 0 || typeof b.deposit50Amount !== "number" || b.deposit50Amount < 0) {
+        return { ok: false, error: `Montos inválidos en reserva ${b.code}.` };
+      }
     }
   }
   if (payload.availability) {
@@ -2507,15 +3161,7 @@ function validateBackupPayload(payload) {
 }
 
 function exportAdminBackup() {
-  const payload = {
-    app: "arkik-productions",
-    engineVersion: ENGINE_VERSION,
-    version: 3,
-    exportedAt: new Date().toISOString(),
-    bookings: BookingStore.all(),
-    availability: AvailabilityManager.all(),
-    prices: PriceManager.exportData()
-  };
+  const payload = StorageEngine.exportFullDatabase();
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2538,12 +3184,7 @@ function importAdminBackup(file) {
         showToast(`Backup rechazado: ${validation.error}`, "error");
         return;
       }
-      if (payload.bookings !== undefined) BookingStore.replace(payload.bookings);
-      if (payload.availability !== undefined) AvailabilityManager.replace(payload.availability);
-      if (payload.prices !== undefined) PriceManager.replace(payload.prices);
-      BookingStore.persist();
-      AvailabilityManager.persist();
-      PriceManager.persist();
+      StorageEngine.importFullDatabase(payload);
       AdminModule.renderIT();
       renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
       showToast("Respaldo validado e importado. Base de datos restaurada.", "success");
@@ -2620,6 +3261,46 @@ function adminLogout() {
 }
 
 // ============================================================
+// 14.5 MODAL CONTROLLER (deterministic open/close state machine)
+// ============================================================
+// Guarantees modals are hidden by default and only revealed on
+// explicit user interaction. Wipes any leftover visible state on
+// app boot so a rogue backdrop can never black the page out.
+const ModalController = {
+  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal'],
+
+  open(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.remove('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
+    modal.classList.add('flex', 'opacity-100', 'pointer-events-auto', 'visible');
+    document.body.style.overflow = 'hidden';
+  },
+
+  close(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.add('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
+      modal.classList.remove('flex', 'opacity-100', 'pointer-events-auto', 'visible');
+    }
+    // Only restore scroll if no other modals are open
+    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex');
+    if (anyOpen.length === 0) {
+      document.body.style.overflow = '';
+    }
+  },
+
+  closeAll() {
+    this._ids.forEach(id => this.close(id));
+  },
+
+  isOpen(modalId) {
+    const modal = document.getElementById(modalId);
+    return modal ? !modal.classList.contains('hidden') : false;
+  }
+};
+
+// ============================================================
 // 15. BOOKING WIZARD (4 pasos con micro-interacciones)
 // ============================================================
 
@@ -2636,8 +3317,8 @@ function openBookingModal(serviceId) {
 
   const modal = document.getElementById("booking-modal");
   if (modal) {
-    modal.classList.remove("hidden");
-    modal.classList.add("flex");
+    // Pre-mounted modal: deterministic reveal via ModalController
+    ModalController.open("booking-modal");
   }
 
   showToast(`Formato seleccionado: ${cart.selectedService.name}`);
@@ -2646,12 +3327,11 @@ function openBookingModal(serviceId) {
 function closeBookingModal() {
   const modal = document.getElementById("booking-modal");
   if (modal) {
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
+    ModalController.close("booking-modal");
+    resetBooking();
+    clearRouteHashIfNeeded();
+    trackModal(false);
   }
-  resetBooking();
-  clearRouteHashIfNeeded();
-  trackModal(false);
 }
 
 function resetBooking() {
@@ -2667,7 +3347,6 @@ function resetBooking() {
     clientEmail: "",
     eventType: "Boda",
     selectedDate: "",
-    selectedTime: "",
     address: "",
     sinpeRef: "",
     createdBooking: null,
@@ -2697,7 +3376,81 @@ function resetBooking() {
   if (voucher) voucher.classList.add("hidden");
   if (gateway) gateway.classList.remove("hidden");
 
+  // Clear new Step 2 elements
+  const logisticsPill = document.getElementById("logistics-pill");
+  if (logisticsPill) logisticsPill.classList.add("hidden");
+  
+  const selectionSummary = document.getElementById("selection-summary");
+  if (selectionSummary) selectionSummary.classList.add("hidden");
+
   cart.clearStoredState();
+}
+
+/**
+ * Selecciona automáticamente el primer día disponible (>= 72h de antelación) dentro del
+ * horizonte de 1 año, según la capacidad diaria de 2 eventos y los bloqueos manuales.
+ * Deja la fecha asignada, apunta el calendario al mes correspondiente y habilita el paso 3.
+ */
+function selectNextAvailableDate() {
+  // Punto de partida: hoy + 72h (antelación mínima obligatoria)
+  const start = new Date(Date.now() + LOGISTICS_CONFIG.minNoticeHours * 3600 * 1000);
+  const { minISO, maxISO } = CalendarModule.getThresholds();
+  const baseY = start.getFullYear();
+  const baseM = start.getMonth();
+  const baseD = start.getDate();
+
+  let foundISO = null;
+  // Horizonte operativo: hasta 365 días hacia adelante
+  for (let i = 0; i < LOGISTICS_CONFIG.maxHorizonDays; i++) {
+    const d = new Date(baseY, baseM, baseD + i);
+    const iso = isoOf(d);
+    if (iso < minISO || iso > maxISO) continue;
+
+    const override = AvailabilityManager.get(iso);
+    if (override === "soldout" || override === "disabled") continue;
+
+    const booked = BookingStore.countForDate(iso);
+    if (DEFAULT_MAX_EVENTS_PER_DAY - booked >= 1) {
+      foundISO = iso;
+      break;
+    }
+  }
+
+  if (!foundISO) {
+    showToast("No hay fechas disponibles en el horizonte de 1 año.", "error");
+    return;
+  }
+
+  // Asignar fecha seleccionada
+  CalendarModule.selectedDate = foundISO;
+  cart.selectedDate = foundISO;
+  cart.persist();
+
+  // Si el día cae en otro mes, mover el mes/año visible del calendario
+  const picked = parseISO(foundISO);
+  const view = CalendarModule.viewDate || startOfMonth(new Date());
+  if (view.getFullYear() !== picked.getFullYear() || view.getMonth() !== picked.getMonth()) {
+    CalendarModule.viewDate = startOfMonth(picked);
+  }
+
+  // Re-renderizar el calendario marcando el día como seleccionado
+  CalendarModule.render();
+
+  // Actualizar el resumen de selección y el encabezado de fecha
+  if (typeof CalendarModule.renderSummary === "function") CalendarModule.renderSummary();
+  const header = document.getElementById("selected-date-header");
+  if (header) header.textContent = `Fecha: ${foundISO}`;
+
+  // Habilitar de inmediato el botón "Continuar a Ubicación & Datos"
+  const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
+  if (continueBtn) {
+    continueBtn.disabled = false;
+    continueBtn.classList.remove("opacity-40", "pointer-events-none");
+  }
+
+  // Toast sutil con formato DD/MM/AAAA
+  const [yy, mm, dd] = foundISO.split("-");
+  showToast(`Fecha seleccionada: ${dd}/${mm}/${yy}`, "success");
 }
 
 function goToStep(stepNumber) {
@@ -2730,10 +3483,6 @@ function goToStep(stepNumber) {
 function validateCalendarSelection() {
   if (!cart.selectedDate) {
     showToast("Seleccione una fecha disponible en el calendario.", "error");
-    return false;
-  }
-  if (!cart.selectedTime) {
-    showToast("Seleccione la hora de inicio de la presentación.", "error");
     return false;
   }
   return true;
@@ -2811,13 +3560,49 @@ function updateModalStep(stepNumber) {
     }
   }
 
+  // Volver al inicio del contenido del modal en cada transición de paso
+  const modalCard = document.getElementById("modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+
   if (stepNumber === 2) CalendarModule.init();
+
+  if (stepNumber === 2) {
+    // Update selection summary card
+    const summaryFormat = document.getElementById("summary-format");
+    const summaryDate = document.getElementById("summary-date");
+    const selectedDateHeader = document.getElementById("selected-date-header");
+    const logisticsPill = document.getElementById("logistics-pill");
+
+    if (cart.selectedDate && cart.selectedService) {
+      const service = cart.selectedService;
+      const dateISO = cart.selectedDate;
+      const [y, m, d] = dateISO.split("-").map(Number);
+      const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+      const monthName = monthNames[m - 1];
+      const dayName = CALENDAR_LOCALE.weekdays[(new Date(y, m - 1, d).getDay() + 6) % 7];
+
+      if (summaryFormat) summaryFormat.textContent = service.name;
+      if (summaryDate) summaryDate.textContent = `${dayName} ${d} de ${monthName} ${y}`;
+
+      if (selectedDateHeader) selectedDateHeader.textContent = `Fecha: ${dateISO}`;
+
+      // Show logistics pill with setup/teardown times from service
+      if (logisticsPill) {
+        const setupTime = service.setup_display || "2.5 horas antes";
+        const teardownTime = service.teardown_display || "1.5 horas después";
+        logisticsPill.classList.remove("hidden");
+        logisticsPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="text-sm text-purple-200">Montaje ${setupTime} · Desmontaje ${teardownTime}</span>`;
+      }
+    } else {
+      if (logisticsPill) logisticsPill.classList.add("hidden");
+    }
+  }
 
   if (stepNumber === 3) {
     const summary = document.getElementById("step3-date-time");
     if (summary) {
-      summary.textContent = cart.selectedDate && cart.selectedTime
-        ? `${cart.selectedDate} @ ${cart.selectedTime}`
+      summary.textContent = cart.selectedDate
+        ? `${cart.selectedDate}`
         : "Pendiente de selección";
     }
   }
@@ -2904,7 +3689,7 @@ function renderDynamicExtrasCounters() {
 function counterRow({ key, name, badge, badgeClass, priceText, value, max }) {
   const atMin = value <= 0;
   const atMax = value >= max;
-  const btnBase = "w-8 h-8 rounded-lg bg-purple-900/40 border border-purple-500/30 text-purple-300 font-bold flex items-center justify-center text-lg transition-all";
+  const btnBase = "tactile-btn w-8 h-8 rounded-lg bg-purple-900/40 border border-purple-500/30 text-purple-300 font-bold flex items-center justify-center text-lg transition-all";
   const btnDisabled = " opacity-30 cursor-not-allowed";
   return `
     <div class="p-4 rounded-xl glass-panel border border-purple-500/30 flex items-center justify-between">
@@ -3050,7 +3835,7 @@ function submitStaticBooking() {
 
   if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
 
-  if (!cart.clientName || !cart.clientPhone || !cart.selectedDate || !cart.selectedTime || !cart.province || !cart.canton) {
+  if (!cart.clientName || !cart.clientPhone || !cart.selectedDate || !cart.province || !cart.canton) {
     showToast("Faltan datos obligatorios del evento. Complete el formulario.", "error");
     return;
   }
@@ -3063,28 +3848,29 @@ function submitStaticBooking() {
   }
   cart.isSubmitting = true;
 
-  cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
+  setTimeout(() => {
+    cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
 
-  // Código único criptográfico (ARK-XXXXXXXX)
-  const bookingCode = generateBookingCode();
+    // Código único criptográfico (ARK-XXXXXXXX)
+    const bookingCode = generateBookingCode();
 
-  const extrasList = [];
-  if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
-  if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
-  if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
+    const extrasList = [];
+    if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
+    if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
+    if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
 
-  const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
+    const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
 
-  const surchargeText = cart.isNonGam
-    ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
-    : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
+    const surchargeText = cart.isNonGam
+      ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
+      : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
 
-  const service = cart.selectedService;
-  const setupDisplay = service ? service.setup_display : "2h antes";
-  const teardownDisplay = service ? service.teardown_display : "1h después";
+    const service = cart.selectedService;
+    const setupDisplay = service ? service.setup_display : "2h antes";
+    const teardownDisplay = service ? service.teardown_display : "1h después";
 
-  const rawMsg =
-`🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
+    const rawMsg =
+      `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
 ----------------------------------------
 📌 *Código:* ${bookingCode}
 👤 *Cliente / Empresa:* ${cart.clientName}
@@ -3099,7 +3885,7 @@ function submitStaticBooking() {
 ➕ *EXTRAS COTIZADOS:*
 ${extrasFormatted}
 
-📅 *Fecha & Hora:* ${cart.selectedDate} @ ${cart.selectedTime}
+📅 *Fecha:* ${cart.selectedDate}
 📍 *Ubicación:* ${cart.canton}, ${cart.province}
 🏠 *Dirección:* ${cart.address}
 
@@ -3116,81 +3902,81 @@ ${surchargeText}
 📎 *Importante:* ${SINPE_CONFIG.policyText}
 Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
 
-  const encodedMsg = encodeURIComponent(rawMsg);
-  const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
+    const encodedMsg = encodeURIComponent(rawMsg);
+    const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
 
-  // Registro persistente en almacén local
-  const record = {
-    code: bookingCode,
-    createdAt: new Date().toISOString(),
-    status: "pendiente", // Inicia siempre como Pendiente de Aprobación
-    clientName: cart.clientName,
-    clientPhone: cart.clientPhone,
-    clientEmail: cart.clientEmail,
-    eventType: cart.eventType,
-    serviceId: service.id,
-    serviceName: service.name,
-    setupDisplay: setupDisplay,
-    teardownDisplay: teardownDisplay,
-    selectedDate: cart.selectedDate,
-    selectedTime: cart.selectedTime,
-    province: cart.province,
-    canton: cart.canton,
-    address: cart.address,
-    extras: {
-      extraHoursCount: cart.extraHoursCount,
-      djHoursCount: cart.djHoursCount,
-      subwoofersCount: cart.subwoofersCount,
-      extraHoursTotal: cart.extraHoursTotal,
-      djTotal: cart.djTotal,
-      subwoofersTotal: cart.subwoofersTotal
-    },
-    subtotal: cart.subtotal,
-    travelSurcharge: cart.travelSurcharge,
-    granTotal: cart.granTotal,
-    deposit50Amount: cart.deposit50Amount,
-    remainingBalance: cart.remainingBalance,
-    sinpeRef: cart.sinpeRef
-  };
+    // Registro persistente en almacén local
+    const record = {
+      code: bookingCode,
+      createdAt: new Date().toISOString(),
+      status: "pendiente", // Inicia siempre como Pendiente de Aprobación
+      clientName: cart.clientName,
+      clientPhone: cart.clientPhone,
+      clientEmail: cart.clientEmail,
+      eventType: cart.eventType,
+      serviceId: service.id,
+      serviceName: service.name,
+      setupDisplay: setupDisplay,
+      teardownDisplay: teardownDisplay,
+      selectedDate: cart.selectedDate,
+      province: cart.province,
+      canton: cart.canton,
+      address: cart.address,
+      extras: {
+        extraHoursCount: cart.extraHoursCount,
+        djHoursCount: cart.djHoursCount,
+        subwoofersCount: cart.subwoofersCount,
+        extraHoursTotal: cart.extraHoursTotal,
+        djTotal: cart.djTotal,
+        subwoofersTotal: cart.subwoofersTotal
+      },
+      subtotal: cart.subtotal,
+      travelSurcharge: cart.travelSurcharge,
+      granTotal: cart.granTotal,
+      deposit50Amount: cart.deposit50Amount,
+      remainingBalance: cart.remainingBalance,
+      sinpeRef: cart.sinpeRef
+    };
 
-  BookingStore.add(record);
-  cart.createdBooking = record;
+    BookingStore.add(record);
+    cart.createdBooking = record;
 
-  // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
-  document.getElementById("confirm-booking-code").textContent = bookingCode;
-  const badgeEl = document.getElementById("confirm-booking-badge");
-  if (badgeEl) badgeEl.textContent = bookingCode;
+    // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
+    document.getElementById("confirm-booking-code").textContent = bookingCode;
+    const badgeEl = document.getElementById("confirm-booking-badge");
+    if (badgeEl) badgeEl.textContent = bookingCode;
 
-  document.getElementById("confirm-client-name").textContent = cart.clientName;
-  document.getElementById("confirm-event-type").textContent = cart.eventType;
-  document.getElementById("confirm-service-name").textContent = service.name;
+    document.getElementById("confirm-client-name").textContent = cart.clientName;
+    document.getElementById("confirm-event-type").textContent = cart.eventType;
+    document.getElementById("confirm-service-name").textContent = service.name;
 
-  const logInfoEl = document.getElementById("confirm-logistics-info");
-  if (logInfoEl) {
-    logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
-  }
+    const logInfoEl = document.getElementById("confirm-logistics-info");
+    if (logInfoEl) {
+      logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
+    }
 
-  document.getElementById("confirm-event-date").textContent = `${cart.selectedDate} @ ${cart.selectedTime}`;
-  document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
-  document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
-  document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);
+    document.getElementById("confirm-event-date").textContent = cart.selectedDate;
+    document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
+    document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
+    document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);
 
-  const remBalEl = document.getElementById("confirm-remaining-balance");
-  if (remBalEl) remBalEl.textContent = formatCRC(cart.remainingBalance);
+    const remBalEl = document.getElementById("confirm-remaining-balance");
+    if (remBalEl) remBalEl.textContent = formatCRC(cart.remainingBalance);
 
-  const waBtn = document.getElementById("btn-whatsapp-client");
-  if (waBtn) waBtn.href = whatsappUrl;
+    const waBtn = document.getElementById("btn-whatsapp-client");
+    if (waBtn) waBtn.href = whatsappUrl;
 
-  cart.clearStoredState();
+    cart.clearStoredState();
 
-  cart.isSubmitting = false;
-  if (btn) {
-    btn.disabled = false;
-    btn.innerHTML = originalLabel;
-  }
+    cart.isSubmitting = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+    }
 
-  goToStep(4);
-  showToast("¡Voucher y enlace de WhatsApp generados con éxito!", "success");
+    goToStep(4);
+    showToast("¡Voucher y enlace de WhatsApp generados con éxito!", "success");
+  }, 200);
 }
 
 function finalizeVoucher() {
@@ -3237,6 +4023,30 @@ function showToast(message, type = "info") {
     toast.classList.add("toast-out");
     setTimeout(() => toast.remove(), 300);
   }, 2800);
+}
+
+function copySinpeData() {
+  const data = `A nombre de: Juan José Ramírez Chaves\nTeléfono: +506 6227-4984`;
+  const done = () => showToast("¡Datos SINPE copiados al portapapeles!", "success");
+  const fail = () => showToast("No se pudieron copiar los datos.", "error");
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(data).then(done).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = data;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? done() : fail();
+    } catch (err) {
+      fail();
+    }
+  }
 }
 
 function copySinpeNumber(btn) {
@@ -3720,3 +4530,23 @@ function initHeroStringsEffect() {
   AnimationRegistry.register("hero-strings", handle);
   return handle;
 }
+
+// ============================================================
+// DEFENSIVE DOM LIFECYCLE & INITIALIZATION ENGINE
+// ============================================================
+
+// DOMContentLoaded guard - ensure all DOM elements exist before bootstrapping
+// Handles case where DOM may already be interactive (e.g., fast loads)
+(function() {
+  const alreadyFired = document.readyState === 'complete' || document.readyState === 'interactive';
+
+  if (!alreadyFired) {
+    // DOM not ready yet - add listener
+    document.addEventListener('DOMContentLoaded', () => {
+      AppEngine.init();
+    });
+  } else {
+    // DOM already ready - init immediately
+    AppEngine.init();
+  }
+})();
