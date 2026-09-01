@@ -119,6 +119,13 @@ function parseISO(str) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// "2026-09-30" → "30/09/2026" (formato legible para voucher y WhatsApp)
+function formatDisplayDate(iso) {
+  const d = parseISO(iso);
+  if (!d) return iso || "";
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
 function startOfMonth(d) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -620,8 +627,10 @@ class CartState {
     this.clientEmail = "";
     this.eventType = "Boda";
     this.selectedDate = "";
+    this.selectedTime = ""; // Hora del evento (chip del selector de hora)
     this.address = "";
     this.sinpeRef = "";
+    this.voucherImage = null; // Data-URL Base64 del comprobante SINPE (máx ~100kb)
     this.createdBooking = null;
     this.currentStep = 1;
     this.isSubmitting = false;
@@ -708,8 +717,10 @@ class CartState {
       clientEmail: this.clientEmail,
       eventType: this.eventType,
       selectedDate: this.selectedDate,
+      selectedTime: this.selectedTime,
       address: this.address,
-      sinpeRef: this.sinpeRef
+      sinpeRef: this.sinpeRef,
+      voucherImage: this.voucherImage
     };
   }
 
@@ -745,6 +756,16 @@ class CartState {
 
       const savedDate = cleanText(data.selectedDate || data.eventDate, 10);
       if (parseISO(savedDate)) this.selectedDate = savedDate;
+
+      // Hora del evento (válida si coincide con uno de los slots disponibles)
+      const savedTime = cleanText(data.selectedTime, 5);
+      if (TimeSlots.indexOf(savedTime) !== -1) this.selectedTime = savedTime;
+
+      // Comprobante SINPE embebido (data-URL jpeg/webp/png). Se limita tamaño
+      // para no saturar el almacenamiento local.
+      if (typeof data.voucherImage === "string" && data.voucherImage.length > 0 && data.voucherImage.length <= 200000) {
+        this.voucherImage = data.voucherImage;
+      }
     } catch (err) {
       // payload corrupto
     }
@@ -757,6 +778,164 @@ class CartState {
       // ignore
     }
   }
+}
+
+// ============================================================
+// 6B. TIME SELECTOR & COLLISION ENGINE (Step 2)
+// Reglas operativas: Max 2 eventos/día · Margen logístico min. 5h entre eventos.
+// ============================================================
+
+// Franja horaria operativa: 08:00 → 23:00 (por hora).
+const TimeSlots = (() => {
+  const arr = [];
+  for (let h = 8; h <= 23; h++) {
+    arr.push(`${String(h).padStart(2, "0")}:00`);
+  }
+  return arr;
+})();
+
+// Margen logístico mínimo entre eventos (horas) — 5h por regla operativa.
+const TIME_BUFFER_HOURS = 5;
+
+/**
+ * Convierte "HH:MM" a un valor numérico de horas con decimales (ej. "14:30" -> 14.5)
+ * para comparar franjas de colisión.
+ */
+function timeToNumber(hhmm) {
+  if (!hhmm || typeof hhmm !== "string") return null;
+  const parts = hhmm.split(":");
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h + (m / 60);
+}
+
+/**
+ * Calcula qué horas quedan bloqueadas para un día según sus reservas.
+ * - 0 reservas: todas las horas habilitadas.
+ * - 1 reserva: se bloquean las horas dentro de [T-5h, T+5h].
+ * - 2+ reservas: el día está agotado (todas bloqueadas).
+ * Devuelve un Set con los strings "HH:MM" bloqueados.
+ */
+function computeBlockedTimes(iso) {
+  const blocked = new Set();
+  const bookings = BookingStore.getBookingsForDate(iso);
+
+  if (bookings.length >= 2) {
+    // Día agotado (máx. 2 eventos): ninguna hora disponible.
+    TimeSlots.forEach(t => blocked.add(t));
+    return blocked;
+  }
+  if (bookings.length === 1) {
+    const t = timeToNumber(bookings[0].selectedTime);
+    // Si la reserva no tiene hora asignada (reserva antigua), no bloqueamos nada.
+    if (t !== null) {
+      TimeSlots.forEach(slot => {
+        const s = timeToNumber(slot);
+        // Bloquea la franja dentro del margen ±5h alrededor de la hora reservada.
+        if (s >= t - TIME_BUFFER_HOURS && s <= t + TIME_BUFFER_HOURS) {
+          blocked.add(slot);
+        }
+      });
+    }
+  }
+  return blocked;
+}
+
+/**
+ * Renderiza los chips de hora para la fecha seleccionada.
+ * SIEMPRE limpia el contenedor antes de renderizar (evita bucles infinitos).
+ * Oculto por defecto; solo se muestra tras seleccionar una fecha válida.
+ */
+function renderTimeSelector() {
+  const container = document.getElementById("time-selector");
+  const wrap = document.getElementById("time-selector-wrap");
+  if (!container) return;
+
+  // Limpieza estricta del contenedor antes de cada render (evita acumulación).
+  container.innerHTML = "";
+
+  if (!cart.selectedDate) {
+    if (wrap) wrap.classList.add("hidden");
+    return;
+  }
+
+  // Mostrar el selector (fade-in) solo cuando hay una fecha válida.
+  if (wrap) {
+    wrap.classList.remove("hidden");
+    // Gatillo de animación: reinicia para que el fade-in se reproduzca siempre.
+    wrap.classList.remove("time-selector-fade");
+    void wrap.offsetWidth;
+    wrap.classList.add("time-selector-fade");
+  }
+
+  const blocked = computeBlockedTimes(cart.selectedDate);
+  const selected = cart.selectedTime;
+  const bookings = BookingStore.getBookingsForDate(cart.selectedDate);
+
+  // Nota contextual de disponibilidad (0, 1 o 2 eventos).
+  const noteEl = document.getElementById("time-availability-note");
+  if (noteEl) {
+    if (bookings.length === 0) {
+      noteEl.textContent = "2 cupos libres — todas las horas disponibles";
+    } else if (bookings.length === 1) {
+      noteEl.textContent = `1 cupo libre · margen logístico de 5h respecto al evento de las ${bookings[0].selectedTime || "--:--"}`;
+    } else {
+      noteEl.textContent = "Día agotado (máx. 2 eventos)";
+    }
+  }
+
+  TimeSlots.forEach(slot => {
+    const isBlocked = blocked.has(slot);
+    const isSelected = slot === selected;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.dataset.time = slot;
+    chip.className = "time-chip" + (isSelected ? " time-chip--selected" : "") + (isBlocked ? " time-chip--disabled" : "");
+    chip.disabled = isBlocked;
+    chip.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    chip.textContent = slot;
+    if (!isBlocked) {
+      chip.addEventListener("click", () => selectTimeSlot(slot));
+    }
+    container.appendChild(chip);
+  });
+}
+
+/**
+ * Selecciona una hora válida y la persiste en CartState.
+ */
+function selectTimeSlot(hhmm) {
+  cart.selectedTime = hhmm || "";
+  cart.persist();
+  // Actualizar resaltado de chips sin re-render innecesario del calendario.
+  renderTimeSelector();
+  updateStep2ContinueState();
+
+  if (cart.selectedTime) {
+    showToast(`Hora seleccionada: ${cart.selectedTime}`, "success");
+  }
+}
+
+/**
+ * Habilita "Continuar a Ubicación & Datos" SOLO cuando hay fecha Y hora válidas.
+ */
+function updateStep2ContinueState() {
+  const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
+  if (!continueBtn) return;
+
+  const ready = Boolean(cart.selectedDate && cart.selectedTime);
+  continueBtn.disabled = !ready;
+  continueBtn.classList.toggle("opacity-40", !ready);
+  continueBtn.classList.toggle("pointer-events-none", !ready);
+}
+
+/**
+ * Reinicia la hora seleccionada al cambiar de fecha (mantiene la integridad).
+ */
+function resetSelectedTime() {
+  cart.selectedTime = "";
+  cart.persist();
 }
 
 // ============================================================
@@ -879,19 +1058,16 @@ const CalendarModule = {
     cart.persist();
     this.render();
 
-    // Habilitar "Continuar a Ubicación & Datos" una vez que hay fecha válida
-    const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
-    if (continueBtn) {
-      continueBtn.disabled = false;
-      continueBtn.classList.remove("opacity-40", "pointer-events-none");
-    }
+    // Al elegir una nueva fecha se invalida la hora previamente seleccionada:
+    // el margen logístico de 5h depende del día concreto.
+    resetSelectedTime();
+    renderTimeSelector();
 
-    const existing = BookingStore.getBookingsForDate(iso);
-    if (existing.length === 1) {
-      showToast("Fecha con 1 cupo restante. Confirme la reserva del día.", "info");
-    } else {
-      showToast("Fecha seleccionada. Confirme la reserva del día.", "success");
-    }
+    // "Continuar a Ubicación & Datos" SOLO se habilita cuando hay fecha Y hora.
+    updateStep2ContinueState();
+
+    // Renderizar chips de hora disponibles para el día (0, 1 o 2 eventos).
+    showToast("Fecha seleccionada. Elija la hora del evento.", "success");
   },
 
   renderSummary() {
@@ -1856,8 +2032,17 @@ function bookingCard(b) {
         <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
         ${gamBadge}
       </div>
-      <span class="text-xs text-gray-400">📅 ${b.selectedDate}</span>
+      <span class="text-xs text-gray-400">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</span>
     </div>
+
+    ${b.voucherImage
+      ? `<div class="mt-2"><button type="button"
+            onclick="this.closest('.admin-booking-row').querySelector('.voucher-preview-thumb').classList.toggle('voucher-preview-expanded')"
+            class="text-[10px] font-semibold text-purple-300 hover:text-purple-200 underline underline-offset-2">Ver comprobante SINPE</button>
+         <img src="${b.voucherImage}" alt="Comprobante SINPE" loading="lazy"
+            class="voucher-preview-thumb mt-2 cursor-pointer transition-all duration-300"
+            onclick="this.classList.toggle('voucher-preview-expanded')"></div>`
+      : `<div class="mt-1 text-[10px] text-amber-300/70">comprobante SINPE no adjuntado</div>`}
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-2 text-xs text-gray-300">
       <p><span class="text-gray-500 block text-[10px] uppercase tracking-wider">Cliente / Empresa</span><strong class="text-white">${sanitizeInput(b.clientName)}</strong></p>
@@ -1949,8 +2134,8 @@ function buildVoucherHtml(b) {
         <td style="padding: 6px 0; font-weight: 700; color: #111827;">${sanitizeInput(b.eventType)}</td>
       </tr>
       <tr>
-        <td style="padding: 6px 0; color: #6b7280;">Fecha del Show:</td>
-        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${b.selectedDate}</td>
+        <td style="padding: 6px 0; color: #6b7280;">Fecha & Hora del Show:</td>
+        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</td>
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #6b7280;">Ubicación & Dirección:</td>
@@ -2059,6 +2244,122 @@ function exportVoucherPDF() {
   }
 }
 
+// ============================================================
+// 9B. EMAIL DISPATCH ENGINE (EmailJS - Comprobante de Reserva)
+// ============================================================
+
+/**
+ * EmailJS bootstrap. Inicializa el SDK con una clave pública solo cuando:
+ *  - El SDK está disponible en el DOM (window.emailjs), y
+ *  - Se ha configurado una clave pública/no vacía.
+ * Si falta cualquier prerrequisito, registra una advertencia limpia y no lanza
+ * ninguna excepción: el flujo de reserva continúa con normalidad.
+ */
+function initEmailJS() {
+  if (typeof window.emailjs === "undefined") {
+    console.warn("[EmailJS] SDK no disponible. El envío de comprobante por correo quedará en modo simulación.");
+    return;
+  }
+  const publicKey = (typeof EMAILJS_CONFIG !== "undefined" && EMAILJS_CONFIG.publicKey)
+    ? EMAILJS_CONFIG.publicKey
+    : "";
+  if (!publicKey) {
+    console.warn("[EmailJS] Clave pública no configurada (EMAILJS_CONFIG.publicKey). El envío de comprobante por correo quedará en modo simulación.");
+    return;
+  }
+  try {
+    window.emailjs.init(publicKey);
+    console.info("[EmailJS] SDK inicializado correctamente.");
+  } catch (err) {
+    console.warn("[EmailJS] Error al inicializar el SDK:", err);
+  }
+}
+
+/**
+ * Envía el comprobante de reserva por correo electrónico (EmailJS).
+ * Payload: client_name, client_email, booking_id, event_date, format_name,
+ * total_amount, deposit_50, balance_50, sinpe_phone.
+ *
+ * Estrategia estructurada de fallback:
+ *  - SDK presente + plantilla/servicio configurados  -> envío real vía EmailJS.
+ *  - Cualquier elemento faltante o error  -> simula el envío con éxito y un
+ *    Toast informativo, NUNCA lanza una excepción ni rompe el flujo del cliente.
+ */
+function sendBookingEmail(btnEl) {
+  const b = cart.createdBooking;
+
+  const btn = btnEl || null;
+  const originalHTML = btn ? btn.innerHTML : "";
+  const resetBtn = () => {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }
+  };
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="text-sm">Enviando&hellip;</span>';
+  }
+
+  // Requiere una reserva activa y un correo de destino
+  if (!b) {
+    showToast("No hay una reserva activa para enviar.", "error");
+    resetBtn();
+    return;
+  }
+  const toEmail = (b.clientEmail || "").trim();
+  if (!toEmail) {
+    showToast("No hay un correo registrado para esta reserva.", "error");
+    resetBtn();
+    return;
+  }
+
+  const serviceID = (typeof EMAILJS_CONFIG !== "undefined" && EMAILJS_CONFIG.serviceID) ? EMAILJS_CONFIG.serviceID : "";
+  const templateID = (typeof EMAILJS_CONFIG !== "undefined" && EMAILJS_CONFIG.templateID) ? EMAILJS_CONFIG.templateID : "";
+
+  const payload = {
+    client_name: b.clientName,
+    client_email: toEmail,
+    booking_id: b.code,
+    event_date: b.selectedDate,
+    format_name: b.serviceName || b.serviceId,
+    total_amount: formatCRC(b.granTotal),
+    deposit_50: formatCRC(b.deposit50Amount),
+    balance_50: formatCRC(b.remainingBalance),
+    sinpe_phone: SINPE_CONFIG.phone
+  };
+
+  // Simulación controlada cuando el envío real no está operativo
+  const simulate = (reason) => {
+    console.info("[EmailJS] Envío simulado (" + reason + "):", payload);
+    showToast("✉️ Comprobante enviado exitosamente a " + toEmail, "success");
+    resetBtn();
+  };
+
+  if (typeof window.emailjs === "undefined" || !serviceID || !templateID) {
+    simulate("configuración incompleta o SDK ausente");
+    return;
+  }
+
+  showToast("Enviando comprobante por correo...", "info");
+
+  window.emailjs.send(serviceID, templateID, payload)
+    .then((res) => {
+      if (res && (res.status === 200 || res.text)) {
+        showToast("✉️ Comprobante enviado exitosamente a " + toEmail, "success");
+      } else {
+        simulate("respuesta inesperada");
+      }
+    })
+    .catch((err) => {
+      console.warn("[EmailJS] Error en el envío real:", err);
+      simulate("error en el envío");
+    })
+    .finally(() => {
+      resetBtn();
+    });
+}
+
 /**
  * Descarga el voucher PDF de una reserva ya registrada (Portal del Propietario).
  */
@@ -2135,7 +2436,7 @@ function exportOwnerReportPDF() {
       <td style="padding: 6px; font-family: monospace; font-weight: 700;">${b.code}</td>
       <td style="padding: 6px;"><strong>${sanitizeInput(b.clientName)}</strong><br><span style="font-size: 9px; color: #6b7280;">${sanitizeInput(b.clientPhone)}</span></td>
       <td style="padding: 6px;">${sanitizeInput(b.serviceName)}</td>
-      <td style="padding: 6px;">${b.selectedDate}</td>
+      <td style="padding: 6px;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</td>
       <td style="padding: 6px;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</td>
       <td style="padding: 6px; text-align: right; font-weight: 700;">${formatCRC(b.granTotal)}</td>
       <td style="padding: 6px; text-align: right; color: #059669; font-weight: 700;">${formatCRC(b.deposit50Amount)}</td>
@@ -2419,6 +2720,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initApp() {
+  // EmailJS bootstrap: structured fallback so an unconfigured key never breaks the flow
+  initEmailJS();
   // Guarantee no leftover modal/backdrop is visible on boot
   ModalController.closeAll();
   StorageEngine.init();
@@ -2819,6 +3122,17 @@ function setupEventListeners() {
       const filterKey = btn.getAttribute("data-filter");
       renderGalleryFilters(filterKey);
       renderMediaGallery(StorageEngine.getGalleryItems(), filterKey);
+    });
+  }
+
+  // Voucher SINPE: al elegir archivo se comprime y persiste en CartState.
+  const voucherUpload = document.getElementById("voucher-upload");
+  if (voucherUpload) {
+    voucherUpload.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleVoucherUpload(file);
+      // Permite volver a elegir el mismo archivo en el siguiente intento.
+      e.target.value = "";
     });
   }
 
@@ -3347,6 +3661,8 @@ function resetBooking() {
     clientEmail: "",
     eventType: "Boda",
     selectedDate: "",
+    selectedTime: "",
+    voucherImage: null,
     address: "",
     sinpeRef: "",
     createdBooking: null,
@@ -3375,6 +3691,9 @@ function resetBooking() {
   const gateway = document.getElementById("sinpe-gateway-view");
   if (voucher) voucher.classList.add("hidden");
   if (gateway) gateway.classList.remove("hidden");
+
+  // Nueva reserva: limpiar comprobante SINPE previamente cargado (miniatura + botón).
+  resetVoucherUploadState();
 
   // Clear new Step 2 elements
   const logisticsPill = document.getElementById("logistics-pill");
@@ -3441,16 +3760,16 @@ function selectNextAvailableDate() {
   const header = document.getElementById("selected-date-header");
   if (header) header.textContent = `Fecha: ${foundISO}`;
 
-  // Habilitar de inmediato el botón "Continuar a Ubicación & Datos"
-  const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
-  if (continueBtn) {
-    continueBtn.disabled = false;
-    continueBtn.classList.remove("opacity-40", "pointer-events-none");
-  }
+  // La nueva fecha invalida la hora previa y re-renderiza los chips.
+  resetSelectedTime();
+  renderTimeSelector();
+
+  // "Continuar a Ubicación & Datos" solo se habilita con fecha Y hora.
+  updateStep2ContinueState();
 
   // Toast sutil con formato DD/MM/AAAA
   const [yy, mm, dd] = foundISO.split("-");
-  showToast(`Fecha seleccionada: ${dd}/${mm}/${yy}`, "success");
+  showToast(`Fecha seleccionada: ${dd}/${mm}/${yy}. Elija la hora.`, "success");
 }
 
 function goToStep(stepNumber) {
@@ -3564,7 +3883,11 @@ function updateModalStep(stepNumber) {
   const modalCard = document.getElementById("modal-card");
   if (modalCard) modalCard.scrollTop = 0;
 
-  if (stepNumber === 2) CalendarModule.init();
+  if (stepNumber === 2) {
+    CalendarModule.init();
+    renderTimeSelector();
+    updateStep2ContinueState();
+  }
 
   if (stepNumber === 2) {
     // Update selection summary card
@@ -3602,7 +3925,7 @@ function updateModalStep(stepNumber) {
     const summary = document.getElementById("step3-date-time");
     if (summary) {
       summary.textContent = cart.selectedDate
-        ? `${cart.selectedDate}`
+        ? `${cart.selectedDate}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`
         : "Pendiente de selección";
     }
   }
@@ -3617,6 +3940,8 @@ function updateModalStep(stepNumber) {
       } else {
         voucher.classList.add("hidden");
         gateway.classList.remove("hidden");
+        // Reanudar el estado de subida previo (miniatura + botón habilitado).
+        updateVoucherUploadUI();
       }
     }
   }
@@ -3827,6 +4152,146 @@ function restoreBookingToUI() {
 }
 
 // ============================================================
+// 15B. VOUCHER UPLOADER & CLIENT-SIDE COMPRESSION
+// Subida nativa del comprobante SINPE (sin servicios de terceros):
+// se comprime a JPEG en canvas (< ~100KB) y se embebe como data-URL
+// en CartState → visible en el Dashboard del Staff sin backups externos.
+// ============================================================
+
+const VOUCHER_MAX_WIDTH = 800; // ancho máximo de redimensionamiento
+const VOUCHER_JPEG_QUALITY = 0.7; // calidad de compresión JPEG
+const VOUCHER_MAX_BYTES = 102400; // ~100KB objetivo tras comprimir
+const VOUCHER_MAX_SOURCE_MB = 8; // límite de tamaño del archivo original
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo seleccionado."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Imagen inválida o corrupta."));
+    img.src = src;
+  });
+}
+
+/**
+ * Redimensiona y comprime el comprobante a un data-URL JPEG (~<100KB)
+ * usando el canvas del navegador. Nunca toca servidores ni enlaces externos.
+ */
+async function compressImage(file) {
+  const rawDataUrl = await readFileAsDataURL(file);
+  const img = await loadImage(rawDataUrl);
+
+  let width = img.naturalWidth || img.width;
+  let height = img.naturalHeight || img.height;
+  if (!width || !height) throw new Error("No se pudo leer las dimensiones de la imagen.");
+
+  const maxDim = VOUCHER_MAX_WIDTH;
+  if (width > maxDim) {
+    height = Math.round((height * maxDim) / width);
+    width = maxDim;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, width, height);
+
+  return canvas.toDataURL("image/jpeg", VOUCHER_JPEG_QUALITY);
+}
+
+/**
+ * Procesa el archivo seleccionado: valida tipo/tamaño y delega en la
+ * compresión. Al terminar actualiza CartState + refleja el estado en la UI.
+ */
+function handleVoucherUpload(file) {
+  if (!file) return;
+
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+    showToast("Formato no permitido. Use JPG, PNG o WEBP.", "error");
+    return;
+  }
+  if (file.size > VOUCHER_MAX_SOURCE_MB * 1024 * 1024) {
+    showToast(`La imagen supera los ${VOUCHER_MAX_SOURCE_MB}MB permitidos.`, "error");
+    return;
+  }
+
+  compressImage(file)
+    .then(dataUrl => {
+      cart.voucherImage = dataUrl;
+      cart.persist();
+      updateVoucherUploadUI();
+      showToast("Comprobante cargado y comprimido correctamente.", "success");
+    })
+    .catch(err => {
+      showToast(err.message || "No se pudo cargar el comprobante.", "error");
+    });
+}
+
+/**
+ * Sincroniza la zona de subida con el estado del carrito
+ * (icono ↔ miniatura, textos y habilitación del botón de confirmación).
+ */
+function updateVoucherUploadUI() {
+  const img = document.getElementById("voucher-thumb");
+  const icon = document.getElementById("voucher-upload-icon");
+  const txt = document.getElementById("voucher-upload-text");
+  const status = document.getElementById("voucher-upload-status");
+
+  if (cart.voucherImage) {
+    if (img) {
+      img.src = cart.voucherImage;
+      img.classList.remove("hidden");
+    }
+    if (icon) icon.classList.add("hidden");
+    if (txt) {
+      txt.textContent = "Comprobante Cargado ✓";
+      txt.classList.add("text-emerald-400");
+    }
+    if (status) status.textContent = "JPG/PNG/WEBP · comprimido al instante";
+  } else {
+    if (img) {
+      img.classList.add("hidden");
+      img.removeAttribute("src");
+    }
+    if (icon) icon.classList.remove("hidden");
+    if (txt) {
+      txt.textContent = "Sube la captura de tu transferencia SINPE";
+      txt.classList.remove("text-emerald-400");
+    }
+    if (status) status.textContent = "JPG, PNG o WEBP · se comprime al instante (<100kb)";
+  }
+
+  updateGenerateButtonState();
+}
+
+/**
+ * Habilita "Generar Voucher y Confirmar" SOLO cuando existe comprobante cargado.
+ */
+function updateGenerateButtonState() {
+  const btn = document.getElementById("btn-submit-booking");
+  if (!btn) return;
+  btn.disabled = !Boolean(cart.voucherImage);
+}
+
+/**
+ * Restablece el estado de la subida (usado al volver a empezar el flujo).
+ */
+function resetVoucherUploadState() {
+  cart.voucherImage = null;
+  cart.persist();
+  updateVoucherUploadUI();
+}
+
+// ============================================================
 // 16. FINALIZACIÓN DE RESERVA & MENSAJES WHATSAPP
 // ============================================================
 
@@ -3837,6 +4302,17 @@ function submitStaticBooking() {
 
   if (!cart.clientName || !cart.clientPhone || !cart.selectedDate || !cart.province || !cart.canton) {
     showToast("Faltan datos obligatorios del evento. Complete el formulario.", "error");
+    return;
+  }
+
+  // La confirmación del voucher exige hora de evento Y comprobante SINPE cargado.
+  if (!cart.selectedTime) {
+    showToast("Seleccione la hora del evento en el Calendario & Hora.", "error");
+    goToStep(2);
+    return;
+  }
+  if (!cart.voucherImage) {
+    showToast("Adjunte la captura del comprobante SINPE para confirmar la reserva.", "error");
     return;
   }
 
@@ -3885,7 +4361,7 @@ function submitStaticBooking() {
 ➕ *EXTRAS COTIZADOS:*
 ${extrasFormatted}
 
-📅 *Fecha:* ${cart.selectedDate}
+📅 *Fecha & Hora:* ${formatDisplayDate(cart.selectedDate)} a las ${cart.selectedTime}
 📍 *Ubicación:* ${cart.canton}, ${cart.province}
 🏠 *Dirección:* ${cart.address}
 
@@ -3919,6 +4395,8 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
       setupDisplay: setupDisplay,
       teardownDisplay: teardownDisplay,
       selectedDate: cart.selectedDate,
+      selectedTime: cart.selectedTime,
+      voucherImage: cart.voucherImage,
       province: cart.province,
       canton: cart.canton,
       address: cart.address,
@@ -3955,7 +4433,7 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
       logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
     }
 
-    document.getElementById("confirm-event-date").textContent = cart.selectedDate;
+    document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
     document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
     document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
     document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);

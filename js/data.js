@@ -16,6 +16,74 @@ const LOGISTICS_CONFIG = {
   defaultBookingStatus: "pendiente" // Inicia siempre como Pendiente de Aprobación
 };
 
+// EmailJS - Configuración del envío de comprobantes por correo.
+// Deja los campos vacíos para operar en modo simulación (sin envío real).
+// Consulta https://dashboard.emailjs.com para tus credenciales:
+//   publicKey  -> Clave pública del proyecto (Account > General).
+//   serviceID  -> ID del servicio SMTP registrado.
+//   templateID -> ID de la plantilla del correo (Service ID > Templates).
+const EMAILJS_CONFIG = {
+  publicKey: "",
+  serviceID: "",
+  templateID: ""
+};
+
+// ============================================================
+// PLANTILLA EMAILJS RECOMENDADA (Comprobante de Reserva)
+// ============================================================
+// Cuando se configuren las llaves reales en producción:
+//   1. En https://dashboard.emailjs.com crea el Service (SMTP) y el Template.
+//   2. Copia su Service ID y Template ID a EMAILJS_CONFIG y el Public Key.
+//   3. La plantilla debe declarar estas variables (deben coincidir EXACTO
+//      con las claves del payload que construye sendBookingEmail() en app.js):
+//        client_name, client_email, booking_id, event_date, format_name,
+//        total_amount, deposit_50, balance_50, sinpe_phone
+//
+// Asunto (Subject) sugerido:
+//   Comprobante de Reserva Arkik Productions - {{booking_id}}
+//
+// Ejemplo de HTML del cuerpo de la plantilla:
+//
+//   <div style="font-family:Arial,sans-serif;background:#f4f4f7;padding:24px;">
+//     <div style="max-width:620px;margin:auto;background:#fff;border-radius:12px;
+//                  overflow:hidden;border:1px solid #e5e7eb;">
+//       <div style="background:#6d28d9;color:#fff;padding:20px 24px;">
+//         <h2 style="margin:0;font-size:20px;">ARKIK PRODUCTIONS</h2>
+//         <p style="margin:4px 0 0;font-size:12px;opacity:.9;">
+//           Música en Vivo & Sonido Profesional · Costa Rica</p>
+//       </div>
+//       <div style="padding:24px;">
+//         <p>Hola <strong>{{client_name}}</strong>,</p>
+//         <p>Gracias por reservar con Arkik Productions. Tu comprobante de reserva:</p>
+//         <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px;">
+//           <tr><td style="padding:6px 0;color:#6b7280;">Código de reserva:</td>
+//               <td style="padding:6px 0;font-weight:bold;">{{booking_id}}</td></tr>
+//           <tr><td style="padding:6px 0;color:#6b7280;">Formato / Servicio:</td>
+//               <td style="padding:6px 0;font-weight:bold;">{{format_name}}</td></tr>
+//           <tr><td style="padding:6px 0;color:#6b7280;">Fecha del evento:</td>
+//               <td style="padding:6px 0;font-weight:bold;">{{event_date}}</td></tr>
+//           <tr><td style="padding:6px 0;color:#6b7280;">Gran total:</td>
+//               <td style="padding:6px 0;font-weight:bold;">{{total_amount}}</td></tr>
+//           <tr><td style="padding:6px 0;color:#059669;">Adelanto SINPE (50%):</td>
+//               <td style="padding:6px 0;color:#059669;font-weight:bold;">{{deposit_50}}</td></tr>
+//           <tr><td style="padding:6px 0;color:#6b7280;">Saldo el día del evento:</td>
+//               <td style="padding:6px 0;font-weight:bold;">{{balance_50}}</td></tr>
+//         </table>
+//         <p style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;
+//                   padding:12px;font-size:13px;color:#581c87;">
+//           💳 Realiza el 50% vía SINPE Móvil al número <strong>{{sinpe_phone}}</strong>
+//           a nombre de <strong>Juan José Ramírez Chaves</strong> y envía el comprobante
+//           a nuestro WhatsApp oficial para confirmar tu reserva.</p>
+//         <p style="font-size:12px;color:#9ca3af;margin-top:20px;">
+//           Documento de validez comercial emitido por Arkik Productions · Granadilla, San José.</p>
+//       </div>
+//     </div>
+//   </div>
+//
+// NOTA: usa la notación {{variable}} del editor de templates de EmailJS
+// (Handlebars-like). Las variables del payload deben coincidir 1:1 con las
+// claves del objeto que envía sendBookingEmail().
+
 const GAM_PROVINCES = ["San José", "Heredia", "Alajuela", "Cartago"];
 const NON_GAM_SURCHARGE_RATE = 0.12; // 12% surcharge for provinces outside GAM
 
