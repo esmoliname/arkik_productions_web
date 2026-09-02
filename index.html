@@ -1276,17 +1276,17 @@
             <input type="text" name="b_website_hp" id="website_hp" style="display:none !important;" tabindex="-1"
               autocomplete="off" aria-hidden="true">
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="relative">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="relative validate-field">
                 <div class="flex items-center justify-between mb-1.5">
                   <label class="block text-sm font-medium text-purple-200" for="client-name">Nombre Completo o Empresa *</label>
                   <span id="name-check" class="hidden text-emerald-400 font-bold"></span>
                 </div>
-                <input type="text" id="client-name" required minlength="3" maxlength="70"
+                <input type="text" id="client-name" required minlength="6" maxlength="70"
                   placeholder="Ej. Carlos Rodríguez / Corporación XYZ"
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
               </div>
-              <div>
+              <div class="validate-field">
                 <label class="block text-sm font-medium text-purple-200 mb-1.5" for="client-phone">Teléfono WhatsApp
                   (Costa Rica) *</label>
                 <input type="tel" id="client-phone" required placeholder="Ej. 8888-8888 o +506 8888-8888"
@@ -1297,7 +1297,7 @@
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+              <div class="validate-field">
                 <label class="block text-sm font-medium text-purple-200 mb-1.5" for="client-email">Correo Electrónico
                   (RFC 5322) *</label>
                 <input type="email" id="client-email" required placeholder="carlos@ejemplo.com"
@@ -1321,7 +1321,7 @@
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+              <div class="validate-field">
                 <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-province">Provincia
                   *</label>
                 <select id="booking-province" required
@@ -1329,7 +1329,7 @@
                   <!-- Populated by JS -->
                 </select>
               </div>
-              <div>
+              <div class="validate-field">
                 <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-canton">Cantón *</label>
                 <select id="booking-canton" required
                   class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
@@ -1341,7 +1341,7 @@
             <!-- Dynamic Travel Surcharge Notice Box -->
             <div id="surcharge-notice-box"></div>
 
-            <div>
+            <div class="validate-field">
               <label class="block text-sm font-medium text-purple-200 mb-1.5" for="booking-address">Dirección Exacta o
                 Salón de Eventos *</label>
               <textarea id="booking-address" rows="2" required maxlength="300"
@@ -2040,6 +2040,55 @@
       <img id="admin-voucher-img" src="" alt="Comprobante SINPE de la reserva"
         class="max-w-[90vw] max-h-[85vh] object-contain rounded-xl border border-purple-500/30 bg-[#0c0814]/60 shadow-[0_0_60px_rgba(168,85,247,0.25)]">
       <p class="text-center text-[10px] text-gray-500 mt-3">Comprobante de transferencia SINPE (alta resolución)</p>
+    </div>
+  </div>
+
+  <!-- Modal Ejecutivo: Validación del Depósito Bancario + Respaldo a Google Drive (Task 4) -->
+  <div id="bank-validation-modal" role="dialog" aria-modal="true" aria-label="Depósito bancario verificado"
+    onclick="if (event.target === this) closeBankValidationModal()"
+    class="fixed inset-0 z-[96] hidden items-center justify-center p-4 bankmodal-backdrop opacity-0 pointer-events-none invisible">
+    <div class="relative w-full max-w-lg rounded-3xl border border-cyan-400/30 bg-[#0c0814]/95 shadow-[0_0_80px_rgba(34,211,238,0.18)] p-6 sm:p-8">
+      <button type="button" onclick="closeBankValidationModal()" aria-label="Cerrar"
+        class="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-gray-300 hover:text-white transition-all flex items-center justify-center">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-2xl">✅</div>
+        <div>
+          <h3 class="text-lg font-extrabold text-white leading-tight">Depósito bancario verificado</h3>
+          <p class="text-xs text-gray-400">Reserva <span id="bankval-code" class="admin-booking-code font-bold text-cyan-300">---</span> confirmada en cuenta</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2 text-sm mb-5">
+        <p class="text-xs text-gray-400 col-span-2"><span class="uppercase tracking-wider block text-[10px]">Cliente / Empresa</span><strong id="bankval-client" class="text-white">---</strong></p>
+        <p class="text-xs text-gray-400"><span class="uppercase tracking-wider block text-[10px]">Fecha del evento</span><span id="bankval-date" class="text-white font-semibold">---</span></p>
+        <p class="text-xs text-gray-400"><span class="uppercase tracking-wider block text-[10px]">Gran Total</span><span id="bankval-total" class="text-white font-bold admin-booking-fin">₡0</span></p>
+      </div>
+
+      <p class="text-xs text-gray-300 leading-relaxed mb-5">
+        El adelanto SINPE del 50% quedó asentado. Se descargaron automáticamente la
+        <strong class="text-cyan-300">Pre-Factura VALIDADA (PDF)</strong> y el
+        <strong class="text-cyan-300">Expediente (JSON)</strong>. Suba ambos a la carpeta de respaldo de Google Drive para conservar la auditoría.
+      </p>
+
+      <div class="grid grid-cols-1 gap-3">
+        <a id="bankval-drive-link" href="#" target="_blank" rel="noopener"
+          class="drive-cta inline-flex items-center justify-center gap-2 w-full py-3.5 rounded-xl font-bold text-sm transition-all">
+          📂 Subir Expediente a Google Drive
+        </a>
+        <a id="bankval-wa-link" href="#" target="_blank" rel="noopener"
+          class="inline-flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold text-sm transition-all">
+          💬 Confirmar al Cliente por WhatsApp
+        </a>
+        <button type="button" onclick="closeBankValidationModal()"
+          class="inline-flex items-center justify-center w-full py-3 rounded-xl bg-transparent hover:bg-white/5 border border-white/15 text-gray-300 text-sm font-semibold transition-all">
+          Cerrar
+        </button>
+      </div>
     </div>
   </div>
 

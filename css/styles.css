@@ -2217,3 +2217,130 @@ footer > .max-w-7xl {
   object-fit: contain;
   border-color: rgba(252, 211, 77, 0.6);
 }
+
+/* ============================================================
+   STRICT FORM VALIDATION (Step 3) — visual feedback
+   Borde rojo + fondo tintado en error · esmeralda en válido ·
+   shake animation + mensaje asistivo.
+   ============================================================ */
+
+.validate-field {
+  position: relative;
+}
+
+.field-invalid {
+  border-color: rgba(239, 68, 68, 0.85) !important;
+  background: rgba(239, 68, 68, 0.10) !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18) !important;
+}
+
+.field-valid {
+  border-color: rgba(16, 185, 129, 0.7) !important;
+  background: rgba(16, 185, 129, 0.06) !important;
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f87171;
+  line-height: 1.35;
+}
+
+.field-shake {
+  animation: fieldShake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes fieldShake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(3px); }
+  30%, 50%, 70% { transform: translateX(-5px); }
+  40%, 60% { transform: translateX(5px); }
+}
+
+/* ============================================================
+   ADMIN RESERVATION CARDS (Task 3) — responsive geometry
+   Laptop (>=1024px): 3 columnas de contenido.
+   iPhone (<768px): tarjeta fluida apilada + safe-area bottom.
+   ============================================================ */
+
+/* Estructura de 3 columnas internas dentro de cada tarjeta de reserva */
+.admin-booking-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 1024px) {
+  .admin-booking-cols {
+    grid-template-columns: 1.1fr 1fr 1fr;
+    gap: 18px;
+  }
+}
+
+/* ARK code: tipografía monoespaciada de tablón financiero */
+.admin-booking-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Barra financiera inferior: cifras de ancho fijo (sin saltos) */
+.admin-booking-fin {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Píldora de estado neón (Pendiente ámbar / Confirmada esmeralda / Cancelada rojo) */
+.admin-booking-col {
+  min-width: 0;
+}
+
+/* Safe-area bottom en iPhone (gesture bar / home indicator) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Touch targets de acción en el deck de la tarjeta (>=44px en móvil) */
+.admin-booking-deck {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.admin-booking-deck .admin-act-btn {
+  min-height: 44px;
+  align-items: center;
+}
+
+/* Enlace click-to-WhatsApp en la columna de contacto */
+.wa-click-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #4ade80;
+  font-weight: 700;
+  text-decoration: none;
+}
+.wa-click-link:hover {
+  color: #86efac;
+  text-decoration: underline;
+}
+
+/* ============================================================
+   EXECUTIVE BANK-VALIDATION MODAL (Task 4) — Google Drive backup
+   ============================================================ */
+
+.bankmodal-backdrop {
+  background-color: rgba(6, 4, 14, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.drive-cta {
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.18), rgba(66, 133, 244, 0.05));
+  border: 1px solid rgba(66, 133, 244, 0.5);
+  color: #93c5fd;
+}
+.drive-cta:hover {
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.3), rgba(66, 133, 244, 0.1));
+  box-shadow: 0 0 16px rgba(66, 133, 244, 0.35);
+}
