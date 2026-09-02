@@ -401,12 +401,14 @@ const ADMIN_CONFIG = {
 const ENGINE_VERSION = "arkik-engine-v3.2.0";
 
 // Claves de persistencia local (por dominio, con fallback seguro)
+// Claves canónicas v3.3: availability = arkik_blocked_dates_v1, gallery = arkik_media_v1
+// (los nombres de propiedad no cambian; las migraciones v3.2→v3.3 viven en js/app.js)
 const STORAGE_KEYS = {
   cart: STORAGE_KEY,
   bookings: "arkik_bookings_v1",
-  availability: "arkik_availability_v1",
+  availability: "arkik_blocked_dates_v1",
   prices: "arkik_prices_v1",
-  gallery: "arkik_gallery_v1",
+  gallery: "arkik_media_v1",
   customConfig: "arkik_custom_config_v1",
   admin: ADMIN_CONFIG.storageKey,
   audit: "arkik_audit_v1"

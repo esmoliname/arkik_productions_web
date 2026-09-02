@@ -1768,11 +1768,10 @@
   <!-- Staff Portal: Panel de Control Ejecutivo (dashboard por rol) -->
   <div id="adminPortalModal" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title"
     onclick="if (event.target === this) closeAdminPortalModal()"
-    class="fixed inset-0 z-[70] hidden items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
-    <div
-      class="admin-lightbox modal-sheet-panel relative m-auto max-w-6xl w-full my-0 sm:my-8 rounded-t-3xl sm:rounded-3xl border border-purple-500/30 bg-[#0c0814]/95 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col">
+    class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
+    <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
 
-      <div class="p-5 border-b border-purple-500/20 flex items-center justify-between bg-purple-950/30">
+      <div class="shrink-0 px-6 py-4 border-b border-white/10 flex items-center justify-between bg-purple-950/40">
         <div class="min-w-0">
           <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Sistema de Operaciones
             Ejecutivas</span>
@@ -1790,16 +1789,23 @@
         </div>
       </div>
 
-      <div class="px-6 py-3 flex items-center justify-between border-b border-purple-500/10 bg-[#0f0c1a]">
+      <div class="shrink-0 px-6 py-3 border-b border-white/10 bg-[#0f0c1a] flex items-center justify-between">
         <div class="flex items-center gap-3 min-w-0">
           <span id="admin-role-badge" class="admin-role-badge admin-role-badge--owner">Rol</span>
           <span class="text-xs text-gray-400 hidden sm:inline">Sesión autenticada en memoria segura</span>
         </div>
-        <span class="text-[10px] font-mono text-gray-500">ID: <span id="admin-session-id"></span></span>
+        <div class="flex items-center gap-3 flex-shrink-0 min-w-0">
+          <span id="admin-session-timer" class="admin-session-timer"></span>
+          <span class="text-[10px] font-mono text-gray-500 whitespace-nowrap">ID: <span
+              id="admin-session-id"></span></span>
+        </div>
       </div>
 
-      <!-- Rol Propietario: Analítica Financiera & Operativa -->
-      <div id="admin-owner-view" class="hidden p-6 space-y-6">
+      <!-- Cuerpo scrolleable interno: único scroll del portal (headers fijos arriba) -->
+      <div id="admin-scroll-body" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar admin-scroll-body">
+
+        <!-- Rol Propietario: Analítica Financiera & Operativa -->
+        <div id="admin-owner-view" class="hidden">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h4 class="text-sm font-bold text-white">Analítica Ejecutiva &amp; Flujo Financiero</h4>
@@ -1825,16 +1831,45 @@
         <!-- Trend Bar de Flujo de Caja (SVG puro) -->
         <div id="portal-sparkline"></div>
 
+        <!-- Calendario de Disponibilidad y Logística -->
+        <section aria-label="Calendario de disponibilidad y logística">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div class="min-w-0">
+              <h4 class="text-xs font-bold text-gray-300 uppercase tracking-wider">Calendario de Disponibilidad y
+                Logística</h4>
+              <p class="text-[11px] text-gray-500" id="admin-cal-month"></p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" data-cal-nav="prev" aria-label="Mes anterior"
+                class="admin-act-btn admin-act-btn--neutral">← Ant.</button>
+              <button type="button" data-cal-nav="next" aria-label="Mes siguiente"
+                class="admin-act-btn admin-act-btn--neutral">Sig. →</button>
+            </div>
+          </div>
+          <div class="rounded-2xl bg-white/5 border border-purple-500/25 p-4 custom-scrollbar">
+            <div class="grid grid-cols-7 gap-1 mb-2 text-center text-[10px] font-bold uppercase tracking-wider text-gray-500 select-none"
+              aria-hidden="true">
+              <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+            </div>
+            <div id="admin-calendar-grid" class="grid grid-cols-7 gap-1"></div>
+          </div>
+          <div id="admin-calendar-day-sheet" class="cal-day-sheet hidden mt-3 p-4 rounded-2xl bg-white/5 border border-purple-500/25"></div>
+        </section>
+
         <!-- Gestión Avanzada de Reservas -->
         <div>
           <h4 class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Gestión Avanzada de Reservas</h4>
+          <div class="mb-4">
+            <input type="search" id="admin-booking-search" placeholder="Buscar por código ARK, cliente, teléfono o ubicación..."
+              aria-label="Buscar reservas" class="glass-input w-full rounded-xl px-3.5 py-2.5 text-sm">
+          </div>
           <div id="admin-status-filters" class="flex flex-wrap gap-2 mb-4"></div>
           <div id="admin-bookings-list" class="space-y-3"></div>
         </div>
       </div>
 
       <!-- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) -->
-      <div id="admin-it-view" class="hidden p-6">
+      <div id="admin-it-view" class="hidden">
         <div id="admin-it-tabs" class="flex flex-wrap gap-2 mb-6">
           <button type="button" data-it-tab="prices" class="admin-tab-btn admin-tab-btn--active">1. Matriz de
             Tarifas</button>
@@ -1846,6 +1881,7 @@
         <div id="admin-it-gallery" class="hidden space-y-5"></div>
         <div id="admin-it-availability" class="hidden space-y-5"></div>
         <div id="admin-it-backup" class="hidden space-y-5"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -1953,6 +1989,57 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Staff Portal: Reprogramar Fecha de Reserva (#adminRescheduleModal) -->
+  <div id="adminRescheduleModal" role="dialog" aria-modal="true" aria-labelledby="admin-resched-title"
+    onclick="if (event.target === this) AdminModule.closeRescheduleModal()"
+    class="fixed inset-0 z-[85] hidden items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none invisible">
+    <div
+      class="relative m-auto max-w-md w-full rounded-3xl bg-[#0c0814]/95 border border-purple-500/30 p-6 sm:p-7 shadow-2xl overflow-hidden">
+      <div class="flex items-center justify-between pb-4 border-b border-purple-500/20 mb-5">
+        <div>
+          <span class="text-[10px] font-bold text-pink-400 uppercase tracking-widest">Gestión de Reservas</span>
+          <h3 id="admin-resched-title" class="text-lg font-bold text-white">Reprogramar Reserva</h3>
+        </div>
+        <button type="button" onclick="AdminModule.closeRescheduleModal()" aria-label="Cerrar modal"
+          class="w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-gray-400 hover:text-white transition-all flex items-center justify-center">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <p class="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Reserva a reprogramar</p>
+      <p class="font-mono font-extrabold text-purple-300 text-sm mb-4" id="admin-resched-code">—</p>
+      <label class="block text-gray-300 font-bold mb-1.5" for="admin-resched-date">Nueva fecha del evento</label>
+      <input type="date" id="admin-resched-date" aria-label="Nueva fecha del evento"
+        class="glass-input w-full rounded-xl px-3.5 py-2.5 text-sm font-semibold text-white">
+      <p class="text-[11px] text-amber-300/80 mt-2">La antelación mínima es 72 h.</p>
+      <div class="flex items-center justify-end gap-3 pt-5 mt-4 border-t border-purple-500/20">
+        <button type="button" id="admin-resched-cancel" onclick="AdminModule.closeRescheduleModal()"
+          class="admin-act-btn admin-act-btn--neutral">Cancelar</button>
+        <button type="button" id="admin-resched-confirm" onclick="AdminModule.confirmReschedule()"
+          class="admin-act-btn admin-act-btn--confirm">Confirmar Nueva Fecha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff Portal: Lightbox de Comprobante SINPE en Alta Resolución (#adminVoucherModal) -->
+  <div id="adminVoucherModal" role="dialog" aria-modal="true" aria-label="Comprobante SINPE en alta resolución"
+    onclick="if (event.target === this) AdminModule.closeVoucherPreview()"
+    class="fixed inset-0 z-[95] hidden items-center justify-center p-4 bg-black/90 backdrop-blur-2xl opacity-0 pointer-events-none invisible">
+    <div class="relative max-w-[90vw] max-h-[85vh]">
+      <button type="button" id="admin-voucher-close" onclick="AdminModule.closeVoucherPreview()"
+        aria-label="Cerrar comprobante"
+        class="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-gray-300 hover:text-white transition-all flex items-center justify-center z-10">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      <img id="admin-voucher-img" src="" alt="Comprobante SINPE de la reserva"
+        class="max-w-[90vw] max-h-[85vh] object-contain rounded-xl border border-purple-500/30 bg-[#0c0814]/60 shadow-[0_0_60px_rgba(168,85,247,0.25)]">
+      <p class="text-center text-[10px] text-gray-500 mt-3">Comprobante de transferencia SINPE (alta resolución)</p>
     </div>
   </div>
 

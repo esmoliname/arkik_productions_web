@@ -185,6 +185,15 @@ const StorageEngine = {
   },
 
   loadGallery() {
+    // Migración v3.2 → v3.3: la clave canónica ahora es arkik_media_v1
+    try {
+      const legacy = localStorage.getItem("arkik_gallery_v1");
+      const current = localStorage.getItem(STORAGE_KEYS.gallery);
+      if (current === null && legacy !== null) {
+        localStorage.setItem(STORAGE_KEYS.gallery, legacy);
+        localStorage.removeItem("arkik_gallery_v1");
+      }
+    } catch (e) { /* storage no disponible: continuar */ }
     const stored = safeParse(STORAGE_KEYS.gallery, null);
     if (Array.isArray(stored) && stored.length > 0) {
       this._gallery = stored;
@@ -415,6 +424,9 @@ const PriceManager = {
     if (!this._data) this.load();
     this._data.services[id] = Math.max(0, Math.round(Number(price) || 0));
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
   },
 
   setExtraPrice(key, price) {
@@ -423,11 +435,17 @@ const PriceManager = {
     if (val > 0) this._data.extras[key] = val;
     else delete this._data.extras[key];
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
   },
 
   reset() {
     this._data = { services: {}, extras: {} };
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
   },
 
   replace(payload) {
@@ -443,6 +461,9 @@ const PriceManager = {
       if (Number.isFinite(v) && v > 0) next.extras[k] = v;
     });
     this._data = next;
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
   },
 
   exportData() {
@@ -460,6 +481,15 @@ const AvailabilityManager = {
 
   load() {
     try {
+      // Migración v3.2 → v3.3: la clave canónica ahora es arkik_blocked_dates_v1
+      try {
+        const legacy = localStorage.getItem("arkik_availability_v1");
+        const current = localStorage.getItem(STORAGE_KEYS.availability);
+        if (current === null && legacy !== null) {
+          localStorage.setItem(STORAGE_KEYS.availability, legacy);
+          localStorage.removeItem("arkik_availability_v1");
+        }
+      } catch (e) { /* storage no disponible: continuar */ }
       this._data = safeParse(STORAGE_KEYS.availability, {});
       if (!this._data || typeof this._data !== "object") this._data = {};
     } catch (e) {
@@ -537,6 +567,23 @@ const BookingStore = {
 
   get(code) {
     return this._data.find(b => b.code === code) || null;
+  },
+
+  // Alias de búsqueda por código (usado por las acciones del Portal Admin)
+  find(code) {
+    return this.get(code);
+  },
+
+  // Reprogramación: solo cambia selectedDate; montos y SINPE quedan intactos
+  updateDate(code, iso) {
+    const b = this.get(code);
+    if (!b || !iso) return false;
+    b.selectedDate = iso;
+    this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("bookings");
+    }
+    return true;
   },
 
   updateStatus(code, status) {
@@ -1186,6 +1233,10 @@ const AdminModule = {
   ownerFilter: "todas",
   periodFilter: "total",
   itTab: "prices",
+  ownerQuery: "",        // Búsqueda libre dentro de Gestión Avanzada de Reservas
+  calCursor: "",         // AAAA-MM visible en el calendario de disponibilidad
+  calSelectedDay: "",    // AAAA-MM-DD seleccionado en el calendario ("" = ningún día)
+  reschedCode: "",       // Código de la reserva pendiente de reprogramación
 
   // ---- Apertura / Cierre (Login) ----
 
@@ -1374,10 +1425,24 @@ const AdminModule = {
 
   startInactivityTimer() {
     this.clearInactivityTimer();
+    const ms = ADMIN_CONFIG.sessionTimeoutMs || 300000;
+    this.sessionDeadline = Date.now() + ms;
     this.inactivityTimer = setTimeout(() => {
       showToast("Sesión administrativa expirada por inactividad.", "info");
       this.terminateSession();
-    }, ADMIN_CONFIG.sessionTimeoutMs || 300000);
+    }, ms);
+    const timerEl = document.getElementById("admin-session-timer");
+    const pad = n => String(n).padStart(2, "0");
+    const tick = () => {
+      const remain = Math.max(0, this.sessionDeadline - Date.now());
+      if (timerEl) timerEl.textContent = `Sesión expira en ${pad(Math.floor(remain / 60000))}:${pad(Math.floor(remain % 60000 / 1000))}`;
+      if (remain <= 0 && this.sessionTick) {
+        clearInterval(this.sessionTick);
+        this.sessionTick = null;
+      }
+    };
+    tick();
+    this.sessionTick = setInterval(tick, 1000);
   },
 
   clearInactivityTimer() {
@@ -1385,6 +1450,12 @@ const AdminModule = {
       clearTimeout(this.inactivityTimer);
       this.inactivityTimer = null;
     }
+    if (this.sessionTick) {
+      clearInterval(this.sessionTick);
+      this.sessionTick = null;
+    }
+    const timerEl = document.getElementById("admin-session-timer");
+    if (timerEl) timerEl.textContent = "";
   },
 
   terminateSession() {
@@ -1437,6 +1508,7 @@ const AdminModule = {
     this.renderOwnerPeriodFilters();
     this.renderOwnerMetrics();
     this.renderOwnerSparkline();
+    this.renderOwnerCalendar();
     this.renderOwnerFilters();
     this.renderOwnerBookings();
   },
@@ -1472,7 +1544,7 @@ const AdminModule = {
     box.innerHTML = [
       kpiCard("💳", "Adelantos SINPE Validados (50%)", formatCRC(validatedDeposits), "border-emerald-500/40"),
       kpiCard("🤝", "Saldos por Cobrar en Escenario", formatCRC(receivable), "border-pink-500/40"),
-      kpiCard("📊", "Facturación Proyectada Total", formatCRC(projected), "border-cyan-500/40"),
+      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "border-cyan-500/40"),
       kpiCard("📅", "Eventos Activos & Ocupación", `${active.length} activos · ${occupancy}% ocupación`, "border-purple-500/40")
     ].join("");
   },
@@ -1537,6 +1609,10 @@ const AdminModule = {
           <line x1="12" y1="${H - padB}" x2="${W - 12}" y2="${H - padB}" stroke="rgba(168,85,247,0.2)" stroke-width="1"/>
           ${bars}
         </svg>
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-white/10 text-[10px] font-semibold text-gray-400">
+          <span>Efectivo confirmado: <strong class="text-emerald-400 tabular-nums">${formatCRC(data.reduce((s, x) => s + x.validated, 0))}</strong></span>
+          <span>Saldo por cobrar: <strong class="text-pink-400 tabular-nums">${formatCRC(data.reduce((s, x) => s + x.receivable, 0))}</strong></span>
+        </div>
       </div>`;
   },
 
@@ -1562,12 +1638,215 @@ const AdminModule = {
     const box = document.getElementById("admin-bookings-list");
     if (!box) return;
     const periodList = bookingsInPeriod(this.periodFilter);
-    const list = periodList.filter(b => this.ownerFilter === "todas" || b.status === this.ownerFilter);
+    const q = String(this.ownerQuery || "").toLowerCase();
+    const list = periodList
+      .filter(b => this.ownerFilter === "todas" || b.status === this.ownerFilter)
+      .filter(b => {
+        if (!q) return true;
+        return [b.code, b.clientName, b.clientPhone, b.canton, b.province]
+          .some(v => String(v || "").toLowerCase().includes(q));
+      });
     if (!list.length) {
       box.innerHTML = `<div class="p-8 rounded-2xl bg-white/5 border border-white/10 text-center"><p class="text-xs text-gray-500">No hay reservas registradas en esta categoría.</p></div>`;
       return;
     }
     box.innerHTML = list.map(bookingCard).join("");
+  },
+
+  // ---- Rol Propietario: Calendario de Disponibilidad y Logística ----
+
+  // Cursor AAAA-MM válido (inicializa al mes actual si hace falta)
+  calCursorSafe() {
+    const cur = this.calCursor;
+    if (/^\d{4}-\d{2}$/.test(cur)) return cur;
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  },
+
+  // Estado de un día: override manual → bloqueado; si no, conteo de reservas activas
+  calStatusFor(iso) {
+    const manual = AvailabilityManager.get(iso);
+    if (manual === "disabled" || manual === "soldout") {
+      return { key: "blocked", label: "Bloqueado", dot: "cal-dot--purple" };
+    }
+    const count = Math.min(DEFAULT_MAX_EVENTS_PER_DAY, BookingStore.getBookingsForDate(iso).length);
+    if (count === 0) return { key: "libre", label: "Libre", dot: "cal-dot--green" };
+    if (count === 1) return { key: "parcial", label: "Parcial", dot: "cal-dot--yellow" };
+    return { key: "agotado", label: "Agotado", dot: "cal-dot--red" };
+  },
+
+  renderOwnerCalendar() {
+    const grid = document.getElementById("admin-calendar-grid");
+    const monthEl = document.getElementById("admin-cal-month");
+    if (!grid) return;
+    const cursor = this.calCursorSafe();
+    this.calCursor = cursor;
+    const [y, m] = cursor.split("-").map(Number);
+    if (monthEl) monthEl.textContent = `${CALENDAR_LOCALE.months[m - 1]} ${y}`;
+    const today = isoOf(new Date());
+    const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Semana inicia en lunes
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < offset; i++) {
+      cells.push('<div class="cal-cell cal-cell--blank" aria-hidden="true"></div>');
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${cursor}-${String(d).padStart(2, "0")}`;
+      const past = iso < today;
+      const st = this.calStatusFor(iso);
+      const cls = ["cal-cell"];
+      if (past) cls.push("cal-cell--past");
+      if (iso === today) cls.push("cal-cell--today");
+      if (this.calSelectedDay === iso) cls.push("cal-cell--selected");
+      cells.push(
+        `<button type="button" class="${cls.join(" ")}" data-cal-day="${iso}" ${past ? "disabled" : ""}
+           title="${formatDisplayDate(iso)} · ${st.label}" aria-label="${formatDisplayDate(iso)}, ${st.label}">
+          <span class="cal-day-num">${d}</span>
+          <span class="cal-dot ${st.dot}"></span>
+        </button>`
+      );
+    }
+    grid.innerHTML = cells.join("");
+    // Mantener la hoja abierta únicamente si el día seleccionado pertenece a este mes
+    if (this.calSelectedDay && this.calSelectedDay.slice(0, 7) === cursor) {
+      this.renderOwnerDaySheet();
+    } else {
+      this.hideDaySheet();
+    }
+  },
+
+  hideDaySheet() {
+    const sheet = document.getElementById("admin-calendar-day-sheet");
+    if (sheet) sheet.classList.add("hidden");
+  },
+
+  renderOwnerDaySheet() {
+    const sheet = document.getElementById("admin-calendar-day-sheet");
+    if (!sheet) return;
+    const iso = this.calSelectedDay;
+    const d = parseISO(iso);
+    if (!iso || !d) {
+      this.hideDaySheet();
+      return;
+    }
+    const weekday = CALENDAR_LOCALE.weekdays[(d.getDay() + 6) % 7];
+    const bookings = BookingStore.getBookingsForDate(iso);
+    const st = this.calStatusFor(iso);
+    const chipClass = st.key === "blocked" ? "status-badge--disabled"
+      : st.key === "agotado" ? "status-badge--soldout"
+      : st.key === "parcial" ? "status-badge--pendiente"
+      : "status-badge--confirmada";
+    const rows = bookings.length ? bookings.map(b => {
+      const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
+      const setup = sanitizeInput(service ? service.setup_display : (b.setupDisplay || "2h antes"));
+      const teardown = sanitizeInput(service ? service.teardown_display : (b.teardownDisplay || "1h después"));
+      return `
+      <div class="p-3 rounded-xl bg-black/30 border border-white/5 space-y-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-extrabold text-purple-300 text-xs">${sanitizeInput(b.code)}</span>
+          <span class="status-badge status-badge--${b.status}">${BOOKING_STATUSES[b.status] || sanitizeInput(b.status)}</span>
+        </div>
+        <p class="text-sm font-bold text-white">${sanitizeInput(b.clientName)}</p>
+        <p class="text-[11px] text-gray-400">${sanitizeInput(b.serviceName)}${b.eventType ? " · " + sanitizeInput(b.eventType) : ""}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</p>
+        <p class="text-[11px] text-gray-500">Logística: Montaje ${setup} · Desmontaje ${teardown}</p>
+        <p class="text-[11px] text-gray-500">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
+        <p class="text-[11px] text-gray-500">Contacto: ${sanitizeInput(b.clientPhone)}${b.clientEmail ? " · " + sanitizeInput(b.clientEmail) : ""}</p>
+        <p class="text-[11px] text-gray-500">Ref. SINPE: <span class="font-mono font-bold text-cyan-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></p>
+      </div>`;
+    }).join("") : `<p class="text-xs text-gray-500 text-center py-4">Sin eventos. Día libre.</p>`;
+
+    sheet.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <span class="text-[10px] font-bold text-pink-400 uppercase tracking-widest">Logística del Día</span>
+          <h5 class="text-sm font-bold text-white">${formatDisplayDate(iso)} · ${weekday}</h5>
+        </div>
+        <span class="status-badge ${chipClass}">${st.label}</span>
+        <button type="button" data-day-sheet-close onclick="AdminModule.calSelectedDay = ''; AdminModule.hideDaySheet();"
+          class="admin-act-btn admin-act-btn--neutral">Cerrar</button>
+      </div>
+      <div class="space-y-2 mt-3">${rows}</div>`;
+    sheet.classList.remove("hidden");
+  },
+
+  // ---- Reprogramación de Reservas (modal #adminRescheduleModal) ----
+
+  openRescheduleModal(code) {
+    const booking = BookingStore.get(code);
+    if (!booking) return;
+    this.reschedCode = code;
+    const codeEl = document.getElementById("admin-resched-code");
+    if (codeEl) codeEl.textContent = code;
+    const input = document.getElementById("admin-resched-date");
+    if (input) {
+      input.value = "";
+      input.min = isoOf(new Date(Date.now() + 3 * 86400000)); // antelación mínima 72 h
+    }
+    ModalController.open("adminRescheduleModal");
+  },
+
+  closeRescheduleModal() {
+    this.reschedCode = "";
+    ModalController.close("adminRescheduleModal");
+  },
+
+  confirmReschedule() {
+    const code = this.reschedCode;
+    const booking = code ? BookingStore.get(code) : null;
+    if (!booking) return;
+    const input = document.getElementById("admin-resched-date");
+    const newIso = input ? input.value : "";
+    if (!newIso) {
+      showToast("Seleccione la nueva fecha para la reserva.", "error");
+      return;
+    }
+    if (newIso === booking.selectedDate) {
+      showToast("La nueva fecha debe ser diferente a la actual.", "error");
+      return;
+    }
+    if (newIso < isoOf(new Date())) {
+      showToast("No se puede reprogramar a una fecha pasada.", "error");
+      return;
+    }
+    if (newIso < isoOf(new Date(Date.now() + 3 * 86400000))) {
+      showToast("La antelación mínima es 72 h.", "error");
+      return;
+    }
+    const manual = AvailabilityManager.get(newIso);
+    if (manual === "disabled" || manual === "soldout") {
+      showToast("Fecha bloqueada.", "error");
+      return;
+    }
+    const occupied = BookingStore.getBookingsForDate(newIso).filter(b => b.code !== code).length;
+    if (occupied >= DEFAULT_MAX_EVENTS_PER_DAY) {
+      showToast("Capacidad completa ese día.", "error");
+      return;
+    }
+    BookingStore.updateDate(code, newIso);
+    showToast(`Reserva ${code} reprogramada para el ${formatDisplayDate(newIso)}.`, "success");
+    this.closeRescheduleModal();
+    this.renderOwner();
+    this.renderOwnerCalendar();
+  },
+
+  // ---- Comprobante SINPE en alta resolución (#adminVoucherModal) ----
+
+  openVoucherPreview(src) {
+    // Los comprobantes se guardan como Data-URL (FileReader.readAsDataURL): solo
+    // se aceptan imágenes data:image para no inyectar otra cosa en el <img>.
+    if (typeof src !== "string" || !src.startsWith("data:image")) {
+      showToast("El comprobante no es una imagen válida.", "error");
+      return;
+    }
+    const img = document.getElementById("admin-voucher-img");
+    if (img) img.src = src;
+    ModalController.open("adminVoucherModal");
+  },
+
+  closeVoucherPreview() {
+    const img = document.getElementById("admin-voucher-img");
+    if (img) img.src = "";
+    ModalController.close("adminVoucherModal");
   },
 
   // ---- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) ----
@@ -1993,9 +2272,9 @@ const AdminModule = {
 
 function kpiCard(icon, label, value, border) {
   return `
-    <div class="p-4 rounded-2xl bg-white/5 border ${border} backdrop-blur-md gpu">
-      <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5"><span class="text-sm">${icon}</span> ${label}</p>
-      <p class="text-lg font-extrabold text-white mt-2 break-all">${value}</p>
+    <div class="exec-kpi ${border}">
+      <p class="exec-kpi-label"><span class="exec-kpi-icon">${icon}</span>${label}</p>
+      <p class="exec-kpi-value">${value}</p>
     </div>`;
 }
 
@@ -2011,13 +2290,16 @@ function bookingCard(b) {
 
   const actions = [];
   if (b.status === "pendiente") {
-    actions.push(`<button type="button" data-action="confirm" class="admin-act-btn admin-act-btn--confirm">💳 Validar Pago Bancario</button>`);
+    actions.push(`<button type="button" data-action="confirm" class="admin-act-btn admin-act-btn--confirm">✅ Validar Pago Bancario</button>`);
   }
   if (b.status === "confirmada") {
     actions.push(`<button type="button" data-action="complete" class="admin-act-btn admin-act-btn--confirm">✅ Marcar Realizada</button>`);
   }
+  if (b.voucherImage) {
+    actions.push(`<button type="button" data-action="view" class="admin-act-btn admin-act-btn--neutral">👁️ Ver Comprobante SINPE</button>`);
+  }
   if (b.status === "pendiente" || b.status === "confirmada") {
-    actions.push(`<button type="button" data-action="cancel" class="admin-act-btn admin-act-btn--cancel">✕ Rechazar / Cancelar</button>`);
+    actions.push(`<button type="button" data-action="cancel" class="admin-act-btn admin-act-btn--cancel">❌ Rechazar / Cancelar</button>`);
   }
   if (b.status !== "cancelada" && b.status !== "pendiente") {
     actions.push(`<button type="button" data-action="voucher" class="admin-act-btn admin-act-btn--neutral">📄 Descargar Voucher PDF</button>`);
@@ -3255,12 +3537,27 @@ function setupEventListeners() {
       if (action === "confirm") {
         BookingStore.updateStatus(booking.code, "confirmada");
         showToast(`Depósito bancario validado. Reserva ${booking.code} confirmada.`, "success");
+        // Plantilla de confirmación WhatsApp (especificación Owner Deck)
+        const firstName = String(booking.clientName).split(" ")[0];
+        const confirmMsg = `Hola ${firstName}! 🎉 Su reserva ${booking.code} del ${formatDisplayDate(booking.selectedDate)}${booking.selectedTime ? " a las " + booking.selectedTime : ""} (${booking.serviceName || booking.eventType || "formato musical"}) está CONFIRMADA. Ref. SINPE: ${booking.sinpeRef || "S/N"}. ¡Nos vemos en el evento! — Juan José Ramírez, Arkik Productions`;
+        window.open(whatsappClientUrl(booking, confirmMsg), "_blank", "noopener");
       } else if (action === "complete") {
         BookingStore.updateStatus(booking.code, "realizada");
         showToast(`Reserva ${booking.code} marcada como realizada.`, "success");
       } else if (action === "cancel") {
         BookingStore.updateStatus(booking.code, "cancelada");
-        showToast(`Reserva ${booking.code} cancelada.`, "info");
+        showToast(`Reserva ${booking.code} cancelada. Cupo del calendario liberado.`, "info");
+        // Aviso de rechazo/cancelación por WhatsApp (especificación Owner Deck)
+        const firstName = String(booking.clientName).split(" ")[0];
+        const rejectMsg = `Hola ${firstName}, le informamos que la reserva ${booking.code} (${formatDisplayDate(booking.selectedDate)}) fue cancelada o rechazada. Si tiene dudas puede escribirnos. Lamentamos el inconveniente. — Arkik Productions`;
+        window.open(whatsappClientUrl(booking, rejectMsg), "_blank", "noopener");
+      } else if (action === "view") {
+        if (booking.voucherImage) {
+          AdminModule.openVoucherPreview(booking.voucherImage);
+          return;
+        }
+        showToast("Esta reserva no tiene comprobante SINPE adjunto.", "error");
+        return;
       } else if (action === "voucher") {
         downloadBookingVoucher(booking);
       }
@@ -5009,22 +5306,3 @@ function initHeroStringsEffect() {
   return handle;
 }
 
-// ============================================================
-// DEFENSIVE DOM LIFECYCLE & INITIALIZATION ENGINE
-// ============================================================
-
-// DOMContentLoaded guard - ensure all DOM elements exist before bootstrapping
-// Handles case where DOM may already be interactive (e.g., fast loads)
-(function() {
-  const alreadyFired = document.readyState === 'complete' || document.readyState === 'interactive';
-
-  if (!alreadyFired) {
-    // DOM not ready yet - add listener
-    document.addEventListener('DOMContentLoaded', () => {
-      AppEngine.init();
-    });
-  } else {
-    // DOM already ready - init immediately
-    AppEngine.init();
-  }
-})();
