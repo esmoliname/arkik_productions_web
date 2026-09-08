@@ -1878,10 +1878,18 @@ footer > .max-w-7xl {
 }
 
 /* ---- Print and PDF Export Styles ---- */
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
 @media print {
+  html {
+    background: #ffffff !important;
+  }
   body {
     background: #ffffff !important;
     color: #111827 !important;
+    color-scheme: light;
   }
   nav, footer, .contact-channel, #adminModal, .fixed {
     display: none !important;
@@ -1891,6 +1899,221 @@ footer > .max-w-7xl {
     color: #111827 !important;
     border: 1px solid #e5e7eb !important;
     box-shadow: none !important;
+  }
+}
+
+/* ---- Executive Pre-Factura: A4 Presentation & Image Safety ----
+ * The PDF renderer (buildExecutiveInvoiceHtml) builds a standalone off-screen
+ * A4 container with full inline styling, so it always prints on a pure white
+ * background regardless of the dark-mode UI. These rules are a defensive
+ * net: they guarantee the logo is never clipped/hidden and that no dark-mode
+ * variable bleeds into any printed/voucher document.
+ *
+ * Width strategy: the template is FLUID (width:100%) so it fills html2pdf's
+ * printable container (A4 portrait + 10mm margin ≈ 718px). The 800px cap only
+ * applies when the document is rendered standalone (browser print fallback).
+ * A fixed 800px width would clip the right edge inside the engine's container.
+ */
+.ark-pre-invoice,
+.ark-pre-invoice * {
+  box-sizing: border-box;
+}
+.ark-pre-invoice {
+  background: #ffffff !important;
+  color: #111827 !important;
+  color-scheme: light;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  min-width: 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.ark-pre-invoice img {
+  max-width: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+@media print {
+  .ark-pre-invoice {
+    background: #ffffff !important;
+    color: #111827 !important;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+}
+
+/* ============================================================
+   STEP 3 — CANTÓN & PROVINCIA SELECTOR CONTRAST (native dropdowns)
+   Forces dark high-contrast styling on every native <select>/<option>
+   across Chromium, Safari and Firefox: white text was rendering over a
+   light OS background, making cantons invisible.
+   ============================================================ */
+select.ark-input,
+select.ark-input option {
+  background-color: #0d091a !important;
+  color: #ffffff !important;
+}
+select.ark-input option:hover,
+select.ark-input option:checked {
+  background-color: #7c3aed !important;
+  color: #ffffff !important;
+}
+select.ark-input:focus,
+select.ark-input:active {
+  background-color: #16102b !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(192, 132, 252, 0.6) !important;
+  outline: none;
+}
+
+/* ============================================================
+   STEP 4 — EXECUTIVE ACTION SUITE (glassmorphism neon suite)
+   Replaces the flat solid-color blocks (green/pink/blue) with refined
+   glass panels: subtle neon edge borders and micro-interactions.
+   ============================================================ */
+.btn-exec {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.875rem 1.5rem; /* py-3.5 px-6 */
+  min-height: 52px;
+  border-radius: 1rem;      /* rounded-2xl */
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease,
+    background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.btn-exec svg {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.btn-exec:hover {
+  transform: translateY(-2px);
+}
+.btn-exec:active {
+  transform: translateY(0);
+}
+.btn-exec:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.45);
+}
+
+/* Primary — Deep emerald glass (WhatsApp) */
+.btn-exec-primary {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.45));
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  color: #ffffff;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.25);
+}
+.btn-exec-primary:hover {
+  box-shadow: 0 8px 28px rgba(16, 185, 129, 0.35);
+  border-color: rgba(52, 211, 153, 0.7);
+}
+
+/* Secondary — Purple/Indigo executive glass (Pre-Factura preview) */
+.btn-exec-secondary {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(109, 40, 217, 0.4));
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  color: #ffffff;
+  box-shadow: 0 4px 20px rgba(109, 40, 217, 0.2);
+}
+.btn-exec-secondary:hover {
+  border-color: rgba(216, 180, 254, 0.6);
+  box-shadow: 0 8px 28px rgba(147, 51, 234, 0.3);
+}
+
+/* Tertiary — Minimalist muted glass (Reenviar al correo) */
+.btn-exec-tertiary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e5e7eb; /* gray-200 */
+  box-shadow: none;
+}
+.btn-exec-tertiary:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================================
+   IN-APP EXECUTIVE PRE-INVOICE PREVIEW VIEWER (#invoicePreviewModal)
+   On-screen vector document viewer that replaces blank background PDF
+   generation: authentic A4 paper preview with native print/save dialog.
+   ============================================================ */
+.invoice-preview-stage {
+  background: #1b1425;
+  border-radius: 12px;
+  padding: 24px;
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.invoice-preview-paper {
+  background: #ffffff !important;
+  color: #111827 !important;
+  color-scheme: light;
+  max-width: 780px;
+  width: 100%;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  font-family: 'Inter', 'Plus Jakarta Sans', sans-serif;
+  margin: 0 auto;
+}
+.invoice-preview-content {
+  background: #ffffff;
+}
+
+/* Print isolation: when the preview is open, print ONLY the A4 sheet
+   (vector fidelity, zero blank pages). @page A4 10mm is declared above. */
+@media print {
+  body.invoice-preview-open > *:not(#invoicePreviewModal) {
+    display: none !important;
+  }
+  body.invoice-preview-open #invoicePreviewModal {
+    position: static !important;
+    display: block !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+  .invoice-preview-actions {
+    display: none !important;
+  }
+  .invoice-preview-stage {
+    background: #ffffff !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .invoice-preview-paper {
+    max-width: none !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+  }
+  .invoice-preview-content {
+    background: #ffffff !important;
+  }
+  body.invoice-preview-open #invoicePreviewModal > div > p {
+    display: none !important;
   }
 }
 
@@ -2343,4 +2566,676 @@ footer > .max-w-7xl {
 .drive-cta:hover {
   background: linear-gradient(135deg, rgba(66, 133, 244, 0.3), rgba(66, 133, 244, 0.1));
   box-shadow: 0 0 16px rgba(66, 133, 244, 0.35);
+}
+
+/* ============================================================
+   MOBILE-FIRST ERGONOMICS OVERHAUL (v2.1) — <768px thumb zone
+   ------------------------------------------------------------
+   1. Modal footer / step navigation thumb-zone stacking lives in
+      index.html (flex-col-reverse gap-3 w-full on mobile →
+      primary action renders first; sm: restores the desktop row).
+   2. #booking-modal → fluid bottom-sheet overlay under 768px;
+      desktop keeps the centered 2-column card (p-8, max-w-4xl,
+      lg:max-w-5xl).
+   3. Mobile form legibility: iOS anti-zoom (16px) is enforced
+      globally under 768px above; native dropdown contrast lives
+      on select.ark-input above; purple focus highlight below.
+   4. Minimum 44x44px touch targets across the wizard.
+   Desktop (>=768px) visual behavior remains unchanged.
+   ============================================================ */
+
+/* --- 2. RESPONSIVE VIEWPORT & MODAL CONTAINER ---
+   Mobile: fluid bottom-sheet anchored to the bottom edge, rounded
+   top corners, iOS momentum scrolling + bottom safe-area padding. */
+@media (max-width: 767.98px) {
+  #booking-modal {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+
+  #booking-modal .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  #booking-modal #modal-card {
+    position: relative;
+    top: auto;                         /* top-auto */
+    left: 0;                           /* inset-x-0 */
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    max-height: 90vh;                  /* max-h-[90vh] */
+    border-radius: 1.5rem 1.5rem 0 0;  /* rounded-t-3xl */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* iOS momentum */
+    overscroll-behavior: contain;
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 640–768px tablets keep the softer sm:p-6 bottom padding */
+@media (min-width: 640px) and (max-width: 767.98px) {
+  #booking-modal #modal-card {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Desktop (>=768px): centered 2-column card keeps p-8 padding */
+@media (min-width: 768px) {
+  #booking-modal #modal-card {
+    margin: auto;        /* centered overlay */
+    border-radius: 1.5rem; /* rounded-3xl */
+    padding: 2rem;       /* p-8 */
+  }
+}
+
+/* Desktop (>=1024px): wide 2-column card (lg:max-w-5xl) */
+@media (min-width: 1024px) {
+  #booking-modal #modal-card {
+    max-width: 64rem;    /* lg:max-w-5xl */
+  }
+}
+
+/* --- 3. MOBILE FORM LEGIBILITY & CONTRAST ---
+   Distinct purple border + darker fill while a field is active. */
+@media (max-width: 767.98px) {
+  #booking-modal input:focus,
+  #booking-modal select:focus,
+  #booking-modal textarea:focus {
+    border-color: rgba(192, 132, 252, 0.6); /* border-purple-400/60 */
+    background-color: #16102b;              /* focus fill */
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25);
+    outline: none;
+  }
+}
+
+/* --- 1 + 4. THUMB-ZONE TOUCH TARGETS (min 44x44) --- */
+@media (max-width: 767.98px) {
+  #booking-modal button,
+  #booking-modal a,
+  #booking-modal input,
+  #booking-modal select,
+  #booking-modal textarea {
+    min-height: 44px;
+  }
+
+  /* Time chips were 36px — bring the whole wizard to spec */
+  #booking-modal .time-chip {
+    min-height: 44px;
+  }
+}
+
+/* ============================================================
+   WIZARD STEPPER BAR — Progressive Tracker (v2.1)
+   ------------------------------------------------------------
+   Mobile (<768px): circular badges over a subtle track line;
+   active = purple pill + expanding label, completed = emerald
+   badge + check icon, upcoming = glass dot (number only).
+   Desktop (>=768px): executive 4-stage glassmorphism card bar.
+   State hooks: js/app.js #updateModalStep toggles text-purple-300
+   (active), text-emerald-400 (completed) and text-gray-500
+   (upcoming) on each #step-indicator-N node. The CSS reads ONLY
+   those exact classes — the JS stays 100% untouched.
+   ============================================================ */
+
+/* --- Sticky bar shell (keeps the tracker pinned in the modal) --- */
+#booking-modal .modal-stepper {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 0.625rem 0.75rem;                /* py-2.5 px-3 */
+  background: rgba(0, 0, 0, 0.85);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+/* --- Mobile track: subtle background line behind the badges --- */
+#booking-modal .modal-stepper-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.75rem 0.5rem;                  /* py-3 px-2 */
+  border-radius: 1rem;                      /* rounded-2xl */
+  background: rgba(13, 9, 26, 0.8);         /* bg-[#0d091a]/80 */
+  border: 1px solid rgba(255, 255, 255, 0.1); /* border-white/10 */
+}
+
+#booking-modal .modal-stepper-track::before {
+  content: "";
+  position: absolute;
+  left: 1.75rem;
+  right: 1.75rem;
+  top: 50%;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+/* --- Interactive step node (button, 44px+ touch target) --- */
+#booking-modal .modal-stepper-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.9rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: all 300ms ease-out;
+}
+
+#booking-modal .modal-stepper-node:hover {
+  filter: brightness(1.15);
+}
+
+/* --- Compact circular badge (w-9 h-9 = 36px) --- */
+#booking-modal .modal-stepper-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  font-weight: 700;
+  transition: all 300ms ease-out;
+}
+
+#booking-modal .modal-stepper-num {
+  line-height: 1;
+}
+
+#booking-modal .modal-stepper-check {
+  display: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* --- Step label: collapsed on mobile, expands beside ACTIVE badge --- */
+#booking-modal .modal-stepper-label {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: inherit;
+  transition: all 300ms ease-out;
+}
+
+/* --- ACTIVE (mobile): vibrant purple pill + expanding label --- */
+#booking-modal .modal-stepper-node.text-purple-300 .modal-stepper-badge {
+  background: #9333ea;                       /* bg-purple-600 */
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.5),
+    0 0 0 2px rgba(192, 132, 252, 0.6);      /* ring-2 ring-purple-400 + glow */
+  transform: scale(1.04);
+}
+#booking-modal .modal-stepper-node.text-purple-300 .modal-stepper-label {
+  max-width: 12rem;
+  opacity: 1;
+  color: #ffffff;                            /* text-white */
+}
+
+/* --- COMPLETED (mobile): emerald badge + check icon --- */
+#booking-modal .modal-stepper-node.text-emerald-400 .modal-stepper-badge {
+  background: rgba(16, 185, 129, 0.2);      /* bg-emerald-500/20 */
+  color: #34d399;                            /* text-emerald-400 */
+  border: 1px solid rgba(16, 185, 129, 0.4); /* border-emerald-500/40 */
+  box-shadow: none;
+  transform: scale(1);
+}
+#booking-modal .modal-stepper-node.text-emerald-400 .modal-stepper-num {
+  display: none;
+}
+#booking-modal .modal-stepper-node.text-emerald-400 .modal-stepper-check {
+  display: block;
+}
+
+/* --- UPCOMING (mobile): minimalist glass dot, number only --- */
+#booking-modal .modal-stepper-node.text-gray-500 .modal-stepper-badge {
+  background: rgba(255, 255, 255, 0.1);     /* bg-white/10 */
+  color: #9ca3af;                            /* text-gray-400 */
+  border: 1px solid rgba(255, 255, 255, 0.1); /* border-white/10 */
+  box-shadow: none;
+  transform: scale(1);
+}
+
+/* --- Connectors hidden on mobile (track line carries the cue) --- */
+#booking-modal .modal-stepper-connector {
+  display: none;
+}
+
+/* ============================================================
+   DESKTOP (>=768px): executive 4-stage glassmorphism bar
+   ============================================================ */
+@media (min-width: 768px) {
+  #booking-modal .modal-stepper {
+    padding: 0.75rem 1rem;
+  }
+
+  #booking-modal .modal-stepper-track {
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  #booking-modal .modal-stepper-track::before {
+    display: none;   /* cards + connectors replace the line */
+  }
+
+  #booking-modal .modal-stepper-node {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem;                       /* p-2.5 */
+    border-radius: 1rem;                     /* rounded-2xl */
+    background: rgba(255, 255, 255, 0.03);   /* glassmorphism card */
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  #booking-modal .modal-stepper-badge {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  #booking-modal .modal-stepper-label {
+    max-width: none;
+    opacity: 1;
+    font-size: 0.8125rem;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* ACTIVE card: purple glass, white semibold text, soft shadow */
+  #booking-modal .modal-stepper-node.text-purple-300 {
+    background: rgba(168, 85, 247, 0.15);    /* bg-purple-500/15 */
+    border-color: rgba(168, 85, 247, 0.6);   /* border-purple-500/60 */
+    color: #ffffff;
+    font-weight: 600;                        /* font-semibold */
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); /* shadow-md */
+  }
+  #booking-modal .modal-stepper-node.text-purple-300 .modal-stepper-badge {
+    background: #9333ea;
+    color: #ffffff;
+    border-color: transparent;
+    box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.5);
+    transform: scale(1);
+  }
+
+  /* COMPLETED card: emerald glass, emerald-300 text */
+  #booking-modal .modal-stepper-node.text-emerald-400 {
+    background: rgba(16, 185, 129, 0.1);     /* bg-emerald-500/10 */
+    border-color: rgba(16, 185, 129, 0.4);   /* border-emerald-500/40 */
+    color: #6ee7b7;                          /* text-emerald-300 */
+  }
+  #booking-modal .modal-stepper-node.text-emerald-400 .modal-stepper-badge {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: none;
+  }
+
+  /* UPCOMING card: dimmed, gentle hover lift */
+  #booking-modal .modal-stepper-node.text-gray-500 {
+    opacity: 0.5;
+    color: #9ca3af;
+  }
+  #booking-modal .modal-stepper-node.text-gray-500:hover {
+    opacity: 0.75;
+  }
+  #booking-modal .modal-stepper-node.text-gray-500 .modal-stepper-badge {
+    background: rgba(255, 255, 255, 0.08);
+    color: #9ca3af;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+  }
+
+  /* Connectors between cards */
+  #booking-modal .modal-stepper-connector {
+    display: block;
+    flex: 0 1 2.5rem;
+    min-width: 0.5rem;
+    height: 2px;
+    margin: 0 0.125rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* ============================================================
+   STEP 2 — CALENDAR & TIME SLOT LUXURY GLASS (v2.1)
+   ------------------------------------------------------------
+   Visually retouches the Calendar & Availability Engine only.
+   Day cells and time chips are rendered by js/app.js and carry
+   state classes (ark-cal-day--*, time-chip--*); the CSS below
+   reads ONLY those exact classes — JS stays 100% untouched.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   1. LUXURY GLASSMONTH HEADER & NAVIGATION
+   ------------------------------------------------------------ */
+
+/* Deep glass card wrapping month/year + arrows + pill.
+   Mobile: stacks vertically, centered; sm+: single row. */
+.cal-header-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: 1rem;                     /* rounded-2xl */
+  padding: 0.875rem;                       /* p-3.5 */
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+}
+
+@media (min-width: 640px) {
+  .cal-header-card {
+    flex-direction: row;
+  }
+}
+
+/* Premium font scaling for the Month/Year title */
+.cal-header-card .ark-cal-month {
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+/* Arrow row inside the glass card — centered on mobile, start on sm+ */
+.cal-nav-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .cal-nav-wrapper {
+    justify-content: flex-start;
+  }
+}
+
+/* Tactile circular glass arrows (< and >) */
+.cal-nav-btn {
+  width: 44px;                            /* 44px touch target */
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 9999px;                  /* rounded-full */
+  background: rgba(255, 255, 255, 0.05);  /* bg-white/5 */
+  border: 1px solid rgba(255, 255, 255, 0.1); /* border-white/10 */
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.cal-nav-btn:hover {
+  border-color: rgba(192, 132, 252, 0.6); /* hover:border-purple-400 */
+  background: rgba(168, 85, 247, 0.2);    /* hover:bg-purple-500/20 */
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+}
+
+.cal-nav-btn:active {
+  transform: scale(0.95);                 /* active:scale-95 */
+}
+
+/* "Siguiente fecha disponible" — glowing gradient pill */
+.cal-next-available {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  width: 100%;                            /* w-full on mobile */
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.3), rgba(126, 34, 206, 0.5));
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  color: #ffffff;
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.625rem 1rem;                 /* py-2.5 px-4 */
+  border-radius: 0.75rem;                 /* rounded-xl */
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+  transition: all 200ms ease;
+}
+
+@media (min-width: 640px) {
+  .cal-next-available {
+    width: auto;                          /* sm:w-auto */
+  }
+}
+
+.cal-next-available:hover {
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ------------------------------------------------------------
+   2. NEXT-GEN CALENDAR GRID & DAY CELLS
+   ------------------------------------------------------------ */
+
+/* Deep glass shell for the month grid */
+#modal-step-2 .ark-cal {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Default available cell: soft rounded glass tile (44px touch) */
+#modal-step-2 .ark-cal-day {
+  min-height: 44px;                       /* min-h-[44px] */
+  padding: 0.25rem;                       /* p-1 */
+  border-radius: 0.75rem;                 /* rounded-xl */
+  border-color: rgba(255, 255, 255, 0.05);/* border-white/5 */
+  background: rgba(255, 255, 255, 0.03);  /* bg-white/[0.03] */
+  overflow: visible;                      /* glow must not clip */
+}
+
+#modal-step-2 .ark-cal-day:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(192, 132, 252, 0.5); /* hover:border-purple-400/50 */
+  background: rgba(168, 85, 247, 0.1);    /* hover:bg-purple-500/10 */
+  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.22);
+}
+
+/* Selected: vibrant glowing purple gradient.
+   Bounded scale (1.02) + compact glow so edge cells (Mon/Sun)
+   never push the 7-column grid past the viewport. */
+#modal-step-2 .ark-cal-day--selected {
+  background: linear-gradient(135deg, #9333ea, #6d28d9);
+  border: 1px solid #c084fc;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+  transform: translate3d(0, 0, 0) scale(1.02);
+  font-weight: 700;
+  border-radius: 0.75rem;                 /* rounded-xl */
+}
+
+#modal-step-2 .ark-cal-day--selected .ark-cal-day-num {
+  color: #ffffff;
+}
+
+/* Availability state tints (softer than the legacy stripes) */
+#modal-step-2 .ark-cal-day--available {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+#modal-step-2 .ark-cal-day--available:hover:not(:disabled) {
+  border-color: rgba(52, 211, 153, 0.7);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+#modal-step-2 .ark-cal-day--few {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+#modal-step-2 .ark-cal-day--few:hover:not(:disabled) {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(251, 191, 36, 0.14);
+}
+
+#modal-step-2 .ark-cal-day--soldout {
+  background: rgba(244, 63, 94, 0.07);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+/* Disabled / inactive / <72h: muted slate, no red hatch, no ghost border */
+#modal-step-2 .ark-cal-day--disabled,
+#modal-step-2 .ark-cal-day--past {
+  opacity: 0.3;
+  background: transparent;
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+/* Micro-indicators: neon badge = pill + glowing dot + tinted text.
+   Sits directly below the day number (mt-0.5), 10px, medium weight. */
+#modal-step-2 .ark-cal-day-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  font-weight: 500;
+  font-size: 0.625rem;                    /* text-[10px] */
+  line-height: 1;                         /* leading-none */
+  margin-top: 0.125rem;                   /* mt-0.5 */
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+#modal-step-2 .ark-cal-day-label::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+/* 🟢 2 cupos — emerald neon badge */
+#modal-step-2 .ark-cal-day--available .ark-cal-day-label {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+#modal-step-2 .ark-cal-day--available .ark-cal-day-label::before {
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+/* 🟡 1 cupo — amber neon badge */
+#modal-step-2 .ark-cal-day--few .ark-cal-day-label {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+#modal-step-2 .ark-cal-day--few .ark-cal-day-label::before {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #fbbf24;
+}
+
+/* 🔴 Agotado — rose neon badge */
+#modal-step-2 .ark-cal-day--soldout .ark-cal-day-label {
+  color: #fb7185;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+#modal-step-2 .ark-cal-day--soldout .ark-cal-day-label::before {
+  background: #f43f5e;
+  box-shadow: 0 0 6px #f43f5e;
+}
+
+/* Muted statuses (Bloqueado / Pasado / <72h / +1 año): quiet gray pill */
+#modal-step-2 .ark-cal-day--disabled .ark-cal-day-label,
+#modal-step-2 .ark-cal-day--past .ark-cal-day-label {
+  color: #9ca3af;
+  background: transparent;
+  border-color: transparent;
+}
+#modal-step-2 .ark-cal-day--disabled .ark-cal-day-label::before,
+#modal-step-2 .ark-cal-day--past .ark-cal-day-label::before {
+  display: none;
+}
+
+/* ------------------------------------------------------------
+   3. TIME SLOT CHIPS — glass capsules + emerald neon select
+   ------------------------------------------------------------ */
+
+/* Base capsule: frosted glass, purple-tinged text */
+#modal-step-2 .time-chip {
+  background: rgba(255, 255, 255, 0.06);  /* glass */
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e5e7eb;
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.4);
+}
+
+/* Hover: subtle glass lift (hover:-translate-y-0.5) + violet tint */
+#modal-step-2 .time-chip:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(192, 132, 252, 0.7);
+  box-shadow: 0 6px 16px -6px rgba(168, 85, 247, 0.35);
+}
+
+/* Selected: emerald neon accent */
+#modal-step-2 .time-chip--selected {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.4));
+  border: 1px solid #34d399;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.35);
+}
+
+/* Keep the disabled capsule readable (blocked hours) */
+#modal-step-2 .time-chip--disabled {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #9ca3af;
+}
+
+/* ------------------------------------------------------------
+   4. COMPACT LEGEND — refined neon badges
+   ------------------------------------------------------------ */
+#modal-step-2 .legend-bar .flex {
+  align-items: center;
+}
+#modal-step-2 .legend-bar .flex > span {
+  font-size: 0.6875rem;
 }

@@ -1766,8 +1766,8 @@ const AdminModule = {
     const st = this.calStatusFor(iso);
     const chipClass = st.key === "blocked" ? "status-badge--disabled"
       : st.key === "agotado" ? "status-badge--soldout"
-      : st.key === "parcial" ? "status-badge--pendiente"
-      : "status-badge--confirmada";
+        : st.key === "parcial" ? "status-badge--pendiente"
+          : "status-badge--confirmada";
     const rows = bookings.length ? bookings.map(b => {
       const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
       const setup = sanitizeInput(service ? service.setup_display : (b.setupDisplay || "2h antes"));
@@ -2358,9 +2358,9 @@ function bookingCard(b) {
         <p class="text-gray-500 block text-[10px] uppercase tracking-wider mb-1">Cliente / Empresa</p>
         <p class="text-sm font-bold text-white leading-snug">${sanitizeInput(b.clientName)}</p>
         ${b.voucherImage
-          ? `<button type="button" data-action="view"
+      ? `<button type="button" data-action="view"
                 class="mt-2 text-[10px] font-semibold text-purple-300 hover:text-purple-200 underline underline-offset-2">👁️ Ver comprobante SINPE</button>`
-          : `<p class="mt-2 text-[10px] text-amber-300/70">⚠️ comprobante SINPE no adjuntado</p>`}
+      : `<p class="mt-2 text-[10px] text-amber-300/70">⚠️ comprobante SINPE no adjuntado</p>`}
       </div>
 
       <!-- COL 2: Formato y Horarios de Montaje -->
@@ -2436,132 +2436,241 @@ function bookingVerificationState(b) {
 }
 
 /**
- * Construye una Pre-Factura de Servicio / Cotización Formal (A4, 800px) de
- * ALTO CONTRASTE en un contenedor fijo de ancho 800px. Este contenedor queda
- * DETACHED (nunca se fija en el DOM visible) y SOLO se monta momentáneamente y
- * fuera de pantalla justo antes de rasterizarse, para que html2canvas no capture
- * un elemento recortado/oculto (causa raíz del PDF en blanco).
- *
- * El logo se pre-carga vía img.decode() antes de que html2canvas tome la captura,
- * de modo que la imagen jamas se renderice en blanco.
+ * Desplaza una hora "HH:MM" en un delta de minutos y devuelve "HH:MM".
+ * Si la hora de entrada no es parseable devuelve null (para fallback seguro).
  */
-function buildExecutiveInvoiceHtml(b) {
-  const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
-  const setupDisplay = service ? service.setup_display : (b.setupDisplay || "2h antes");
-  const teardownDisplay = service ? service.teardown_display : (b.teardownDisplay || "1h después");
-  const gam = isNonGamLocation(b.province, b.canton);
+function shiftTime(timeStr, deltaMinutes) {
+  if (!timeStr) return null;
+  const m = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const d = new Date(2000, 0, 1, parseInt(m[1], 10), parseInt(m[2], 10));
+  d.setMinutes(d.getMinutes() + (deltaMinutes || 0));
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Extrae el número de horas de una cadena como "2h antes" / "1h después".
+ */
+function parseHourDelta(str) {
+  const m = String(str || "").match(/(\d+)\s*h/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Renderizador OFF-SCREEN de la Pre-Factura Ejecutiva de Arkik Productions.
+ *
+ * Construye una plantilla HTML independiente, de ALTO CONTRASTE, pensada
+ * exclusivamente para impresión A4 PORTAIT. NO intenta imprimir el modal
+ * visible en pantalla (causa raíz del PDF en blanco): genera su propio
+ * documento vector-ready dentro de un contenedor desmontado de ancho fijo
+ * 800px, con fondo blanco forzado, texto pizarra oscuro y acentos violeta,
+ * contrastando por completo con la UI en Modo Oscuro del sitio.
+ *
+ * El contenedor resultante queda DETACHED — solo se monta momentáneamente y
+ * fuera de pantalla justo antes de rasterizarse — y la imagen del logo se
+ * pre-carga vía decode() para que jamás se renderice en blanco.
+ *
+ * @param {Object} booking    Reserva (cart.createdBooking o del Portal).
+ * @param {Object} [cartState] Estado del carrito opcional (fallback de datos).
+ * @returns {HTMLDivElement} Contenedor A4 desmontado y listo para rasterizar.
+ */
+function buildExecutiveInvoiceHtml(booking, cartState) {
+  // Resolución robusta del booking: se acepta una reserva directa o un estado
+  // de carrito que la contenga (compatibilidad con llamadas preexistentes).
+  const b = booking
+    || (cartState && cartState.createdBooking)
+    || (typeof cart !== "undefined" && cart.createdBooking)
+    || null;
+  if (!b) return null;
+
+  const service = CATALOG_SERVICES.find(s => s.id === b.serviceId) || null;
+  const setupDisplay = service && service.setup_display
+    ? service.setup_display
+    : (b.setupDisplay || "2h antes");
+  const teardownDisplay = service && service.teardown_display
+    ? service.teardown_display
+    : (b.teardownDisplay || "1h después");
   const verification = bookingVerificationState(b);
+  const nonGam = isNonGamLocation(b.province, b.canton);
   const today = new Date().toLocaleDateString("es-CR");
+
   const basePrice = PriceManager.getServicePrice(service);
+  const extras = b.extras || {};
+  const travelAmount = b.travelSurcharge > 0 ? b.travelSurcharge : 0;
+
+  // ── Ledger de Logística con horarios exactos derivados del formato ──
+  // Inicio de Show = hora contratada. Llegada/Montaje y Desmontaje se derivan
+  // del delta expresado por el formato (p. ej. "2h antes" / "1h después").
+  const showTime = b.selectedTime || "";
+  const setupH = parseHourDelta(setupDisplay);
+  const teardownH = parseHourDelta(teardownDisplay);
+  const arrivalTime = setupH !== null
+    ? shiftTime(showTime, -setupH * 60)
+    : null;
+  // Desmontaje = Inicio de show + duración del formato + horas de desmontaje.
+  const formatMinutes = (service && service.durationMinutes) ? service.durationMinutes : 120;
+  const teardownTime = (arrivalTime !== null && setupH !== null && teardownH !== null)
+    ? shiftTime(showTime, formatMinutes + teardownH * 60)
+    : null;
 
   const container = document.createElement("div");
-  // Ancho fijo A4 para que html2canvas rasterice a escala uniforme.
-  container.style.width = "800px";
-  container.style.minWidth = "800px";
+  // Presentación A4: plantilla FLUIDA (width:100%) que se adapta al ancho
+  // imprimible del contenedor de html2pdf (A4 portrait + margin 10mm ≈ 718px).
+  // UNIDAD DE PRUEBA: un ancho fijo de 800px recorta ~82px del borde derecho
+  // porque el clon vive dentro del contenedor de ~718px del motor. El cap de
+  // 800px solo aplica si la plantilla se renderiza standalone (printFallback).
+  container.className = "ark-pre-invoice";
+  container.style.width = "100%";
+  container.style.minWidth = "0";
+  container.style.maxWidth = "800px";
+  container.style.padding = "40px";
   container.style.background = "#ffffff";
   container.style.color = "#111827";
-  container.style.fontFamily = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+  container.style.fontFamily = "'Inter', 'Plus Jakarta Sans', sans-serif";
   container.style.boxSizing = "border-box";
-  container.style.padding = "0";
   container.style.margin = "0";
+  container.style.fontSize = "13px";
+  container.style.lineHeight = "1.45";
+
+  // Fila unificada de extras según spec (una sola línea en el Ledger
+  // Financiero): "Horas Extra y Servicios Adicionales (DJ, Subwoofers)".
+  // Las cantidades por ítem se detallan en una sub-línea gris por trazabilidad.
+  const extraCounts = [];
+  if (extras.extraHoursCount > 0) extraCounts.push(`${extras.extraHoursCount} hr extra de show`);
+  if (extras.djHoursCount > 0) extraCounts.push(`${extras.djHoursCount} hr DJ en recesos`);
+  if (extras.subwoofersCount > 0) extraCounts.push(`${extras.subwoofersCount} subwoofer(s) 18"`);
+  const extrasTotal = (Number(extras.extraHoursTotal) || 0)
+    + (Number(extras.djTotal) || 0)
+    + (Number(extras.subwoofersTotal) || 0);
+  const extrasHtml = `<tr style="border-top:1px solid #e5e7eb;">
+        <td style="padding:9px 12px;">
+          <span style="font-weight:600; color:#374151;">Horas Extra y Servicios Adicionales (DJ, Subwoofers)</span>
+          ${extraCounts.length ? `<div style="font-size:10px; color:#6b7280; margin-top:2px;">${extraCounts.join(" · ")}</div>` : ""}
+        </td>
+        <td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600;">${formatCRC(extrasTotal)}</td>
+      </tr>`;
+
+  const travelHtml = nonGam
+    ? `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px;">Viáticos y Traslado — No-GAM (+12%)</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600;">${formatCRC(travelAmount)}</td></tr>`
+    : `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px;">Viáticos y Traslado — GAM (sin recargo)</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums;">₡0</td></tr>`;
+
+  const lineItem = (label, amount) =>
+    `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px; font-weight:600; color:#374151;">${label}</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700;">${formatCRC(amount)}</td></tr>`;
 
   container.innerHTML = `
-  <div style="padding: 40px 48px 32px; color:#111827;">
+  <div style="color:#111827;">
 
-    <!-- ══ FORMAL HEADER ══ -->
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; border-bottom:3px solid #6d28d9; padding-bottom:18px;">
-      <div style="display:flex; align-items:center; gap:14px;">
-        <img src="img/arkik_logo.jpg" alt="Arkik Productions"
-          style="width:72px; height:72px; object-fit:contain; border-radius:12px; border:1px solid #d8b4fe;" />
+    <!-- ══ 1. HEADER OFICIAL ══ -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; border-bottom:3px solid #a855f7; padding-bottom:18px;">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <img src="img/arkik_logo.jpg" id="pdf-logo" alt="Arkik Productions"
+          style="max-height:80px; width:auto; height:80px; object-fit:contain; border-radius:10px; border:1px solid #d8b4fe;" />
         <div>
-          <h1 style="margin:0; font-size:26px; font-weight:900; color:#4c1d95; letter-spacing:0.5px;">ARKIK PRODUCTIONS</h1>
-          <p style="margin:2px 0 0; font-size:12px; font-weight:600; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Servicios Musicales &amp; Audiovisuales Profesionales</p>
-          <p style="margin:2px 0 0; font-size:11px; color:#4b5563;">Granadilla, San José · +506 6227-4984 · arkikproduc2023@gmail.com</p>
+          <div style="margin:0; font-size:24px; font-weight:900; color:#4c1d95; letter-spacing:0.5px;">ARKIK PRODUCTIONS</div>
+          <div style="margin:2px 0 0; font-size:12px; font-weight:700; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Servicios Musicales &amp; Audiovisuales Profesionales</div>
+          <div style="margin:3px 0 0; font-size:11px; color:#4b5563;">Ubicación: Granadilla, San José, Costa Rica</div>
+          <div style="font-size:11px; color:#4b5563;">Contacto: +506 6227-4984 · arkikproduc2023@gmail.com</div>
         </div>
       </div>
       <div style="text-align:right; flex-shrink:0;">
-        <div style="display:inline-block; background:#ede9fe; border:1px solid #c4b5fd; color:#5b21b6; padding:6px 14px; border-radius:10px; font-family:ui-monospace,monospace; font-size:15px; font-weight:800;">${b.code}</div>
+        <div style="display:inline-block; background:#f3e8ff; border:1px solid #c084fc; color:#5b21b6; padding:7px 14px; border-radius:10px; font-family:ui-monospace, 'Cascadia Mono', monospace; font-size:15px; font-weight:800; letter-spacing:0.5px;">${sanitizeInput(b.code)}</div>
       </div>
     </div>
 
-    <!-- ══ DOCUMENT TITLE + VERIFICATION STATUS ══ -->
-    <div style="text-align:center; margin:22px 0 4px;">
-      <h2 style="margin:0; font-size:19px; font-weight:900; color:#1f2937; letter-spacing:0.5px; text-transform:uppercase;">Pre-Factura de Servicio / Cotización Formal</h2>
-      <p style="margin:4px 0 0; font-size:11px; color:#6b7280;">Fecha de Emisión: ${today}</p>
-    </div>
-    <div style="display:flex; justify-content:center; margin:14px 0 0;">
-      <span style="padding:8px 16px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.3px; color:#fff; background:${verification.color};">${verification.label}</span>
+    <!-- ══ 2. DETALLES DEL DOCUMENTO ══ -->
+    <div style="text-align:center; margin:22px 0 8px;">
+      <div style="margin:0; font-size:18px; font-weight:900; color:#1f2937; letter-spacing:0.4px; text-transform:uppercase;">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</div>
+      <div style="margin:6px 0 0; font-size:11px; color:#6b7280;">
+        N° Comprobante: <strong style="color:#4c1d95; font-family:ui-monospace,monospace;">${sanitizeInput(b.code)}</strong>
+        &nbsp;·&nbsp; Fecha de Emisión: <strong>${today}</strong>
+      </div>
+      <div style="margin:12px 0 0;">
+        <span style="display:inline-block; padding:7px 16px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.3px; color:#fff; background:${verification.color};">${verification.label}</span>
+      </div>
     </div>
 
-    <!-- ══ CLIENT & LOCATION ══ -->
-    <div style="margin:24px 0 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
-      <p style="margin:0 0 10px; font-size:11px; font-weight:800; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Datos del Cliente &amp; Ubicación</p>
+    <!-- ══ 3. PERFIL DEL CLIENTE ══ -->
+    <div style="margin:22px 0 0; background:#faf5ff; border:1px solid #e9d5ff; border-radius:12px; padding:16px 18px;">
+      <div style="margin:0 0 10px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Perfil del Cliente</div>
       <table style="width:100%; border-collapse:collapse; font-size:12px;">
-        <tr><td style="padding:3px 0; color:#6b7280; width:26%;">Nombre / Empresa:</td><td style="padding:3px 0; font-weight:700;">${sanitizeInput(b.clientName)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Teléfono:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.clientPhone)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Correo:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.clientEmail || "No especificado")}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Tipo de Evento:</td><td style="padding:3px 0; font-weight:700;">${sanitizeInput(b.eventType)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Fecha &amp; Hora:</td><td style="padding:3px 0; font-weight:800; color:#6d28d9;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Cantón / Provincia:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Sede / Dirección:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.address || "No especificada")}</td></tr>
+        <tr><td style="padding:3px 0; color:#6b7280; width:30%;">Nombre / Razón Social:</td><td style="padding:3px 0; font-weight:700;">${sanitizeInput(b.clientName)}</td></tr>
+        <tr><td style="padding:3px 0; color:#6b7280;">Teléfono (+506):</td><td style="padding:3px 0; font-weight:600; font-variant-numeric:tabular-nums;">${sanitizeInput(b.clientPhone)}</td></tr>
+        <tr><td style="padding:3px 0; color:#6b7280;">Correo Electrónico:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.clientEmail || "No especificado")}</td></tr>
+        <tr><td style="padding:3px 0; color:#6b7280;">Lugar del Evento:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}${b.address ? " — " + sanitizeInput(b.address) : ""}</td></tr>
+        <tr><td style="padding:3px 0; color:#6b7280;">Fecha &amp; Hora del Show:</td><td style="padding:3px 0; font-weight:800; color:#6d28d9;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td></tr>
       </table>
     </div>
 
-    <!-- ══ LOGISTICS LEDGER ══ -->
-    <div style="margin:18px 0 0;">
-      <p style="margin:0 0 8px; font-size:11px; font-weight:800; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Ledger de Logística</p>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; background:#faf5ff; border:1px solid #e9d5ff; border-radius:8px; overflow:hidden;">
-        <tr><td style="padding:8px 12px; font-weight:700; width:34%;">Formato Musical:</td><td style="padding:8px 12px;">${sanitizeInput(b.serviceName || b.serviceId)}${b.extras && b.extras.extraHoursCount > 0 ? " · +" + b.extras.extraHoursCount + " hr extras" : ""}</td></tr>
-        <tr><td style="padding:8px 12px; font-weight:700;">Llegada / Montaje Previo:</td><td style="padding:8px 12px;">${setupDisplay}</td></tr>
-        <tr><td style="padding:8px 12px; font-weight:700;">Desmontaje Posterior:</td><td style="padding:8px 12px;">${teardownDisplay}</td></tr>
-      </table>
-    </div>
-
-    <!-- ══ FINANCIAL TABLE ══ -->
+    <!-- ══ 4. LEDGER DE LOGÍSTICA ══ -->
     <div style="margin:20px 0 0;">
-      <p style="margin:0 0 8px; font-size:11px; font-weight:800; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Desglose Financiero</p>
+      <div style="margin:0 0 8px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Ledger de Logística</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid #e9d5ff; border-radius:8px; overflow:hidden; background:#ffffff;">
+        <tr style="background:#a855f7; color:#ffffff;">
+          <th style="padding:8px 12px; text-align:left; font-size:10px; letter-spacing:0.5px; text-transform:uppercase;">Etapa</th>
+          <th style="padding:8px 12px; text-align:left; font-size:10px; letter-spacing:0.5px; text-transform:uppercase;">Horario</th>
+        </tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Formato Musical</td><td style="padding:8px 12px; font-weight:600;">${sanitizeInput(b.serviceName || b.serviceId)}${extras.extraHoursCount > 0 ? " · +" + extras.extraHoursCount + " hr extras" : ""}</td></tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Llegada</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${arrivalTime ? sanitizeInput(arrivalTime) + " (" + sanitizeInput(setupDisplay) + ")" : sanitizeInput(setupDisplay)}</td></tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Montaje Técnico</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${arrivalTime ? sanitizeInput(arrivalTime) + " → " + sanitizeInput(showTime) : sanitizeInput(setupDisplay)}</td></tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Inicio de Show</td><td style="padding:8px 12px; font-weight:800; color:#6d28d9; font-variant-numeric:tabular-nums;">${showTime ? sanitizeInput(showTime) : "Según formato"}</td></tr>
+        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Desmontaje</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${sanitizeInput(teardownDisplay)}${teardownTime ? " (" + sanitizeInput(teardownTime) + ")" : ""}</td></tr>
+      </table>
+    </div>
+
+    <!-- ══ 5. LEDGER FINANCIERO ══ -->
+    <div style="margin:20px 0 0;">
+      <div style="margin:0 0 8px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Ledger Financiero</div>
       <table style="width:100%; border-collapse:collapse; font-size:12px;">
         <thead>
-          <tr style="background:#6d28d9; color:#ffffff;">
-            <th style="padding:9px 12px; text-align:left;">Concepto</th>
-            <th style="padding:9px 12px; text-align:left;">Detalle</th>
-            <th style="padding:9px 12px; text-align:right;">Monto (CRC)</th>
+          <tr style="background:#f3f4f6; border-bottom:2px solid #a855f7;">
+            <th style="padding:10px 12px; text-align:left; font-size:11px; letter-spacing:0.4px; text-transform:uppercase; color:#374151;">Concepto</th>
+            <th style="padding:10px 12px; text-align:right; font-size:11px; letter-spacing:0.4px; text-transform:uppercase; font-variant-numeric:tabular-nums; color:#374151;">Monto ₡</th>
           </tr>
         </thead>
         <tbody>
-          <tr style="border-bottom:1px solid #e5e7eb;">
-            <td style="padding:8px 12px; font-weight:700;">Formato Base (${sanitizeInput(b.serviceName || "Servicio")})</td>
-            <td style="padding:8px 12px; color:#6b7280;">Incluye ${sanitizeInput((service && service.duration) || "2h")} de show</td>
-            <td style="padding:8px 12px; text-align:right; font-weight:700;">${formatCRC(basePrice)}</td>
+          ${lineItem(`Formato Base Contratado — ${sanitizeInput(b.serviceName || "Servicio")}`, basePrice)}
+          ${extrasHtml}
+          ${travelHtml}
+          <tr style="border-top:2px solid #a855f7; background:#faf5ff;">
+            <td style="padding:10px 12px; font-weight:900; color:#4c1d95; text-transform:uppercase; letter-spacing:0.3px;">Sub-Total Bruto</td>
+            <td style="padding:10px 12px; text-align:right; font-weight:900; font-size:14px; color:#4c1d95; font-variant-numeric:tabular-nums;">${formatCRC(b.granTotal)}</td>
           </tr>
-          ${b.extras && b.extras.extraHoursCount > 0 ? `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:7px 12px;">• Horas Adicionales (${b.extras.extraHoursCount} hr)</td><td style="padding:7px 12px; color:#6b7280; font-size:11px;">Continuación directa</td><td style="padding:7px 12px; text-align:right;">${formatCRC(b.extras.extraHoursTotal)}</td></tr>` : ""}
-          ${b.extras && b.extras.djHoursCount > 0 ? `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:7px 12px;">• Servicio DJ Recesos (${b.extras.djHoursCount} hr)</td><td style="padding:7px 12px; color:#6b7280; font-size:11px;">Mezcla en vivo</td><td style="padding:7px 12px; text-align:right;">${formatCRC(b.extras.djTotal)}</td></tr>` : ""}
-          ${b.extras && b.extras.subwoofersCount > 0 ? `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:7px 12px;">• Subwoofers Extra 18" (${b.extras.subwoofersCount} un)</td><td style="padding:7px 12px; color:#6b7280; font-size:11px;">Refuerzo acústico</td><td style="padding:7px 12px; text-align:right;">${formatCRC(b.extras.subwoofersTotal)}</td></tr>` : ""}
-          ${b.travelSurcharge > 0 ? `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:7px 12px;">• Viáticos de Transporte (Fuera GAM +12%)</td><td style="padding:7px 12px; color:#6b7280; font-size:11px;">${sanitizeInput(b.province)}</td><td style="padding:7px 12px; text-align:right;">+${formatCRC(b.travelSurcharge)}</td></tr>` : `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:7px 12px;">• Viáticos (GAM)</td><td style="padding:7px 12px; color:#6b7280; font-size:11px;">Sin recargo</td><td style="padding:7px 12px; text-align:right;">₡0</td></tr>`}
-          <tr>
-            <td colspan="2" style="padding:10px 12px; text-align:right; font-weight:800; font-size:13px;">Sub-Total Bruto</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; font-size:14px; border-top:2px solid #6d28d9;">${formatCRC(b.granTotal)}</td>
+          <tr style="border-top:1px solid #e5e7eb; background:#ecfdf5;">
+            <td style="padding:10px 12px; font-weight:800; color:#047857;">Adelanto Requerido SINPE Móvil (50%)</td>
+            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#047857; font-size:13px; font-variant-numeric:tabular-nums;">${formatCRC(b.deposit50Amount)}</td>
           </tr>
-          <tr style="background:#ecfdf5;">
-            <td colspan="2" style="padding:10px 12px; text-align:right; font-weight:800; color:#047857;">Adelanto SINPE (50%) — PAGADO</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#047857; font-size:14px;">${formatCRC(b.deposit50Amount)}</td>
-          </tr>
-          <tr>
-            <td colspan="2" style="padding:10px 12px; text-align:right; font-weight:800; color:#be185d;">Saldo Restante a Liquidar en Sitio</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#be185d; font-size:14px;">${formatCRC(b.remainingBalance)}</td>
+          <tr style="border-top:1px solid #e5e7eb; background:#fff1f2;">
+            <td style="padding:10px 12px; font-weight:800; color:#be123c;">Saldo Restante a Liquidar en Sitio (50%)</td>
+            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#be123c; font-size:13px; font-variant-numeric:tabular-nums;">${formatCRC(b.remainingBalance)}</td>
           </tr>
         </tbody>
       </table>
-      <p style="margin:8px 0 0; font-size:10px; color:#6b7280;">Ref. SINPE registrada: <strong>${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</strong> · Destino SINPE Móvil: <strong>${SINPE_CONFIG.phone}</strong> (${SINPE_CONFIG.holder})</p>
+      <div style="margin:8px 0 0; font-size:10px; color:#6b7280;">
+        Ref. SINPE: <strong>${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</strong> · Destino SINPE Móvil: <strong>${SINPE_CONFIG.phone}</strong> (${SINPE_CONFIG.holder})
+      </div>
     </div>
 
-    <!-- ══ FORMAL TERMS ══ -->
-    <div style="margin:22px 0 0; background:#fffbeb; border:1px solid #fcd34d; border-radius:10px; padding:14px; font-size:10px; color:#713f12; line-height:1.55;">
-      <p style="margin:0 0 6px; font-weight:800; color:#92400e; text-transform:uppercase; letter-spacing:0.5px;">Términos &amp; Condiciones</p>
-      <p style="margin:0;">1. La <strong>agenda queda CONGELADA</strong> únicamente tras la verificación bancaria del adelanto del 50% y la firma digital del presente documento conforme al "Término de Congelamiento de Agenda".</p>
-      <p style="margin:4px 0 0;">2. ${SINPE_CONFIG.policyText}</p>
-      <p style="margin:4px 0 0;">3. Este documento es una <strong>cotización formal de validez comercial</strong> emitida por Arkik Productions; no constituye factura tributaria.</p>
-      <p style="margin:8px 0 0; color:#9ca3af;">Documento emitido por Arkik Productions · Granadilla, San José, Costa Rica · arkikproduc2023@gmail.com</p>
+    <!-- ══ 6. PIE — CLÁUSULAS LEGALES + FIRMA ══ -->
+    <div style="margin:24px 0 0; border-top:1px dashed #d1d5db; padding-top:16px;">
+      <div style="font-size:10px; color:#374151; line-height:1.6;">
+        <div style="margin:0 0 4px; font-weight:800; color:#4c1d95; text-transform:uppercase; letter-spacing:0.5px;">Cláusulas de Contratación</div>
+        <div style="margin:0;">1. El <strong>adelanto del 50% vía SINPE Móvil no es reembolsable</strong>: ${SINPE_CONFIG.policyText}</div>
+        <div style="margin:4px 0 0;">2. La <strong>agenda queda CONGELADA</strong> únicamente tras la verificación bancaria del adelanto del 50% y la firma digital del presente documento, conforme al Término de Congelamiento de Agenda.</div>
+        <div style="margin:4px 0 0;">3. Este documento constituye una <strong>cotización formal de validez comercial</strong> emitida por Arkik Productions; no constituye factura tributaria.</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-top:34px;">
+        <div style="text-align:center; flex:1;">
+          <div style="border-top:1.5px solid #4c1d95; padding-top:8px;">
+            <div style="font-size:11px; font-weight:800; color:#111827;">Arkik Productions</div>
+            <div style="font-size:9px; color:#6b7280;">Firma Autorizada</div>
+          </div>
+        </div>
+        <div style="font-size:9px; color:#9ca3af; text-align:right;">
+          Documento emitido por Arkik Productions<br>Granadilla, San José, Costa Rica · arkikproduc2023@gmail.com
+        </div>
+      </div>
     </div>
   </div>`;
 
@@ -2588,8 +2697,14 @@ async function preloadExecutiveImages(container) {
 
 /**
  * Rasteriza a PDF de ALTA RESOLUCIÓN un contenedor de Pre-Factura, montándolo
- * FUERA DE PANTALLA (fixed off-DOM) para que html2canvas lo capture completo y
- * sin recortes (fix del PDF en blanco), y lo retira después.
+ * dentro de un WRAPPER temporal invisible (left -9999px) para que la secuencia
+ * completa de imágenes cargue dentro del DOM real. El contenedor en sí NUNCA
+ * lleva offsets: se pasa al motor SIN el wrapper, porque html2pdf.js 0.10.1
+ * clona profundamente el nodo fuente (cloneNode conserva estilos inline) dentro
+ * de su propio contenedor en left:0. Si el nodo llevara left:-9999px, el clon
+ * conservaría ese offset y html2canvas dibujaría el contenido fuera del canvas
+ * → PDF EN BLANCO (causa raíz del bug reportado). El wrapper invisible queda
+ * solo para ocultarlo del usuario; el motor rasteriza el contenedor estático.
  */
 async function saveExecutiveInvoicePDF(container, filename) {
   if (!window.html2pdf) {
@@ -2597,13 +2712,15 @@ async function saveExecutiveInvoicePDF(container, filename) {
   }
   await preloadExecutiveImages(container);
 
-  // Montaje momentáneo y fuera de pantalla: visible para html2canvas pero
-  // absolutamente invisible para el usuario (posición fixed -9999px).
-  container.style.position = "fixed";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.zIndex = "-1";
-  document.body.appendChild(container);
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "absolute";
+  wrapper.style.left = "-9999px";
+  wrapper.style.top = "0";
+  wrapper.style.zIndex = "-1";
+  wrapper.style.margin = "0";
+  wrapper.style.padding = "0";
+  wrapper.appendChild(container);
+  document.body.appendChild(wrapper);
 
   try {
     const opt = {
@@ -2613,10 +2730,11 @@ async function saveExecutiveInvoicePDF(container, filename) {
       html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
     };
+    // from() recibe el contenedor ESTÁTICO; el wrapper con -9999px jamás se clona.
     await window.html2pdf().set(opt).from(container).save();
   } finally {
-    if (document.body.contains(container)) {
-      document.body.removeChild(container);
+    if (wrapper && wrapper.parentNode) {
+      wrapper.parentNode.removeChild(wrapper);
     }
   }
 }
@@ -2752,15 +2870,95 @@ function buildVoucherHtml(b) {
 }
 
 /**
- * Genera y descarga el voucher oficial de reserva en PDF para el cliente.
+ * Vista previa primaria de la Pre-Factura Ejecutiva (reemplaza la generación
+ * de PDF en segundo plano como experiencia por defecto): renderiza el
+ * documento VECTORIAL construido por buildExecutiveInvoiceHtml() dentro del
+ * visor modal #invoicePreviewModal. Imprimir/Save-as-PDF usa el diálogo nativo
+ * del navegador sobre la hoja A4 (100% fidelidad vectorial, cero páginas en
+ * blanco); también puede abrirse en pestaña independiente.
  */
-function exportVoucherPDF() {
-  if (!cart.createdBooking) {
-    showToast("No hay una reserva activa para exportar.", "error");
+async function exportVoucherPDF() {
+  openInvoicePreview();
+}
+
+// ============================================================
+// 9A. IN-APP EXECUTIVE PRE-INVOICE PREVIEW VIEWER
+// (#invoicePreviewModal — document on-screen, print & standalone tab)
+// ============================================================
+
+/** Abre el visor con la Pre-Factura del booking activo. */
+function openInvoicePreview() {
+  const b = (typeof cart !== "undefined" && cart.createdBooking) || null;
+  if (!b) {
+    showToast("No hay una reserva activa para previsualizar.", "error");
     return;
   }
-  const b = cart.createdBooking;
-  downloadBookingVoucher(b);
+
+  const docHtml = buildExecutiveInvoiceHtml(b, cart);
+  if (!docHtml) {
+    showToast("No se pudo generar la Pre-Factura.", "error");
+    return;
+  }
+
+  const content = document.getElementById("invoicePreviewContent");
+  const modal = document.getElementById("invoicePreviewModal");
+  if (!content || !modal) {
+    showToast("Visor de vista previa no disponible.", "error");
+    return;
+  }
+
+  // Montaje del documento vectorial dentro de la hoja A4 del visor.
+  content.innerHTML = "";
+  content.appendChild(docHtml);
+
+  // Pre-carga del logo en el DOM real: garantiza rasterización completa en el
+  // diálogo de impresión y en la pestaña independiente.
+  preloadExecutiveImages(content).catch(() => { });
+
+  document.body.classList.add("invoice-preview-open");
+  ModalController.open("invoicePreviewModal");
+
+  const stage = document.getElementById("invoicePreviewStage");
+  if (stage) stage.scrollTop = 0;
+}
+
+/** Cierra el visor y libera el documento renderizado del DOM. */
+function closeInvoicePreview() {
+  const content = document.getElementById("invoicePreviewContent");
+  if (content) content.innerHTML = "";
+  ModalController.close("invoicePreviewModal");
+  document.body.classList.remove("invoice-preview-open");
+}
+
+/**
+ * Imprime SOLO la hoja A4 del visor (window.print + @media print isolation).
+ * El diálogo nativo del navegador permite «Guardar como PDF» con fidelidad
+ * vectorial completa — cero páginas en blanco.
+ */
+function printInvoicePreview() {
+  const modal = document.getElementById("invoicePreviewModal");
+  if (!modal || modal.classList.contains("hidden")) {
+    showToast("Abra primero la vista previa de la Pre-Factura.", "error");
+    return;
+  }
+  showToast("Abriendo diálogo de impresión del navegador...", "info");
+  window.print();
+}
+
+/**
+ * Abre la Pre-Factura en una ventana independiente (about:blank) con estilos
+ * adjuntos: permite exportar a PDF vía el diálogo nativo o archivar en
+ * Google Drive / impresora del sistema.
+ */
+function openInvoiceStandalone() {
+  const content = document.getElementById("invoicePreviewContent");
+  if (!content || !content.innerHTML.trim()) {
+    showToast("No hay un documento que abrir.", "error");
+    return;
+  }
+  const b = (typeof cart !== "undefined" && cart.createdBooking) || null;
+  const code = (b && b.code) ? String(b.code) : "XXXX";
+  printFallback(content.innerHTML, "PreFactura_ARKIK_" + code);
 }
 
 // ============================================================
@@ -3178,7 +3376,20 @@ function printFallback(htmlContent, title) {
       <head>
         <title>${title}</title>
         <style>
-          body { font-family: sans-serif; margin: 20px; }
+          @page { size: A4 portrait; margin: 10mm; }
+          html, body { background: #ffffff !important; color: #111827 !important; }
+          body { font-family: 'Inter', 'Plus Jakarta Sans', sans-serif; margin: 0; padding: 16px; color-scheme: light; }
+          .ark-pre-invoice,
+          .ark-pre-invoice * { box-sizing: border-box; }
+          .ark-pre-invoice {
+            background: #ffffff !important;
+            color: #111827 !important;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            font-variant-numeric: tabular-nums;
+          }
+          .ark-pre-invoice img { max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @media print { button { display: none; } }
         </style>
       </head>
@@ -4256,7 +4467,7 @@ function adminLogout() {
 // explicit user interaction. Wipes any leftover visible state on
 // app boot so a rogue backdrop can never black the page out.
 const ModalController = {
-  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal'],
+  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal'],
 
   open(modalId) {
     const modal = document.getElementById(modalId);
@@ -4273,7 +4484,7 @@ const ModalController = {
       modal.classList.remove('flex', 'opacity-100', 'pointer-events-auto', 'visible');
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex');
+    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex');
     if (anyOpen.length === 0) {
       document.body.style.overflow = '';
     }
@@ -4373,7 +4584,7 @@ function resetBooking() {
   // Clear new Step 2 elements
   const logisticsPill = document.getElementById("logistics-pill");
   if (logisticsPill) logisticsPill.classList.add("hidden");
-  
+
   const selectionSummary = document.getElementById("selection-summary");
   if (selectionSummary) selectionSummary.classList.add("hidden");
 
