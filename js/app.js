@@ -21,6 +21,15 @@ function sanitizeInput(str) {
 const sanitizeHTML = sanitizeInput; // alias para compatibilidad interna
 
 /**
+ * Elimina cualquier etiqueta HTML del texto (defensa en profundidad).
+ * Se aplica en cleanText() para que NINGÚN dato de usuario persistido
+ * en el carrito contenga markup que luego pueda renderizarse por error.
+ */
+function stripTags(str) {
+  return String(str ?? "").replace(/<[^>]*>?/gm, "");
+}
+
+/**
  * Sanitiza URLs para prevenir ataques javascript: y XSS en atributos href/src.
  */
 function sanitizeUrl(url) {
@@ -85,7 +94,7 @@ function clampInt(value, min, max) {
 }
 
 function cleanText(value, maxLen) {
-  return typeof value === "string" ? value.trim().slice(0, maxLen) : "";
+  return typeof value === "string" ? stripTags(value).trim().slice(0, maxLen) : "";
 }
 
 // Validación estricta de teléfonos Costa Rica: 8 dígitos con prefijo opcional (+506 o 506)
@@ -1069,13 +1078,31 @@ const CalendarModule = {
 
     const { nowISO, minISO, maxISO } = this.getThresholds();
     const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const offset = (new Date(y, m, 1).getDay() + 6) % 7;
+    const firstDayOfWeek = (new Date(y, m, 1).getDay() + 6) % 7;
 
+    // Previous month overflow days (grayed-out leading cells)
+    const prevMonthDays = new Date(y, m, 0).getDate();
+    const prevMonth = m === 0 ? 11 : m - 1;
+    const prevYear = m === 0 ? y - 1 : y;
     let cells = "";
-    for (let i = 0; i < offset; i++) {
-      cells += `<div class="ark-cal-day--empty"></div>`;
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const dayNum = prevMonthDays - i;
+      const iso = `${prevYear}-${String(prevMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+      const isToday = iso === nowISO;
+      const isSelected = iso === this.selectedDate;
+      const css = [
+        "ark-cal-day ark-cal-day--other-month",
+        isToday ? "ark-cal-day--today" : "",
+        isSelected ? "ark-cal-day--selected" : ""
+      ].join(" ").trim();
+      cells += `
+        <button type="button" class="${css}" data-date="${iso}" disabled
+          aria-label="${iso} (previous month)">
+          <span class="ark-cal-day-num">${dayNum}</span>
+        </button>`;
     }
 
+    // Current month days
     for (let d = 1; d <= daysInMonth; d++) {
       const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const state = this.getDayState(iso, nowISO, minISO, maxISO);
@@ -1090,9 +1117,29 @@ const CalendarModule = {
 
       cells += `
         <button type="button" class="${css}" data-date="${iso}" ${state.selectable ? "" : "disabled"}
-          aria-label="${iso} — ${state.label || "No disponible"}">
+          aria-label="${iso}">
           <span class="ark-cal-day-num">${d}</span>
-          <span class="ark-cal-day-label">${state.label}</span>
+        </button>`;
+    }
+
+    // Next month overflow days (fill remaining cells to complete the grid row)
+    const totalCells = firstDayOfWeek + daysInMonth;
+    const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    const nextMonth = m === 11 ? 0 : m + 1;
+    const nextYear = m === 11 ? y + 1 : y;
+    for (let d = 1; d <= remainingCells; d++) {
+      const iso = `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const isToday = iso === nowISO;
+      const isSelected = iso === this.selectedDate;
+      const css = [
+        "ark-cal-day ark-cal-day--other-month",
+        isToday ? "ark-cal-day--today" : "",
+        isSelected ? "ark-cal-day--selected" : ""
+      ].join(" ").trim();
+      cells += `
+        <button type="button" class="${css}" data-date="${iso}" disabled
+          aria-label="${iso} (next month)">
+          <span class="ark-cal-day-num">${d}</span>
         </button>`;
     }
 
@@ -1101,29 +1148,25 @@ const CalendarModule = {
   },
 
   getDayState(iso, nowISO, minISO, maxISO) {
-    // Pasado o menor a 72h
     if (iso < minISO) {
-      return { css: "ark-cal-day--past", label: iso < nowISO ? "Pasado" : "&lt; 72 hrs", selectable: false };
+      return { css: "ark-cal-day--past", selectable: false };
     }
-    // Superior a 365 días
     if (iso > maxISO) {
-      return { css: "ark-cal-day--past", label: "+1 año", selectable: false };
+      return { css: "ark-cal-day--past", selectable: false };
     }
 
-    // Overrides de administración (bloqueado manualmente)
     const override = AvailabilityManager.get(iso);
-    if (override === "soldout") return { css: "ark-cal-day--soldout", label: "Agotado", selectable: false };
-    if (override === "disabled") return { css: "ark-cal-day--disabled", label: "Bloqueado", selectable: false };
+    if (override === "soldout") return { css: "ark-cal-day--soldout", selectable: false };
+    if (override === "disabled") return { css: "ark-cal-day--disabled", selectable: false };
 
-    // Capacidad: 2 eventos máximo por día
     const remaining = AvailabilityManager.remainingSlots(iso);
     if (remaining >= 2) {
-      return { css: "ark-cal-day--available", label: "2 cupos", selectable: true };
+      return { css: "ark-cal-day--available", selectable: true };
     }
     if (remaining === 1) {
-      return { css: "ark-cal-day--few", label: "1 cupo", selectable: true };
+      return { css: "ark-cal-day--few", selectable: true };
     }
-    return { css: "ark-cal-day--soldout", label: "Agotado", selectable: false };
+    return { css: "ark-cal-day--soldout", selectable: false };
   },
 
   shiftMonth(delta) {
@@ -1153,13 +1196,13 @@ const CalendarModule = {
     const el = document.getElementById("selected-date-display") || document.getElementById("date-summary");
     if (!el) return;
     if (!this.selectedDate) {
-      el.textContent = "Ninguna fecha seleccionada";
+      el.textContent = "No date selected";
       return;
     }
     const [y, m, d] = this.selectedDate.split("-").map(Number);
     const name = CALENDAR_LOCALE.months[m - 1];
     const week = CALENDAR_LOCALE.weekdays[(new Date(y, m - 1, d).getDay() + 6) % 7];
-    el.textContent = `${week} ${d} de ${name} ${y}`;
+    el.textContent = `${week} ${d} ${name} ${y}`;
   }
 };
 
@@ -4685,6 +4728,54 @@ function goToStep(stepNumber) {
   updateModalStep(stepNumber);
 }
 
+// ---- Prevención de Doble Envío (Rate Limiting) ----
+// El botón "Continuar a Pago SINPE" se deshabilita al enviar y se reactiva
+// al llegar al paso 4 (o tras 3 segundos como respaldo).
+
+let step3SubmitLocked = false;
+
+function handleStep3Submit(event) {
+  event.preventDefault();
+  if (step3SubmitLocked) return; // ya en proceso: ignorar doble clic
+
+  if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
+
+  // Mismas validaciones que goToStep(4): si algo falla, no bloqueamos el botón.
+  if (!validateCalendarSelection()) {
+    updateModalStep(2);
+    return;
+  }
+  const form = document.getElementById("booking-form-step3");
+  if (form && !form.checkValidity()) {
+    form.reportValidity();
+    return;
+  }
+  if (!validateClientData()) return;
+
+  lockStep3Submit();
+  goToStep(4); // goToStep re-valida (mismo estado) y hace la transición formal
+}
+
+function lockStep3Submit() {
+  const btn = document.getElementById("btn-continue-pay");
+  if (!btn) return;
+  step3SubmitLocked = true;
+  btn.disabled = true;
+  const label = document.getElementById("btn-continue-pay-label");
+  if (label) label.textContent = "Procesando…";
+  // Respaldo: nunca dejar el botón bloqueado más de 3 segundos
+  setTimeout(() => { if (step3SubmitLocked) unlockStep3Submit(); }, 3000);
+}
+
+function unlockStep3Submit() {
+  const btn = document.getElementById("btn-continue-pay");
+  step3SubmitLocked = false;
+  if (!btn) return;
+  btn.disabled = false;
+  const label = document.getElementById("btn-continue-pay-label");
+  if (label) label.textContent = "Continuar a Pago SINPE (50%)";
+}
+
 function validateCalendarSelection() {
   if (!cart.selectedDate) {
     showToast("Seleccione una fecha disponible en el calendario.", "error");
@@ -4862,6 +4953,15 @@ function updateModalStep(stepNumber) {
     }
   }
 
+  // Connectors: se iluminan en verde cuando el paso a su izquierda está completo
+  for (let i = 1; i < 4; i++) {
+    const node = document.getElementById(`step-indicator-${i}`);
+    const conn = node && node.nextElementSibling;
+    if (conn && conn.classList.contains("modal-stepper-connector")) {
+      conn.classList.toggle("connector--complete", i < stepNumber);
+    }
+  }
+
   // Volver al inicio del contenido del modal en cada transición de paso
   const modalCard = document.getElementById("modal-card");
   if (modalCard) modalCard.scrollTop = 0;
@@ -4927,6 +5027,7 @@ function updateModalStep(stepNumber) {
         updateVoucherUploadUI();
       }
     }
+    unlockStep3Submit(); // llega al paso 4 → reactivar el botón de envío
   }
 
   if (cart.selectedService) {
@@ -4936,9 +5037,10 @@ function updateModalStep(stepNumber) {
 
     const logBox = document.getElementById("modal-service-logistics");
     if (logBox) {
+      // Card clara: tiempos en fuente monoespaciada gris con ícono de reloj
       logBox.innerHTML = `
-        <span class="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300">⏱️ Montaje: ${cart.selectedService.setup_display || "2h antes"}</span>
-        <span class="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-300">🧹 Desmontaje: ${cart.selectedService.teardown_display || "1h después"}</span>
+        <span class="format-card__time"><span aria-hidden="true">⏱️</span> Montaje: ${sanitizeInput(cart.selectedService.setup_display || "2h antes")}</span>
+        <span class="format-card__time"><span aria-hidden="true">⏱️</span> Desmontaje: ${sanitizeInput(cart.selectedService.teardown_display || "1h después")}</span>
       `;
     }
 
@@ -4967,17 +5069,16 @@ function renderDynamicExtrasCounters() {
     counterRow({
       key: "extraHoursCount",
       name: "Hora(s) Adicional(es) de Show",
-      badge: "50% Tarifa Base",
-      badgeClass: "bg-purple-900/60 text-purple-300 border border-purple-500/40",
-      priceText: `${formatCRC(extraHourPrice)} por hora adicional (50% de ${formatCRC(PriceManager.getServicePrice(cart.selectedService))}) — máx. ${MAX_EXTRAS.extraHoursCount}`,
+      tag: "50% Tarifa Base",
+      unitPrice: `${formatCRC(extraHourPrice)} / hora`,
+      priceText: `50% de ${formatCRC(PriceManager.getServicePrice(cart.selectedService))} — máx. ${MAX_EXTRAS.extraHoursCount}`,
       value: cart.extraHoursCount,
       max: MAX_EXTRAS.extraHoursCount
     }),
     counterRow({
       key: "djHoursCount",
       name: "Servicio de DJ para Recesos",
-      badge: `${formatCRC(djPrice)} / hr`,
-      badgeClass: "text-pink-400",
+      unitPrice: `${formatCRC(djPrice)} / hr`,
       priceText: "Música continua y mezcla en vivo durante los descansos de la banda",
       value: cart.djHoursCount,
       max: MAX_EXTRAS.djHoursCount
@@ -4985,8 +5086,7 @@ function renderDynamicExtrasCounters() {
     counterRow({
       key: "subwoofersCount",
       name: 'Subwoofers Extra de 18"',
-      badge: `${formatCRC(subPrice)} / un`,
-      badgeClass: "text-pink-400",
+      unitPrice: `${formatCRC(subPrice)} / un`,
       priceText: "Potencia adicional de frecuencias bajas para salones amplios o exteriores",
       value: cart.subwoofersCount,
       max: MAX_EXTRAS.subwoofersCount
@@ -4994,24 +5094,31 @@ function renderDynamicExtrasCounters() {
   ].join("");
 }
 
-function counterRow({ key, name, badge, badgeClass, priceText, value, max }) {
+/**
+ * Tarjeta de extra clara: título + tag a la izquierda, stepper circular
+ * (− / valor / +) y badge de precio negro mate a la derecha.
+ * En móvil (< 640px) la tarjeta apila verticalmente vía CSS.
+ */
+function counterRow({ key, name, tag, unitPrice, priceText, value, max }) {
   const atMin = value <= 0;
   const atMax = value >= max;
-  const btnBase = "tactile-btn w-8 h-8 rounded-lg bg-purple-900/40 border border-purple-500/30 text-purple-300 font-bold flex items-center justify-center text-lg transition-all";
-  const btnDisabled = " opacity-30 cursor-not-allowed";
+  const btnDisabled = " is-disabled";
   return `
-    <div class="p-4 rounded-xl glass-panel border border-purple-500/30 flex items-center justify-between">
-      <div>
-        <div class="flex items-center space-x-2">
-          <span class="text-sm font-bold text-white">${sanitizeInput(name)}</span>
-          <span class="text-[10px] font-extrabold px-2 py-0.5 rounded ${badgeClass}">${sanitizeInput(badge)}</span>
+    <div class="extra-card">
+      <div class="extra-card__info">
+        <div class="extra-card__head">
+          <span class="extra-card__name">${sanitizeInput(name)}</span>
+          ${tag ? `<span class="extra-card__tag">${sanitizeInput(tag)}</span>` : ""}
         </div>
-        <p class="text-xs text-gray-400 mt-0.5">${sanitizeInput(priceText)}</p>
+        <p class="extra-card__price-text">${sanitizeInput(priceText)}</p>
       </div>
-      <div class="flex items-center space-x-3">
-        <button type="button" onclick="adjustExtra('${key}', -1)" ${atMin ? "disabled" : ""} class="${btnBase}${atMin ? btnDisabled : ""}" aria-label="Disminuir ${sanitizeInput(name)}">-</button>
-        <span class="text-base font-extrabold text-white w-6 text-center">${value}</span>
-        <button type="button" onclick="adjustExtra('${key}', 1)" ${atMax ? "disabled" : ""} class="${btnBase}${atMax ? btnDisabled : ""}" aria-label="Aumentar ${sanitizeInput(name)}">+</button>
+      <div class="extra-card__controls">
+        <div class="extra-stepper">
+          <button type="button" onclick="adjustExtra('${key}', -1)" ${atMin ? "disabled" : ""} class="extra-step-btn${atMin ? btnDisabled : ""}" aria-label="Disminuir ${sanitizeInput(name)}">−</button>
+          <span class="extra-stepper__value" aria-live="polite">${value}</span>
+          <button type="button" onclick="adjustExtra('${key}', 1)" ${atMax ? "disabled" : ""} class="extra-step-btn${atMax ? btnDisabled : ""}" aria-label="Aumentar ${sanitizeInput(name)}">+</button>
+        </div>
+        <span class="extra-card__price-badge">${sanitizeInput(unitPrice)}</span>
       </div>
     </div>
   `;
@@ -5059,37 +5166,49 @@ function updateSurchargeBox() {
   if (!box) return;
   box.innerHTML = "";
 
-  const div = document.createElement("div");
-  div.className = "p-3 rounded-xl border text-xs flex justify-between items-center gap-3";
-  const label = document.createElement("span");
-  const value = document.createElement("span");
-  value.className = "font-bold";
+  const banner = document.createElement("div");
+  banner.className = "surcharge-banner";
+
+  const icon = document.createElement("span");
+  icon.className = "surcharge-banner__icon";
+  icon.setAttribute("aria-hidden", "true");
+
+  const body = document.createElement("div");
+  body.className = "surcharge-banner__body";
+
+  const title = document.createElement("p");
+  title.className = "surcharge-banner__title";
+
+  const detail = document.createElement("p");
+  detail.className = "surcharge-banner__detail";
 
   if (!cart.province) {
-    div.classList.add("bg-gray-950/40", "border-gray-600/40", "text-gray-400");
-    label.textContent = "Seleccione su provincia para calcular los viáticos de transporte:";
-    value.textContent = "Pendiente";
-  } else if (!GAM_PROVINCES.includes(cart.province)) {
-    div.classList.add("bg-amber-950/40", "border-amber-500/40", "text-amber-300");
-    label.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.province}):`;
-    value.textContent = `+${formatCRC(cart.travelSurcharge)}`;
-  } else if (!cart.canton) {
-    div.classList.add("bg-gray-950/40", "border-gray-600/40", "text-gray-300");
-    label.textContent = `${cart.province} está dentro del GAM — seleccione el cantón para confirmar cobertura:`;
-    value.textContent = "Pendiente";
-  } else if (cart.isNonGam) {
-    div.classList.add("bg-amber-950/40", "border-amber-500/40", "text-amber-300");
-    label.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.canton}, ${cart.province}):`;
-    value.textContent = `+${formatCRC(cart.travelSurcharge)}`;
+    // Pendiente de selección → banner ámbar
+    banner.classList.add("surcharge-banner--pending");
+    icon.textContent = "⚠️";
+    title.textContent = "Pendiente de selección";
+    detail.textContent = "Seleccione su provincia para calcular los viáticos de transporte.";
   } else {
-    div.classList.add("bg-emerald-950/40", "border-emerald-500/40", "text-emerald-300");
-    label.textContent = `✓ Cobertura GAM (${cart.canton}, ${cart.province}):`;
-    value.textContent = "₡0 (Gratis)";
+    // Provincia seleccionada → banner verde (viáticos ya calculables)
+    banner.classList.add("surcharge-banner--ok");
+    icon.textContent = "✅";
+    title.textContent = "Viáticos calculados según provincia";
+    if (!GAM_PROVINCES.includes(cart.province)) {
+      detail.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.province}): +${formatCRC(cart.travelSurcharge)}`;
+    } else if (!cart.canton) {
+      detail.textContent = `${cart.province} está dentro del GAM — seleccione el cantón para confirmar cobertura (₡0).`;
+    } else if (cart.isNonGam) {
+      detail.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.canton}, ${cart.province}): +${formatCRC(cart.travelSurcharge)}`;
+    } else {
+      detail.textContent = `Cobertura GAM (${cart.canton}, ${cart.province}): ₡0 (Gratis)`;
+    }
   }
 
-  box.appendChild(div);
-  div.appendChild(label);
-  div.appendChild(value);
+  box.appendChild(banner);
+  banner.appendChild(icon);
+  banner.appendChild(body);
+  body.appendChild(title);
+  body.appendChild(detail);
 }
 
 // ---- Provincias & Cantones ----
