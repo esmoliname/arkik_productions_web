@@ -3913,6 +3913,22 @@ function galleryImageCard(item) {
 // Lightbox controller state
 let activeLightboxUrl = "";
 
+// Dominios que responden con X-Frame-Options: DENY / frame-ancestors 'none',
+// por lo que NO pueden incrustarse en un <iframe> (causan ERR_BLOCKED_BY_RESPONSE).
+const NOT_EMBEDDABLE = /drive\.google\.com|instagram\.com|facebook\.com|dropbox\.com|tiktok\.com/i;
+
+// Host "amigable" para el botón de fallback ("Ver en Instagram", "Abrir en Google Drive", …).
+function embeddableHostLabel(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (/drive\.google\.com/.test(host)) return "Google Drive";
+    const name = host.split(".")[0];
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    return "el enlace original";
+  }
+}
+
 function openMediaLightbox(id) {
   const items = StorageEngine.getGalleryItems();
   const item = items.find(m => String(m.id) === String(id));
@@ -3938,7 +3954,8 @@ function openMediaLightbox(id) {
 
   if (container) {
     container.innerHTML = "";
-    if (item.type === "video" && item.embedUrl) {
+    if (item.type === "video" && item.embedUrl && !NOT_EMBEDDABLE.test(item.embedUrl)) {
+      // Dominios embebibles (YouTube, Vimeo, etc.): iframe normal.
       const iframe = document.createElement("iframe");
       iframe.src = item.embedUrl + (item.embedUrl.includes("?") ? "&" : "?") + "autoplay=1";
       iframe.title = item.title;
@@ -3946,6 +3963,47 @@ function openMediaLightbox(id) {
       iframe.setAttribute("allowfullscreen", "");
       iframe.className = "w-full h-full border-0 rounded-2xl";
       container.appendChild(iframe);
+    } else if (item.type === "video" && item.embedUrl && NOT_EMBEDDABLE.test(item.embedUrl)) {
+      // Dominio no embebible (Instagram/Drive/Facebook/…): NO crear iframe.
+      // Mostrar placeholder visual + botón para abrir el original en pestaña nueva.
+      const src = item.thumbnail || "img/Foto Kike .jpg";
+      const openUrl = sanitizeUrl(item.directUrl || item.embedUrl);
+      const hostLabel = embeddableHostLabel(openUrl);
+      const wrap = document.createElement("div");
+      wrap.className = "relative w-full h-full flex flex-col items-center justify-center gap-4 rounded-2xl overflow-hidden";
+      wrap.style.cssText = "background:linear-gradient(160deg,rgba(139,92,246,0.10),rgba(11,6,26,0.85));border:1px solid rgba(139,92,246,0.25);";
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "w-full h-[42vh] overflow-hidden";
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = item.title;
+      img.className = "w-full h-full object-cover";
+      img.style.cssText = "filter:saturate(1.05);";
+      imgWrap.appendChild(img);
+      const overlay = document.createElement("div");
+      overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center";
+      overlay.style.cssText = "background:rgba(11,6,26,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);";
+      const icon = document.createElement("div");
+      icon.textContent = "📹";
+      icon.style.cssText = "font-size:2rem;opacity:0.9;";
+      const msg = document.createElement("p");
+      msg.style.cssText = "font-weight:700;color:#ffffff;font-size:0.9rem;max-width:34ch;text-shadow:0 1px 3px rgba(0,0,0,0.6);";
+      msg.textContent = "Este video no se puede reproducir embebido.";
+      const sub = document.createElement("p");
+      sub.style.cssText = "font-size:0.75rem;color:#c4b5fd;margin-bottom:0.25rem;";
+      sub.textContent = `Solo se permite incrustarlo en una pestaña nueva.`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.cssText = "display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;min-height:44px;padding:0.75rem 1.25rem;border-radius:0.75rem;font-weight:700;font-size:0.875rem;color:#ffffff;background:linear-gradient(135deg,#8b5cf6 0%,#5b21b6 100%);box-shadow:0 8px 24px rgba(139,92,246,0.3);border:1px solid transparent;cursor:pointer;";
+      btn.textContent = `Abrir en ${hostLabel}`;
+      btn.addEventListener("click", () => window.open(openUrl, "_blank", "noopener"));
+      overlay.appendChild(icon);
+      overlay.appendChild(msg);
+      overlay.appendChild(sub);
+      overlay.appendChild(btn);
+      wrap.appendChild(imgWrap);
+      wrap.appendChild(overlay);
+      container.appendChild(wrap);
     } else {
       const img = document.createElement("img");
       img.src = item.thumbnail || item.directUrl || "img/Foto Kike .jpg";
