@@ -419,21 +419,10 @@ html {
   background: rgba(168, 85, 247, 0.6);
 }
 
-/* Floating WhatsApp Button Pulse */
-.whatsapp-pulse {
-  animation: pulse-ring 2s infinite;
-}
-
-@keyframes pulse-ring {
-  0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 18px rgba(34, 197, 94, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
+/* Floating WhatsApp FAB: z-40 + safe-area inset, never covers modal CTAs */
+#whatsapp-float {
+  z-index: 40;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* Native smooth scrolling on iOS & modal viewport ergonomics */
@@ -973,6 +962,160 @@ footer > .max-w-7xl {
   text-shadow: 0 1px 2px rgba(11, 9, 20, 0.45);
 }
 
+/* Esencia legibilidad: texto sobre glow ambiental y vidrio oscuro */
+#esencia .bg-\[\#0d0818\]\/85 h2,
+#esencia .bg-\[\#0d0818\]\/85 p,
+.esencia-profile-card h3,
+.esencia-profile-card p,
+.esencia-profile-card blockquote {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 18px rgba(13, 8, 24, 0.4);
+}
+
+/* ============================================================
+   TARJETA EJECUTIVA DE PERFIL (#esencia) — Crystal Glass VIP
+   ============================================================ */
+
+/* Contenedor principal: vidrio profundo con saturación premium,
+   borde violeta y resplandor interior superior tipo iOS 18 */
+.esencia-profile-card {
+  background: rgba(18, 12, 38, 0.75);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================
+   APPLE LIQUID GLASS — Sistema de Botones Primarios (CTA)
+   Translucidez alta, refracción especular y retroiluminación
+   ambiental flotante (follows hover/focus).
+   ============================================================ */
+.lg-btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 100%);
+  -webkit-backdrop-filter: blur(25px) saturate(200%);
+  backdrop-filter: blur(25px) saturate(200%);
+  box-shadow: 0 15px 35px -5px rgba(168, 85, 247, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4),
+    inset 0 0 15px rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  cursor: pointer;
+  will-change: transform;
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, border-color 0.3s ease-out, background 0.3s ease-out;
+}
+
+/* Micro-escala táctil: expansión en hover, hundimiento en press */
+.lg-btn:hover {
+  transform: scale(1.02);
+}
+
+.lg-btn:active {
+  transform: scale(0.97);
+}
+
+.lg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
+.lg-btn:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 15px 35px -5px rgba(168, 85, 247, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 0 15px rgba(255, 255, 255, 0.2),
+    0 0 0 3px rgba(168, 85, 247, 0.25);
+}
+
+/* Retroiluminación ambiental: orbe difuso flotante detrás del botón */
+.lg-btn::before {
+  content: "";
+  position: absolute;
+  inset: -16px;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(closest-side, rgba(168, 85, 247, 0.35), transparent 70%);
+  opacity: 0;
+  transform: scale(0.85);
+  filter: blur(8px);
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  animation: lg-ambient 3s ease-in-out infinite;
+}
+
+.lg-btn:hover::before,
+.lg-btn:focus-visible::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@keyframes lg-ambient {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.95; }
+}
+
+/* Variante Portal (Auth): borde con pulso luminoso y contraste alto */
+.lg-btn--portal {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-color: rgba(168, 85, 247, 0.35);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(255, 255, 255, 0.06) 50%, rgba(168, 85, 247, 0.16) 100%);
+  animation: lg-border-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes lg-border-glow {
+  0%, 100% {
+    border-color: rgba(168, 85, 247, 0.35);
+    box-shadow: 0 15px 35px -5px rgba(168, 85, 247, 0.3),
+      inset 0 1px 1px rgba(255, 255, 255, 0.4),
+      inset 0 0 15px rgba(255, 255, 255, 0.15);
+  }
+  50% {
+    border-color: rgba(196, 130, 255, 0.7);
+    box-shadow: 0 15px 35px -5px rgba(168, 85, 247, 0.5),
+      inset 0 1px 1px rgba(255, 255, 255, 0.5),
+      inset 0 0 18px rgba(255, 255, 255, 0.22);
+  }
+}
+
+/* ============================================================
+   SEGMENTED CONTROL TÁCTIL (Login del Staff) — iOS/macOS
+   Píldora activa deslizante con vidrio obsidiana y borde violeta.
+   ============================================================ */
+.role-btn {
+  position: relative;
+  z-index: 1;
+  border-radius: 0.75rem;
+  color: rgba(156, 163, 175, 0.9);
+  transition: color 0.3s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  will-change: transform;
+}
+
+.role-btn:hover {
+  color: #e2e8f0;
+}
+
+.role-btn:focus-visible {
+  outline: none;
+  color: #ffffff;
+}
+
+.role-btn--active {
+  background: #181226;
+  color: #ffffff !important;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), 0 0 12px rgba(168, 85, 247, 0.15);
+}
+
 /* ============================================================
    CALENDARIO DE DISPONIBILIDAD (Glassmorphism)
    ============================================================ */
@@ -1346,6 +1489,20 @@ footer > .max-w-7xl {
 .custom-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(168, 85, 247, 0.4) transparent;
+}
+
+/* Barras deslizables horizontales (pills): scroll táctil sin scrollbar visible */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe-area bottom para el cuerpo scrolleable del Staff Portal (iOS Dynamic Island / Home Indicator) */
+.admin-scroll-body {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -1965,21 +2122,31 @@ footer > .max-w-7xl {
 }
 
 /* ============================================================
-   STEP 3 — CANTÓN & PROVINCIA SELECTOR CONTRAST (native dropdowns)
-   Forces dark high-contrast styling on every native <select>/<option>
-   across Chromium, Safari and Firefox: white text was rendering over a
-   light OS background, making cantons invisible.
+   NATIVE DROPDOWN DARK THEME CONTRAST FIX (all <select>/<option>)
+   Fixes white-on-white invisibility in native dropdown popups:
+   every <option> gets an explicit dark background + light text,
+   regardless of the select's own text color (text-white etc.).
    ============================================================ */
-select.ark-input,
-select.ark-input option {
-  background-color: #0d091a !important;
+select option {
+  background-color: #0f0a1c !important;
+  color: #f8fafc !important;
+  padding: 10px !important;
+}
+
+select option:disabled {
+  color: #64748b !important;
+  background-color: #0b0714 !important;
+}
+
+select option:hover,
+select option:focus,
+select option:active,
+select option:checked {
+  background-color: #2e1065 !important;
   color: #ffffff !important;
 }
-select.ark-input option:hover,
-select.ark-input option:checked {
-  background-color: #7c3aed !important;
-  color: #ffffff !important;
-}
+
+/* Focus state del propio <select> oscuro (clase legacy .ark-input) */
 select.ark-input:focus,
 select.ark-input:active {
   background-color: #16102b !important;

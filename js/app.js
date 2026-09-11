@@ -679,7 +679,7 @@ const SecurityModule = {
     if (!role) return { ok: false, locked: false, remaining: ADMIN_CONFIG.maxAttempts };
 
     const inputHash = await sha256Hex(String(pin).trim());
-    const expected = this._data[role.hashKey] || (await sha256Hex(role.defaultPin));
+    const expected = this._data[role.hashKey] || role.defaultHash;
 
     if (inputHash === expected) {
       this._data.attempts = 0;
@@ -1350,6 +1350,9 @@ const AdminModule = {
     if (loginModal) {
       ModalController.close("adminLoginModal");
     }
+    // Auto-clear sensible data after successful authentication
+    const pin = document.getElementById("admin-pin");
+    if (pin) pin.value = "";
     if (!portal) return;
     ModalController.open("adminPortalModal");
     const sid = document.getElementById("admin-session-id");
@@ -1437,7 +1440,7 @@ const AdminModule = {
 
   async attemptLogin() {
     const pin = document.getElementById("admin-pin");
-    const value = pin ? pin.value.trim() : "";
+    const value = pin ? pin.value.trim().replace(/\D/g, "") : "";
     if (!this.role) {
       this.showAuthError("Seleccione un rol de acceso.");
       return;
@@ -1481,7 +1484,7 @@ const AdminModule = {
     box.classList.remove("hidden");
     let remaining = Math.ceil(waitMs / 1000);
     const tick = () => {
-      if (msg) msg.textContent = `Bloqueo de seguridad activo. Reintente en ${remaining}s.`;
+      if (msg) msg.textContent = `Bloqueado de seguridad: ${String(Math.max(0, remaining)).padStart(2, "0")}s`;
       remaining -= 1;
       if (remaining < 0) {
         clearInterval(this.lockoutTimer);
@@ -2384,10 +2387,10 @@ function bookingCard(b) {
   actions.push(`<button type="button" data-action="whatsapp" class="admin-act-btn admin-act-btn--whatsapp">💬 Notificar WhatsApp</button>`);
 
   return `
-  <div class="admin-booking-row rounded-2xl border border-purple-500/20 bg-white/5 p-5 pb-safe" data-id="${b.code}">
+  <div class="admin-booking-row flex flex-col gap-2 p-4 rounded-2xl bg-white/[0.02] border border-white/10 pb-safe" data-id="${b.code}">
     <!-- Encabezado: código + estado + badge GAM + fecha -->
     <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="flex flex-wrap items-center gap-1.5 text-xs">
         <span class="admin-booking-code font-extrabold text-purple-300 text-sm px-2 py-0.5 rounded-md bg-purple-950/50 border border-purple-500/30">${b.code}</span>
         <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
         ${gamBadge}
@@ -4187,8 +4190,6 @@ function setupEventListeners() {
       pin.focus();
     });
   }
-  const loginSubmit = document.getElementById("admin-login-submit");
-  if (loginSubmit) loginSubmit.addEventListener("click", () => AdminModule.attemptLogin());
   const closeLoginBtn = document.getElementById("admin-login-close");
   if (closeLoginBtn) closeLoginBtn.addEventListener("click", () => AdminModule.close());
   const loginModal = document.getElementById("adminLoginModal");
@@ -4401,6 +4402,11 @@ function setupEventListeners() {
         closeBrandModal();
         return;
       }
+      const profileLb = document.getElementById("profile-lightbox");
+      if (profileLb && !profileLb.classList.contains("hidden")) {
+        closeProfileLightbox();
+        return;
+      }
       const modal = document.getElementById("booking-modal");
       if (modal && !modal.classList.contains("hidden")) {
         closeBookingModal();
@@ -4530,6 +4536,22 @@ function closeBrandModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
+  document.body.style.overflow = "";
+}
+
+function openProfileLightbox() {
+  const lightbox = document.getElementById("profile-lightbox");
+  if (!lightbox) return;
+  lightbox.classList.remove("hidden");
+  lightbox.classList.add("flex");
+  document.body.style.overflow = "hidden";
+}
+
+function closeProfileLightbox() {
+  const lightbox = document.getElementById("profile-lightbox");
+  if (!lightbox) return;
+  lightbox.classList.add("hidden");
+  lightbox.classList.remove("flex");
   document.body.style.overflow = "";
 }
 
@@ -4672,7 +4694,7 @@ function resetBooking() {
   if (prov) prov.value = "";
 
   const canton = document.getElementById("booking-canton");
-  if (canton) canton.innerHTML = '<option value="">Seleccione primero provincia</option>';
+  if (canton) canton.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione primero provincia</option>';
 
   const voucher = document.getElementById("voucher-view");
   const gateway = document.getElementById("sinpe-gateway-view");
@@ -5274,7 +5296,7 @@ function updateSurchargeBox() {
 function populateProvinces() {
   const provSelect = document.getElementById("booking-province");
   if (!provSelect) return;
-  provSelect.innerHTML = '<option value="">Seleccione Provincia...</option>' +
+  provSelect.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione Provincia...</option>' +
     Object.keys(PROVINCES_AND_CANTONES).map(p => `<option value="${sanitizeInput(p)}">${sanitizeInput(p)}</option>`).join("");
 }
 
@@ -5283,7 +5305,7 @@ function populateCantones(province) {
   if (!cantonSelect) return;
 
   const list = (province && PROVINCES_AND_CANTONES[province]) ? PROVINCES_AND_CANTONES[province] : [];
-  cantonSelect.innerHTML = '<option value="">Seleccione Cantón...</option>' +
+  cantonSelect.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione Cantón...</option>' +
     list.map(c => `<option value="${sanitizeInput(c)}">${sanitizeInput(c)}</option>`).join("");
 }
 

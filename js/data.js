@@ -381,19 +381,19 @@ const ADMIN_CONFIG = {
       label: "Propietario",
       name: "Juan José Ramírez",
       hashKey: "ownerHash",
-      defaultPin: "2580"
+      defaultHash: "ed946f65d2c785d90e827c5ffd879ce3b49c68d4c88013074176a7e73bc58bcf"
     },
     it: {
       id: "it",
       label: "Ingeniero de TI",
       name: "Esteban Molina",
       hashKey: "itHash",
-      defaultPin: "1234"
+      defaultHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
     }
   },
   maxAttempts: 3,
   lockoutMs: 30000,
-  sessionTimeoutMs: 300000,
+  sessionTimeoutMs: 900000,
   storageKey: "arkik_admin_auth_v1"
 };
 
