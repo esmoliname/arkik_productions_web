@@ -109,7 +109,7 @@ const STORAGE_KEY = "arkik_cart_state_v1";
 const CATALOG_SERVICES = [
   {
     id: 1,
-    name: "Banda Completa (Banda RT)",
+    name: "Banda Completa",
     category: "Música en Vivo",
     description: "Formato completo con 5 músicos en escena, instrumentos profesionales y sistema de sonido integrado. La mejor opción para bodas estelares, eventos corporativos y fiestas.",
     price_crc: 650000,
@@ -173,7 +173,7 @@ const CATALOG_SERVICES = [
   },
   {
     id: 5,
-    name: "Solista Instrumental / Cantante",
+    name: "Solista Instrumental",
     category: "Música en Vivo",
     description: "Voz en vivo, saxofón/guitarra, secuencias de acompañamiento de alta fidelidad y sistema de sonido. Presentación solista emotiva y refinada.",
     price_crc: 150000,

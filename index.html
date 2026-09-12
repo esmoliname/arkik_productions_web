@@ -106,7 +106,7 @@
           </div>
 
           <button onclick="openBookingModal(1)"
-            class="lg-btn py-1.5 px-3 sm:py-3 sm:px-5 min-h-[44px] rounded-xl font-bold text-xs text-white shrink-0">
+            class="py-1.5 px-3 sm:py-3 sm:px-5 min-h-[44px] rounded-xl font-bold text-xs text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-900/50 hover:shadow-purple-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all shrink-0">
             Cotizar Ahora
           </button>
         </div>
@@ -128,39 +128,28 @@
         <!-- Hero Title with Enveloping Ambient Glow & Fluid Clamp Typography -->
         <div class="hero-title-wrapper max-w-4xl mx-auto mb-6">
           <div class="hero-title-aura"></div>
-          <h1 class="relative z-10 font-extrabold tracking-tight text-white text-2xl sm:text-4xl lg:text-5xl xl:text-6xl leading-snug">
-            Tu evento merece la <span
-              class="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-300">mejor
-              música</span> y <span
-              class="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-300">sonido
-              profesional</span>
+          <h1 class="relative z-10 font-extrabold tracking-tight text-white leading-tight fluid-h1">
+            Tu evento merece la <span class="text-gradient-purple">mejor música</span> y <span
+              class="text-gradient-pink">sonido profesional</span>
           </h1>
         </div>
 
-        <p class="mt-4 text-slate-300 max-w-2xl mx-auto font-light text-sm sm:text-base lg:text-lg leading-relaxed mb-6 px-2 relative z-10">
+        <p class="mt-4 fluid-body text-gray-300 max-w-2xl mx-auto font-light leading-relaxed relative z-10">
           Banda completa en vivo, trío acústico, dúo íntimo, solistas y sonido pro para bodas, fiestas y eventos
           corporativos en Costa Rica. Cotiza en tiempo real y asegura una experiencia inolvidable.
         </p>
 
-        <!-- Social Proof Trust Badge (conversión mobile-first) -->
-        <div class="relative z-10 flex justify-center">
-          <span
-            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-200 text-xs mb-4 shadow-sm">
-            ✨ Disponibilidad 2026 / 2027 · Reserva SINPE Inmediata
-          </span>
-        </div>
-
         <!-- Action Buttons -->
-        <div class="mt-2 flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10 mb-6">
+        <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
           <button onclick="openBookingModal(1)"
-            class="w-full sm:w-auto py-3.5 px-6 min-h-[44px] rounded-2xl bg-gradient-to-r from-purple-600/80 to-indigo-600/80 backdrop-blur-xl border border-purple-400/40 text-white font-bold text-base shadow-[0_10px_30px_rgba(168,85,247,0.4)] active:scale-95 transition-all duration-300 flex items-center justify-center gap-3">
+            class="w-full sm:w-auto py-4 px-8 min-h-[44px] rounded-2xl font-bold text-base text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-xl shadow-purple-900/50 hover:shadow-purple-600/50 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center space-x-3">
             <span>Cotizar Formato Ideal</span>
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
             </svg>
           </button>
           <a href="#biblioteca"
-            class="w-full sm:w-auto py-3 px-6 min-h-[44px] rounded-2xl bg-white/5 border border-white/15 text-slate-200 hover:text-white font-medium text-sm backdrop-blur-md active:scale-95 transition-all text-center flex items-center justify-center">
+            class="w-full sm:w-auto py-4 px-8 min-h-[44px] rounded-2xl font-semibold text-base text-gray-300 glass-panel hover:text-white hover:border-purple-500/50 transition-all text-center flex items-center justify-center">
             Ver Galería / Videos
           </a>
         </div>
@@ -260,9 +249,11 @@
             <div class="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
 
               <!-- Col 1: Nuestra Esencia — copywriting premium sobre vidrio oscuro -->
-              <div class="bg-[#0d0818]/85 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div
+                class="bg-[#0d0818]/85 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
                 <span class="text-xs font-bold text-pink-400 tracking-widest uppercase">Nuestra Esencia</span>
-                <h2 class="text-white font-heading font-bold text-2xl sm:text-3xl tracking-tight leading-snug mb-4 mt-2">
+                <h2
+                  class="text-white font-heading font-bold text-2xl sm:text-3xl tracking-tight leading-snug mb-4 mt-2">
                   Experiencias musicales inolvidables con sonido de alta gama
                 </h2>
 
@@ -284,39 +275,37 @@
                 </div>
               </div>
 
-              <!-- Col 2: Tarjeta Ejecutiva de Perfil — Juan José Ramírez -->
-              <div class="esencia-profile-card rounded-3xl p-6 sm:p-8 relative overflow-hidden flex flex-col justify-between">
-                <!-- Ambient radial violet glow -->
-                <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
+              <!-- Col 2: Mensaje directo de Juan José -->
+              <div class="relative rounded-2xl p-6 md:p-8 bg-[#0a0714]/90 backdrop-blur-2xl border border-white/10">
+                <!-- Cita, comillas y firma con contraste superior sobre vidrio oscuro -->
                 <div class="relative z-10">
-                  <!-- Header / Avatar Row -->
-                  <div class="flex items-center gap-4 sm:gap-5">
-                    <div onclick="openProfileLightbox()" role="button" tabindex="0" aria-label="Ampliar fotografía de Juan José Ramírez Chaves"
-                      class="p-1 rounded-full bg-gradient-to-tr from-purple-500 via-pink-500 to-indigo-500 shadow-[0_0_20px_rgba(168,85,247,0.4)] shrink-0 cursor-pointer hover:scale-105 hover:shadow-[0_0_28px_rgba(168,85,247,0.6)] transition-all duration-300">
-                      <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor musical y audiovisual"
-                        class="w-20 h-20 rounded-full object-cover object-top border-2 border-black/40 pointer-events-none"
-                        loading="lazy" width="80" height="80" />
-                    </div>
-                    <div class="min-w-0">
-                      <h3 class="text-white font-heading font-extrabold text-xl sm:text-2xl tracking-tight">Juan José Ramírez</h3>
-                      <p class="text-purple-300 font-semibold text-xs sm:text-sm tracking-wide">Productor Musical &amp; Audiovisual</p>
-                      <p class="text-slate-400 text-xs mt-1 flex items-center gap-1"><span aria-hidden="true">📍</span> Granadilla, San José · Costa Rica</p>
-                    </div>
-                  </div>
-
-                  <!-- Core Credentials & Expertise Badges -->
-                  <div class="mt-5 flex flex-wrap gap-2">
-                    <span class="bg-purple-950/40 border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full backdrop-blur-md">✨ +10 Años de Trayectoria</span>
-                    <span class="bg-purple-950/40 border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full backdrop-blur-md">🎛️ Ingeniería de Sonido &amp; Directo</span>
-                    <span class="bg-purple-950/40 border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full backdrop-blur-md">🎵 Producción de Live Performance</span>
-                    <span class="bg-purple-950/40 border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full backdrop-blur-md">🤝 Trato Directo &amp; Asesoría Real</span>
-                  </div>
-
-                  <!-- Value Statement / Quote Block -->
-                  <blockquote class="italic text-slate-200 text-xs sm:text-sm leading-relaxed border-l-2 border-purple-500/80 pl-4 py-1 mt-4 bg-purple-950/20 rounded-r-xl">
-                    «Detrás de cada evento hay un compromiso absoluto con la excelencia sonora y la autenticidad artística. Hablás directo con quien estará en el escenario dando vida a tu celebración.»
+                  <svg class="w-8 h-8 text-purple-400/90" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z">
+                    </path>
+                  </svg>
+                  <blockquote class="mt-4 text-white/95 font-medium text-lg leading-relaxed">
+                    «Detrás de cada reserva hay músicos de verdad, sonido de alta gama y años de experiencia sobre el
+                    escenario. Por eso hablas directo con el equipo, sin scripts ni call centers: tu evento queda en las
+                    mejores manos desde el primer mensaje.»
                   </blockquote>
+                  <footer class="mt-6 flex items-center gap-3 border-t border-purple-500/20 pt-5">
+                    <div
+                      class="executive-avatar group p-[2px] rounded-full bg-gradient-to-tr from-purple-500 via-pink-500 to-cyan-400 shadow-lg shadow-purple-500/20 hover:scale-[1.08] hover:shadow-pink-500/40 hover:ring-2 hover:ring-pink-500/50 transition-all duration-300 cursor-pointer shrink-0">
+                      <button type="button" onclick="openExecutiveModal()"
+                        aria-label="Ver tarjeta ejecutiva de Juan José Ramírez Chaves"
+                        class="w-12 h-12 rounded-full overflow-hidden border border-black/40 block">
+                        <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves 🎧 Productor musical y audiovisual"
+                          class="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-110"
+                          loading="lazy" width="96" height="96" />
+                      </button>
+                    </div>
+                    <div>
+                      <p class="font-bold text-white">Juan José Ramírez</p>
+                      <p class="text-xs font-semibold text-purple-300">Productor musical y audiovisual · Granadilla, San
+                        José</p>
+                    </div>
+                  </footer>
                 </div>
               </div>
 
@@ -687,7 +676,8 @@
 
                 <!-- Official Social Pills (Hover Neon) -->
                 <div class="grid grid-cols-2 gap-3 pt-2">
-                  <a href="https://www.instagram.com/kikeramirezcr" target="_blank" rel="noopener noreferrer"
+                  <a href="https://www.instagram.com/kikeramirezcr?igsh=MWVtNTFqandkdW80aA%3D%3D&utm_source=qr"
+                    target="_blank" rel="noopener noreferrer"
                     class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-2xl text-xs font-semibold bg-white/[0.04] border border-white/10 text-gray-300 hover:text-white hover:border-pink-500/60 hover:bg-pink-500/10 hover:shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all">
                     <svg class="w-4 h-4 flex-shrink-0 text-pink-400" fill="currentColor" viewBox="0 0 24 24"
                       aria-hidden="true">
@@ -697,7 +687,7 @@
                     <span>@kikeramirezcr</span>
                   </a>
 
-                  <a href="https://www.facebook.com/share/1HQTffr69a/" target="_blank"
+                  <a href="https://www.facebook.com/share/1HQTffr69a/?mibextid=wwXIfr" target="_blank"
                     rel="noopener noreferrer"
                     class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-2xl text-xs font-semibold bg-white/[0.04] border border-white/10 text-gray-300 hover:text-white hover:border-blue-500/60 hover:bg-blue-500/10 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all">
                     <svg class="w-4 h-4 flex-shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"
@@ -874,7 +864,8 @@
 
           <!-- Redes Sociales (Neon Hover) -->
           <div class="grid grid-cols-2 gap-3">
-            <a href="https://www.instagram.com/kikeramirezcr" target="_blank" rel="noopener noreferrer"
+            <a href="https://www.instagram.com/kikeramirezcr?igsh=MWVtNTFqandkdW80aA%3D%3D&utm_source=qr"
+              target="_blank" rel="noopener noreferrer"
               class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-pink-500/60 hover:bg-pink-500/10 hover:shadow-[0_0_18px_rgba(236,72,153,0.35)] transition-all">
               <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -882,7 +873,7 @@
               </svg>
               Instagram
             </a>
-            <a href="https://www.facebook.com/share/1HQTffr69a/" target="_blank"
+            <a href="https://www.facebook.com/share/1HQTffr69a/?mibextid=wwXIfr" target="_blank"
               rel="noopener noreferrer"
               class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-blue-500/60 hover:bg-blue-500/10 hover:shadow-[0_0_18px_rgba(59,130,246,0.35)] transition-all">
               <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1032,39 +1023,6 @@
     </div>
   </div>
 
-  <!-- Profile Photo Lightbox — Juan José Ramírez -->
-  <div id="profile-lightbox" role="dialog" aria-modal="true" aria-labelledby="profile-lightbox-title"
-    onclick="if (event.target === this) closeProfileLightbox()"
-    class="fixed inset-0 z-[60] hidden overflow-y-auto p-4 bg-black/85 backdrop-blur-md">
-    <div
-      class="relative m-auto max-w-lg w-11/12 overflow-hidden rounded-3xl border border-purple-500/30 bg-[#0d0818]/90 backdrop-blur-2xl shadow-2xl">
-
-      <!-- Close button -->
-      <button type="button" onclick="closeProfileLightbox()" aria-label="Cerrar fotografía"
-        class="absolute top-3 right-3 z-20 w-11 h-11 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-gray-300 hover:text-white hover:bg-white/20 hover:rotate-90 active:scale-95 transition-all duration-300 flex items-center justify-center">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-      </button>
-
-      <!-- Full-resolution photo with ambient purple glow -->
-      <div class="relative overflow-hidden rounded-t-3xl bg-[#0c0814]">
-        <div class="absolute inset-0 bg-gradient-to-b from-purple-600/10 via-transparent to-transparent pointer-events-none"></div>
-        <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves — Productor musical y audiovisual"
-          class="w-full max-h-[60vh] object-cover object-top" loading="lazy" width="667" height="1000" />
-      </div>
-
-      <!-- Profile header -->
-      <div class="text-center px-6 py-5">
-        <h3 id="profile-lightbox-title" class="text-xl sm:text-2xl font-heading font-extrabold text-white leading-tight">
-          Juan José Ramírez Chaves
-        </h3>
-        <p class="mt-1.5 text-sm font-semibold text-purple-300 tracking-wide">Productor General &amp; Músico Líder</p>
-        <p class="mt-1 text-xs text-slate-400 flex items-center justify-center gap-1"><span aria-hidden="true">📍</span> Granadilla, San José · Costa Rica</p>
-      </div>
-    </div>
-  </div>
-
   <!-- Multi-Step Booking Wizard Modal (Mobile Fluid Bottom Sheet / Desktop Centered) -->
   <div id="booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title"
     class="fixed inset-0 z-50 items-center justify-center p-4 overflow-y-auto overscroll-contain hidden opacity-0 pointer-events-none invisible">
@@ -1158,7 +1116,7 @@
             <div class="format-card rounded-2xl p-4 flex justify-between items-start gap-3">
               <div class="min-w-0 pr-3">
                 <span class="format-card__eyebrow">Formato Seleccionado (2 Horas Estándar)</span>
-                <h4 id="modal-service-name" class="format-card__title">Banda Completa (Banda RT)</h4>
+                <h4 id="modal-service-name" class="format-card__title">Banda Completa</h4>
                 <p id="modal-service-desc" class="format-card__desc mt-1">Cargando...</p>
                 <!-- Logistics Setup & Teardown Metadata (rendered by app.js) -->
                 <div id="modal-service-logistics" class="mt-2.5 flex flex-col gap-1 text-[11px]"></div>
@@ -1375,7 +1333,7 @@
                         </path>
                       </svg>
                       <select id="event-type" required
-                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none cursor-pointer">
+                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none">
                         <option value="Boda">Boda / Matrimonio</option>
                         <option value="Cumpleaños / Festejo">Cumpleaños / Festejo</option>
                         <option value="Evento Corporativo">Evento Corporativo</option>
@@ -1402,7 +1360,7 @@
                           d="M17.66 16.66L12 22.32l-5.66-5.66a8 8 0 1111.32 0zM12 12a2 2 0 100-4 2 2 0 000 4z"></path>
                       </svg>
                       <select id="booking-province" required
-                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none cursor-pointer">
+                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none">
                         <!-- Populated by JS -->
                       </select>
                     </div>
@@ -1415,9 +1373,8 @@
                           d="M17.66 16.66L12 22.32l-5.66-5.66a8 8 0 1111.32 0zM12 12a2 2 0 100-4 2 2 0 000 4z"></path>
                       </svg>
                       <select id="booking-canton" required
-                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none cursor-pointer">
-                        <option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione primero
-                          provincia</option>
+                        class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all appearance-none">
+                        <option value="">Seleccione primero provincia</option>
                       </select>
                     </div>
                   </div>
@@ -1787,12 +1744,7 @@
     onclick="if (event.target === this) closeAdminLoginModal()"
     class="fixed inset-0 z-[80] hidden items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
     <div
-      class="executive-auth-card relative max-w-xs sm:max-w-sm w-full mx-auto bg-[#07040d]/90 backdrop-blur-3xl border border-white/15 rounded-[2.5rem] p-7 sm:p-8 shadow-[0_30px_70px_rgba(0,0,0,0.95)] overflow-hidden">
-
-      <!-- Floating Bioluminescent Orbs (background specularity) -->
-      <div class="absolute -top-6 -left-6 w-24 h-24 bg-emerald-400/20 rounded-full blur-2xl pointer-events-none"></div>
-      <div class="absolute -bottom-8 -right-8 w-28 h-28 bg-purple-500/25 rounded-full blur-2xl pointer-events-none"></div>
-      <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 w-32 h-12 bg-cyan-400/15 rounded-full blur-2xl pointer-events-none"></div>
+      class="executive-auth-card relative max-w-xs sm:max-w-sm w-full mx-auto bg-[#080511]/95 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden">
 
       <!-- Close Button -->
       <button type="button" id="admin-login-close" onclick="closeAdminLoginModal()" aria-label="Cerrar portal de acceso"
@@ -1802,60 +1754,59 @@
         </svg>
       </button>
 
-      <!-- Minimalist Brand Emblem: Monogram pill badge -->
-      <div class="relative z-10 text-center pt-1">
+      <!-- Minimalist Header with Arkik Metallic Monogram -->
+      <div class="text-center pt-1">
         <div
-          class="w-11 h-11 mx-auto rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-inner">
+          class="w-10 h-10 mx-auto rounded-xl bg-gradient-to-b from-white/15 to-white/5 border border-white/15 flex items-center justify-center shadow-inner">
           <span
             class="font-extrabold text-sm tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-white via-purple-200 to-pink-200 font-heading">A</span>
         </div>
-        <h3 id="admin-login-title"
-          class="text-white font-heading font-extrabold text-xl tracking-tight text-center mt-3 mb-0">Staff Portal
+        <h3 id="admin-login-title" class="text-lg font-bold text-white mt-3 tracking-tight font-heading">Staff Portal
         </h3>
-        <p class="text-slate-400 text-xs font-medium text-center mt-0.5 mb-6">Credenciales de acceso</p>
+        <p class="text-xs text-gray-400 mt-0.5">Credenciales de acceso</p>
       </div>
 
       <!-- Tactile Segmented Control (Role Switcher) -->
-      <div class="bg-white/[0.04] p-1.5 rounded-2xl border border-white/10 grid grid-cols-2 gap-1 relative backdrop-blur-md mb-5">
+      <div class="mt-6 bg-white/[0.04] p-1 rounded-2xl border border-white/5 grid grid-cols-2 gap-1 relative">
         <button type="button" id="admin-role-owner" onclick="AdminModule.setRole('owner')"
-          class="role-btn role-btn--active py-2.5 px-3 rounded-xl text-xs font-semibold tracking-wide transition-all duration-300 min-h-[44px] flex items-center justify-center">
+          class="role-btn role-btn--active py-2 px-3 rounded-xl text-xs font-semibold tracking-wide transition-all duration-300 min-h-[44px] flex items-center justify-center">
           Propietario
         </button>
         <button type="button" id="admin-role-it" onclick="AdminModule.setRole('it')"
-          class="role-btn py-2.5 px-3 rounded-xl text-xs font-medium text-gray-400 hover:text-gray-200 transition-colors duration-200 min-h-[44px] flex items-center justify-center">
+          class="role-btn py-2 px-3 rounded-xl text-xs font-medium text-gray-400 hover:text-gray-200 transition-colors duration-200 min-h-[44px] flex items-center justify-center">
           Ingeniero TI
         </button>
       </div>
 
       <!-- High-End Masked PIN / Password Field -->
-      <div
-        class="bg-white/[0.03] border border-white/10 focus-within:border-purple-500/80 focus-within:ring-2 focus-within:ring-purple-500/30 rounded-2xl px-4 py-3.5 transition-all flex items-center justify-between mb-5">
-        <input type="password" id="admin-pin" inputmode="numeric" maxlength="8" autocomplete="current-password"
-          placeholder="Ingrese PIN de acceso" aria-label="PIN de acceso"
-          oninput="this.value = this.value.replace(/\D/g, '')"
-          onkeydown="if (event.key === 'Enter') { event.preventDefault(); AdminModule.attemptLogin(); }"
-          class="text-base text-white placeholder-slate-500 tracking-widest font-mono bg-transparent w-full focus:outline-none min-h-[40px]">
-        <button type="button" id="admin-pin-toggle" aria-label="Mostrar u ocultar PIN"
-          class="p-1.5 text-gray-400 hover:text-gray-200 focus:outline-none min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-        </button>
+      <div class="mt-5">
+        <div
+          class="bg-white/[0.03] border border-white/10 rounded-2xl px-4 py-1.5 focus-within:border-purple-500/60 focus-within:ring-1 focus-within:ring-purple-500/30 transition-all flex items-center gap-2">
+          <input type="password" id="admin-pin" inputmode="numeric" maxlength="8" autocomplete="current-password"
+            placeholder="Ingrese PIN de acceso" aria-label="PIN de acceso"
+            class="text-white placeholder-gray-500 text-sm tracking-widest font-mono bg-transparent w-full focus:outline-none min-h-[40px]">
+          <button type="button" id="admin-pin-toggle" aria-label="Mostrar u ocultar PIN"
+            class="p-1.5 text-gray-400 hover:text-gray-200 focus:outline-none min-h-[44px] min-w-[44px] flex items-center justify-center">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Feedback & Silent Lockout Inline Chip -->
       <p id="admin-auth-error" class="hidden text-xs text-red-400 text-center mt-2.5 font-medium"></p>
       <div id="admin-lockout-box"
-        class="hidden bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs px-3 py-2 rounded-xl text-center shadow-inner mt-3">
+        class="hidden bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1.5 rounded-xl text-center mt-3">
         <span id="admin-lockout-msg">Bloqueo de seguridad activo.</span>
       </div>
 
-      <!-- Primary Action CTA Button (Liquid Glass) -->
+      <!-- Primary Action CTA Button -->
       <button type="button" id="admin-login-submit" onclick="attemptAdminLogin()"
-        class="lg-btn lg-btn--portal w-full mt-5 py-3 rounded-2xl text-white min-h-[44px]">
+        class="w-full mt-5 py-3 rounded-2xl bg-white hover:bg-gray-100 active:scale-[0.98] text-black font-semibold text-xs uppercase tracking-wider transition-all shadow-md shadow-white/10 hover:shadow-purple-500/20 min-h-[44px] flex items-center justify-center">
         Acceder al Portal
       </button>
     </div>
@@ -1867,8 +1818,7 @@
     class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
     <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
 
-      <div
-        class="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-white/10 bg-purple-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div class="shrink-0 px-6 py-4 border-b border-white/10 flex items-center justify-between bg-purple-950/40">
         <div class="min-w-0">
           <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Sistema de Operaciones
             Ejecutivas</span>
@@ -1886,13 +1836,12 @@
         </div>
       </div>
 
-      <div
-        class="shrink-0 px-4 sm:px-6 py-2 sm:py-3 border-b border-white/10 bg-[#0f0c1a] flex flex-wrap items-center justify-between gap-2 w-full">
-        <div class="flex items-center gap-3 min-w-0 flex-wrap">
+      <div class="shrink-0 px-6 py-3 border-b border-white/10 bg-[#0f0c1a] flex items-center justify-between">
+        <div class="flex items-center gap-3 min-w-0">
           <span id="admin-role-badge" class="admin-role-badge admin-role-badge--owner">Rol</span>
           <span class="text-xs text-gray-400 hidden sm:inline">Sesión autenticada en memoria segura</span>
         </div>
-        <div class="flex items-center gap-3 flex-shrink-0 min-w-0 flex-wrap">
+        <div class="flex items-center gap-3 flex-shrink-0 min-w-0">
           <span id="admin-session-timer" class="admin-session-timer"></span>
           <span class="text-[10px] font-mono text-gray-500 whitespace-nowrap">ID: <span
               id="admin-session-id"></span></span>
@@ -1905,13 +1854,13 @@
         <!-- Rol Propietario: Analítica Financiera & Operativa -->
         <div id="admin-owner-view" class="hidden">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="min-w-0">
+            <div>
               <h4 class="text-sm font-bold text-white">Analítica Ejecutiva &amp; Flujo Financiero</h4>
               <p class="text-[11px] text-gray-500">KPIs recalibrados dinámicamente por período seleccionado.</p>
             </div>
             <button type="button" onclick="exportOwnerReportPDF()"
-              class="admin-act-btn admin-act-btn--confirm flex items-center justify-center gap-1.5 text-xs py-2.5 px-4 w-full sm:w-auto shadow-lg">
-              <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              class="admin-act-btn admin-act-btn--confirm flex items-center gap-1.5 text-xs py-2 px-4 shadow-lg">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                 </path>
@@ -1920,12 +1869,11 @@
             </button>
           </div>
 
-          <!-- Filtro Temporal de Analítica (barra deslizable mobile, scrollbar oculto) -->
-          <div id="portal-period-filters" class="flex overflow-x-auto no-scrollbar gap-2 py-1 w-full"></div>
+          <!-- Filtro Temporal de Analítica -->
+          <div id="portal-period-filters" class="flex flex-wrap gap-2"></div>
 
-          <!-- KPI Grid Financiero (1 col mobile → 3 col sm+) -->
-          <div id="admin-metrics"
-            class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-white/[0.03] border border-white/10 rounded-2xl"></div>
+          <!-- KPI Grid Financiero -->
+          <div id="admin-metrics" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
 
           <!-- Trend Bar de Flujo de Caja (SVG puro) -->
           <div id="portal-sparkline"></div>
@@ -1963,18 +1911,16 @@
             <div class="mb-4">
               <input type="search" id="admin-booking-search"
                 placeholder="Buscar por código ARK, cliente, teléfono o ubicación..." aria-label="Buscar reservas"
-                class="w-full px-4 py-3 text-sm bg-white/5 border border-white/10 rounded-xl outline-none focus:border-purple-500/80">
+                class="glass-input w-full rounded-xl px-3.5 py-2.5 text-sm">
             </div>
-            <div id="admin-status-filters"
-              class="flex overflow-x-auto no-scrollbar gap-2 py-1 w-full mb-4"></div>
+            <div id="admin-status-filters" class="flex flex-wrap gap-2 mb-4"></div>
             <div id="admin-bookings-list" class="space-y-3"></div>
           </div>
         </div>
 
         <!-- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) -->
         <div id="admin-it-view" class="hidden">
-          <div id="admin-it-tabs"
-            class="flex overflow-x-auto no-scrollbar gap-2 py-1 mb-6 w-full">
+          <div id="admin-it-tabs" class="flex flex-wrap gap-2 mb-6">
             <button type="button" data-it-tab="prices" class="admin-tab-btn admin-tab-btn--active">1. Matriz de
               Tarifas</button>
             <button type="button" data-it-tab="gallery" class="admin-tab-btn">2. Gestor de Galería</button>
@@ -2220,6 +2166,7 @@
           <span aria-hidden="true">🖨️</span>
           <span>Imprimir / Guardar en PDF (Navegador)</span>
         </button>
+
         <button type="button" onclick="openInvoiceStandalone()"
           class="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold text-purple-200 bg-purple-600/20 hover:bg-purple-600/35 border border-purple-400/40 transition-all focus:outline-none focus:ring-2 focus:ring-purple-400">
           <span aria-hidden="true">🔗</span>
@@ -2247,17 +2194,6 @@
       </p>
     </div>
   </div>
-
-  <!-- Floating WhatsApp FAB (single clean container — no pseudo-elements, no JS clones) -->
-  <a id="whatsapp-float"
-    href="https://wa.me/50662274984?text=Hola%20Arkik%20Productions,%20quisiera%20cotizar%20un%20evento"
-    target="_blank" rel="noopener noreferrer" aria-label="Contactar por WhatsApp"
-    class="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40 flex items-center justify-center w-14 h-14 bg-[#25D366] text-white rounded-full shadow-[0_10px_25px_rgba(37,211,102,0.4)] hover:scale-110 active:scale-95 transition-all duration-300 group">
-    <span class="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-25 pointer-events-none"></span>
-    <svg class="w-7 h-7 fill-current relative z-10" viewBox="0 0 24 24">
-      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.205 1.624zm12.003-20.183c-4.562 0-8.271 3.71-8.273 8.273-.001 1.57.439 3.097 1.272 4.428l-.936 3.418 3.5-.917c1.28.698 2.723 1.067 4.188 1.068 4.56 0 8.271-3.71 8.273-8.273.001-2.211-.858-4.289-2.42-5.852-1.562-1.562-3.642-2.42-5.854-2.42z"/>
-    </svg>
-  </a>
 
   <!-- Pure Static JavaScript Modules (deferred to prevent render-blocking) -->
   <script src="js/data.js"></script>
