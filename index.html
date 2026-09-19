@@ -14,17 +14,19 @@
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              dark: '#0b0914',
-              purple: '#a855f7',
-              pink: '#ec4899',
-              indigo: '#6366f1',
-              emerald: '#10b981'
+    if (window.tailwind) {
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                dark: '#0b0914',
+                purple: '#a855f7',
+                pink: '#ec4899',
+                indigo: '#6366f1',
+                emerald: '#10b981'
+              }
             }
           }
         }
@@ -404,7 +406,9 @@
         </div>
 
         <!-- Gallery Filter Bar (rendered dynamically from data.js) -->
-        <div id="gallery-filters" class="flex flex-wrap justify-center gap-2 mb-10"></div>
+        <div id="gallery-filters"
+          class="gallery-filter-track flex items-center gap-2 pb-2 mb-10 overflow-x-auto no-scrollbar overscroll-x-contain -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:pb-0">
+        </div>
 
         <!-- Elite Responsive Gallery Grid -->
         <div id="gallery-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -718,179 +722,216 @@
 
   </main>
 
-  <!-- Footer (Full-Bleed Container) -->
-  <footer id="site-footer" class="w-full relative z-10 bg-[#0a0712] overflow-hidden">
-    <!-- Fluid Neon Wave Canvas (renderiza el motor de fluido reactivo) -->
-    <canvas id="footerFluidCanvas" aria-hidden="true"></canvas>
+  <!-- Footer Unificado (Full-Bleed) — ARKIK LIGHT NEON AMBIENT, un solo bloque sin cortes -->
+  <footer id="master-liquid-footer" class="w-full overflow-hidden relative font-jakarta text-slate-200 select-none z-20">
 
-    <!-- Lit Top Border -->
-    <div
-      class="absolute top-0 left-0 right-0 z-10 h-px bg-gradient-to-r from-transparent via-purple-500/60 to-transparent">
-    </div>
+    <!-- Ambient light CSS puro: footer::before anima solo la opacidad del glow superior
+         (sin canvas, sin rAF, sin repintados continuos). El contenido queda por encima. -->
 
-    <!-- Contenido con cristal Glassmorphism sobre el fluido -->
-    <div
-      class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 sm:pt-16 w-full bg-[#0a0712]/80 backdrop-blur-md border-t border-purple-500/30"
-      style="padding-bottom: calc(3rem + env(safe-area-inset-bottom, 0px))">
+    <!-- Contenido unificado (todo dentro del mismo flujo, sin divisiones intermedias) -->
+    <div class="relative z-10">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10 lg:gap-14">
-
-        <!-- Col 1: Identidad -->
-        <div class="space-y-5">
-          <div onclick="openBrandModal()" role="button" aria-label="Abrir presentación de marca Arkik Producciones"
-            class="brand-logo-trigger flex items-center space-x-3 cursor-pointer hover:scale-105 transition-all duration-300">
-            <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
-              class="brand-logo footer-logo-mark h-12 w-auto object-contain rounded-lg border border-white/10 shadow-lg shadow-purple-900/40 shrink-0"
-              loading="lazy" width="200" height="120" />
-            <div>
-              <span class="text-lg font-extrabold text-white tracking-tight">Arkik <span
-                  class="text-gradient-purple">Productions</span></span>
-              <p class="text-[10px] text-gray-500 font-medium tracking-widest uppercase">Live Music & Sound</p>
-            </div>
-          </div>
-          <p class="text-sm text-gray-400 leading-relaxed max-w-xs">
-            Música en vivo y sonido profesional para bodas, fiestas privadas y eventos corporativos en Costa Rica. Tu
-            evento, nuestra producción.
-          </p>
-          <p class="flex items-center gap-2 text-xs text-gray-500">
-            <svg class="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        <!-- Mensaje principal + CTAs -->
+        <div class="pt-16 sm:pt-20 md:pt-24 text-center">
+          <span
+            class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-[0.22em] text-purple-300 bg-purple-500/10 border border-purple-500/25 backdrop-blur-md">
+            <svg class="w-3.5 h-3.5 text-fuchsia-400" fill="none" stroke="currentColor" stroke-width="2"
+              viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 2a10 10 0 0 1 10 10m-10-10a10 10 0 0 0-10 10m10-10v10m0 0a10 10 0 0 1 10 10m-10-10a10 10 0 0 0-10 10" />
             </svg>
-            <span>Sede Central: Granadilla, San José, Costa Rica</span>
+            Audio · Luz · Producción
+          </span>
+
+          <h2
+            class="mt-7 mx-auto max-w-4xl font-syne text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-300 to-cyan-400">
+            Transformamos tu evento en una experiencia audiovisual inolvidable.
+          </h2>
+
+          <p class="mt-5 text-sm sm:text-base text-slate-300/85 max-w-2xl mx-auto leading-relaxed">
+            Música en vivo, ingeniería de sonido y producción de nivel elite en Costa Rica.
           </p>
-        </div>
 
-        <!-- Col 2: Enlaces Rápidos -->
-        <nav aria-label="Enlaces rápidos">
-          <h4 class="text-xs font-bold uppercase tracking-widest text-purple-400">Enlaces Rápidos</h4>
-          <ul class="mt-5 space-y-3">
-            <li>
-              <a href="#formatos"
-                class="group flex items-center gap-2 text-sm text-gray-400 hover:text-purple-300 transition-colors">
-                <svg class="w-3.5 h-3.5 text-purple-500/60 group-hover:text-purple-400 transition-colors" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                Formatos Musicales
-              </a>
-            </li>
-            <li>
-              <a href="#biblioteca"
-                class="group flex items-center gap-2 text-sm text-gray-400 hover:text-purple-300 transition-colors">
-                <svg class="w-3.5 h-3.5 text-purple-500/60 group-hover:text-purple-400 transition-colors" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                Galería / Videos
-              </a>
-            </li>
-            <li>
-              <a href="#proceso"
-                class="group flex items-center gap-2 text-sm text-gray-400 hover:text-purple-300 transition-colors">
-                <svg class="w-3.5 h-3.5 text-purple-500/60 group-hover:text-purple-400 transition-colors" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                Reserva SINPE Móvil
-              </a>
-            </li>
-            <li>
-              <a href="#cobertura"
-                class="group flex items-center gap-2 text-sm text-gray-400 hover:text-purple-300 transition-colors">
-                <svg class="w-3.5 h-3.5 text-purple-500/60 group-hover:text-purple-400 transition-colors" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                Cobertura GAM
-              </a>
-            </li>
-            <li>
-              <a href="#hero"
-                class="group flex items-center gap-2 text-sm text-gray-400 hover:text-purple-300 transition-colors">
-                <svg class="w-3.5 h-3.5 text-purple-500/60 group-hover:text-purple-400 transition-colors" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-                Volver al Inicio
-              </a>
-            </li>
-          </ul>
-        </nav>
-
-        <!-- Col 3: Contacto & Redes Directas -->
-        <div class="sm:col-span-2 lg:col-span-1 space-y-5">
-          <h4 class="text-xs font-bold uppercase tracking-widest text-purple-400">Contacto Directo</h4>
-
-          <div class="rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md p-5 space-y-4">
-            <!-- SINPE Click-to-Copy -->
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">SINPE Móvil (Reserva 50%)</p>
-                <p class="text-base font-extrabold text-white mt-0.5 tracking-wide">+506 6227-4984</p>
-                <p class="text-[10px] text-gray-500 mt-0.5">Juan José Ramírez Chaves</p>
-              </div>
-              <button type="button" onclick="copySinpeNumber(this)" aria-label="Copiar número SINPE"
-                class="p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:text-white hover:border-purple-400 hover:shadow-lg hover:shadow-purple-500/30 active:scale-95 transition-all flex-shrink-0">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
-                  </path>
-                </svg>
-              </button>
-            </div>
-
-            <div class="h-px bg-white/10"></div>
-
-            <!-- Phone / WhatsApp -->
-            <a href="tel:+50662274984" class="flex items-center justify-between gap-3 group">
-              <div class="min-w-0">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-purple-400">Teléfono / WhatsApp</p>
-                <p class="text-base font-bold text-gray-200 mt-0.5 group-hover:text-white transition-colors">+506
-                  6227-4984</p>
-              </div>
-              <span
-                class="p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 group-hover:text-emerald-300 group-hover:border-emerald-500/40 transition-all flex-shrink-0">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z">
-                  </path>
+          <div class="mt-9 sm:mt-11 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button type="button" id="btn-footer-cta-booking"
+              class="footer-cta-primary font-syne group relative overflow-hidden px-9 py-4 rounded-full font-bold text-xs sm:text-sm tracking-wider uppercase">
+              <span class="relative z-10 flex items-center gap-3">
+                <span>Agendar Cotización</span>
+                <svg class="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1.5" fill="none"
+                  stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
               </span>
-            </a>
-          </div>
+              <span aria-hidden="true"
+                class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500"></span>
+            </button>
 
-          <!-- Redes Sociales (Neon Hover) -->
-          <div class="grid grid-cols-2 gap-3">
-            <a href="https://www.instagram.com/kikeramirezcr?igsh=MWVtNTFqandkdW80aA%3D%3D&utm_source=qr"
-              target="_blank" rel="noopener noreferrer"
-              class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-pink-500/60 hover:bg-pink-500/10 hover:shadow-[0_0_18px_rgba(236,72,153,0.35)] transition-all">
-              <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-              </svg>
-              Instagram
-            </a>
-            <a href="https://www.facebook.com/share/1HQTffr69a/?mibextid=wwXIfr" target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-blue-500/60 hover:bg-blue-500/10 hover:shadow-[0_0_18px_rgba(59,130,246,0.35)] transition-all">
-              <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-              </svg>
-              Facebook
+            <a href="#formatos"
+              class="footer-cta-ghost font-syne inline-flex items-center gap-2.5 px-9 py-4 rounded-full font-bold text-xs sm:text-sm tracking-wider uppercase backdrop-blur-md bg-white/10 hover:bg-white/20 text-white border border-white/20">
+              <span>Explorar Formatos</span>
             </a>
           </div>
         </div>
-      </div>
 
-      <!-- Bottom Bar -->
-      <div
-        class="mt-14 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-2 text-xs text-gray-500">
-        <p>© 2026 Arkik Productions. Todos los derechos reservados.</p>
-        <p>Juan José Ramírez Chaves 👑 Propietario</p>
+        <!-- Capa informativa unificada -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6 lg:gap-10 pt-14 sm:pt-16 md:pt-20 pb-12 sm:pb-14 text-slate-300 text-sm items-start">
+
+          <!-- Columna 1 — Brand con logo en glassmorphism -->
+          <div class="md:col-span-4 space-y-5">
+            <div
+              class="footer-brand-card backdrop-blur-md bg-white/5 border border-white/10 p-3 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)] inline-flex items-center gap-3">
+              <div
+                class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/40 to-fuchsia-500/25 border border-white/25 flex items-center justify-center font-syne font-extrabold text-white text-lg shadow-[0_0_20px_rgba(168,85,247,0.3)]">
+                AP
+              </div>
+              <div class="min-w-0">
+                <span class="font-syne text-lg sm:text-xl font-bold text-white tracking-wide block leading-tight">Arkik
+                  Productions</span>
+                <span class="text-[10px] uppercase tracking-widest text-purple-300 font-semibold">Live Music &amp; Sound
+                  Engineering</span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed max-w-xs">
+              Música en vivo y sonido profesional para bodas, eventos corporativos y privados en Costa Rica.
+            </p>
+            <div class="flex items-center gap-2 text-xs text-slate-400 pt-1">
+              <svg class="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Granadilla, San José, Costa Rica</span>
+            </div>
+          </div>
+
+          <!-- Columna 2 — Navegación -->
+          <div class="md:col-span-4">
+            <h4 class="font-syne text-xs font-bold uppercase tracking-widest text-purple-300 mb-6">Navegación</h4>
+            <ul class="space-y-3.5 text-xs">
+              <li>
+                <a href="#formatos"
+                  class="group inline-flex items-center gap-3 hover:text-white transition-colors duration-300">
+                  <span class="footer-nav-dash"></span>
+                  Formatos Musicales
+                </a>
+              </li>
+              <li>
+                <a href="#biblioteca"
+                  class="group inline-flex items-center gap-3 hover:text-white transition-colors duration-300">
+                  <span class="footer-nav-dash"></span>
+                  Galería / Videos
+                </a>
+              </li>
+              <li>
+                <button type="button" id="btn-footer-sinpe-link"
+                  class="group inline-flex items-center gap-3 hover:text-white transition-colors duration-300 text-left w-full">
+                  <span class="footer-nav-dash"></span>
+                  Reserva SINPE Móvil
+                </button>
+              </li>
+              <li>
+                <button type="button" id="btn-footer-policies-link"
+                  class="group inline-flex items-center gap-3 text-purple-300 hover:text-white transition-colors duration-300 text-left w-full">
+                  <span class="footer-nav-dash footer-nav-dash--active"></span>
+                  Políticas de Empresa &amp; Términos
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Columna 3 — Contacto: tarjeta SINPE glassmorphism 3D + WhatsApp + sociales -->
+          <div class="md:col-span-4">
+            <h4 class="font-syne text-xs font-bold uppercase tracking-widest text-purple-300 mb-6">Contacto Directo</h4>
+
+            <!-- Tarjeta SINPE: glassmorphism 3D compacta con click-to-copy -->
+            <div class="footer-sinpe-card p-4 rounded-2xl space-y-3.5 mb-4">
+              <div class="flex justify-between items-center gap-3 text-xs">
+                <span class="text-slate-400">SINPE Móvil (50%)</span>
+                <span
+                  class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">Disponible</span>
+              </div>
+              <button type="button" id="btn-copy-sinpe-num" data-sinpe-num="+50662274984"
+                class="footer-copy-btn group w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 min-h-[44px] text-left">
+                <span class="min-w-0">
+                  <span class="block font-mono text-sm sm:text-base font-bold text-white tracking-wide">+506
+                    6227-4984</span>
+                  <span class="block text-[10px] text-slate-400 truncate mt-0.5">Juan José Ramírez Chaves</span>
+                </span>
+                <svg class="w-4 h-4 text-purple-300 group-hover:text-fuchsia-300 group-hover:scale-110 transition-all shrink-0"
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <div class="flex justify-between items-center gap-3 text-xs">
+                <span class="text-slate-400">Teléfono / WhatsApp</span>
+                <a href="tel:+50662274984"
+                  class="font-mono text-purple-300 font-bold hover:text-fuchsia-300 inline-flex items-center min-h-[44px]">
+                  +506 6227-4984
+                </a>
+              </div>
+            </div>
+
+            <!-- WhatsApp: botón dedicado -->
+            <a href="https://wa.me/50662274984?text=Hola%20Arkik%20Productions%2C%20vi%20su%20sitio%20web%20y%20me%20gustar%C3%ADa%20recibir%20una%20cotizaci%C3%B3n%20para%20mi%20evento"
+              target="_blank" rel="noopener noreferrer"
+              class="footer-wa-card group flex items-center gap-4 p-4 rounded-2xl min-h-[68px]">
+              <span
+                class="w-12 h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_18px_rgba(16,185,129,0.45)] group-hover:scale-105 group-hover:shadow-[0_0_26px_rgba(16,185,129,0.65)] transition-all shrink-0">
+                <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+                </svg>
+              </span>
+              <span class="flex-1 min-w-0">
+                <span class="flex items-center gap-2">
+                  <strong class="text-sm font-bold text-white">WhatsApp Directo</strong>
+                  <span
+                    class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">Respuesta
+                    Rápida</span>
+                </span>
+                <span class="block text-xs text-emerald-200/90 font-mono mt-0.5">+506 6227-4984 · Cotizaciones &amp;
+                  Agenda</span>
+              </span>
+              <svg
+                class="w-4 h-4 text-emerald-300 group-hover:text-white group-hover:translate-x-1 transition-all shrink-0"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
+
+            <!-- Redes Sociales circulares con brillo perimetral -->
+            <div class="flex gap-3">
+              <a href="https://www.instagram.com/kikeramirezcr?igsh=MWVtNTFqandkdW80aA%3D%3D&utm_source=qr"
+                target="_blank" rel="noopener noreferrer" aria-label="Instagram de Arkik Productions"
+                class="footer-social w-12 h-12 rounded-full flex items-center justify-center group">
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform duration-300" fill="currentColor"
+                  viewBox="0 0 24 24">
+                  <path
+                    d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+                </svg>
+              </a>
+              <a href="https://www.facebook.com/share/1HQTffr69a/?mibextid=wwXIfr" target="_blank"
+                rel="noopener noreferrer" aria-label="Facebook de Arkik Productions"
+                class="footer-social footer-social--fb w-12 h-12 rounded-full flex items-center justify-center group">
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform duration-300" fill="currentColor"
+                  viewBox="0 0 24 24">
+                  <path
+                    d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Copyright -->
+        <div class="mt-12 pt-7 border-t border-white/5 text-center text-xs text-slate-500">
+          © 2026 Arkik Productions. Todos los derechos reservados. | Operaciones verificadas por Esteban Molina (Ingeniero
+          TI).
+        </div>
       </div>
     </div>
   </footer>
@@ -1023,7 +1064,133 @@
     </div>
   </div>
 
-  <!-- Multi-Step Booking Wizard Modal (Mobile Fluid Bottom Sheet / Desktop Centered) -->
+  <!-- Políticas de Empresa & Términos (modal oficial de políticas de servicio) -->
+  <div id="modal-politicas" role="dialog" aria-modal="true" aria-labelledby="politicas-modal-title"
+    onclick="if (event.target === this) closePoliciesModal()"
+    class="fixed inset-0 z-[60] hidden overflow-y-auto p-4 sm:p-6 bg-black/85 backdrop-blur-md">
+    <div class="relative m-auto my-8 w-full max-w-3xl">
+
+      <!-- Botón Cerrar 'X' accesible (fijo sobre el card, no hace scroll con el contenido) -->
+      <button type="button" id="btn-close-policies" onclick="closePoliciesModal()"
+        aria-label="Cerrar políticas de empresa"
+        class="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-gray-300 hover:text-white hover:bg-white/20 hover:rotate-90 active:scale-95 transition-all duration-300 flex items-center justify-center">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+
+      <!-- Card obsidiana: contenido con scroll interno (máx. 85vh) -->
+      <div
+        class="policy-modal-card bg-[#0c081a]/95 border border-purple-500/30 backdrop-blur-2xl rounded-3xl p-6 shadow-2xl max-w-3xl mx-auto max-h-[85vh] overflow-y-auto">
+
+        <!-- Encabezado -->
+        <h3 id="politicas-modal-title"
+          class="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight pr-12">
+          Políticas de Empresa & Términos
+        </h3>
+        <p class="mt-1.5 text-sm font-medium text-purple-300">Arkik Productions · Sonido Profesional para Eventos</p>
+
+        <!-- Contenido: 5 secciones oficiales (políticas de contratación y reserva) -->
+        <div class="mt-6 space-y-4 text-sm text-gray-300 leading-relaxed">
+
+          <!-- 1 · Reservación y Políticas de Pago -->
+          <section class="policy-section">
+            <h4 class="policy-section__header">
+              <span class="policy-section__icon" aria-hidden="true">💳</span>
+              <span>Reservación y Políticas de Pago</span>
+            </h4>
+            <ul class="policy-section__list">
+              <li><strong>Enganche 50% no reembolsable:</strong> toda reserva se confirma con el 50% del gran total vía
+                SINPE Móvil. Este enganche garantiza el bloqueo de la fecha y del formato contratado y no es
+                reembolsable.</li>
+              <li><strong>Fecha límite de liquidación:</strong> el saldo del 50% restante se cancela el día del evento,
+                antes del inicio de la presentación.</li>
+              <li><strong>Confirmación previa validación de comprobante:</strong> la reserva queda en estado
+                «Pendiente de Aprobación» hasta que Arkik Productions verifique la transferencia a nombre de Juan José
+                Ramírez Chaves (+506 6227-4984). Solo se confirma el evento una vez validado el pago en WhatsApp.</li>
+            </ul>
+          </section>
+
+          <!-- 2 · Logística, Tiempos y Requerimientos Técnicos -->
+          <section class="policy-section">
+            <h4 class="policy-section__header">
+              <span class="policy-section__icon" aria-hidden="true">🚚</span>
+              <span>Logística, Tiempos y Requerimientos Técnicos</span>
+            </h4>
+            <ul class="policy-section__list">
+              <li><strong>Puntualidad de itinerario:</strong> el cronograma acordado debe respetarse; el montaje inicia
+                entre 2 y 3 horas antes del evento e incluye pruebas de sonido previas a la llegada de los invitados.
+              </li>
+              <li><strong>Espacio plano y seco:</strong> se requiere un área libre de obstáculos y sin riesgo de
+                inundación para la instalación del equipo.</li>
+              <li><strong>Energía estable:</strong> toma eléctrica cercana (110V) y, de preferencia, acceso al tablero
+                principal del recinto.</li>
+              <li><strong>Toldo o protección ante intemperie:</strong> los eventos al aire libre deben contar con
+                cobertura techada que resguarde el equipo en caso de lluvia o sol directo.</li>
+            </ul>
+          </section>
+
+          <!-- 3 · Cancelaciones, Reprogramación y Fuerza Mayor -->
+          <section class="policy-section">
+            <h4 class="policy-section__header">
+              <span class="policy-section__icon" aria-hidden="true">🔄</span>
+              <span>Cancelaciones, Reprogramación y Fuerza Mayor</span>
+            </h4>
+            <ul class="policy-section__list">
+              <li><strong>Reprogramación:</strong> ante cancelación del cliente, el enganche puede aplicarse a una nueva
+                fecha dentro de los siguientes <strong>6 meses</strong>, sujeta a la disponibilidad de agenda (excepto
+                por negligencia o falta de comunicación).</li>
+              <li><strong>Fuerza mayor:</strong> desastres naturales, emergencias nacionales o prohibiciones oficiales
+                permiten reprogramar la fecha sin penalización.</li>
+              <li><strong>Fallo del proveedor:</strong> si Arkik Productions no pudiera presentarse, se asignará un
+                sustituto equivalente o se realizará un <strong>reembolso del 100%</strong> del monto pagado.</li>
+            </ul>
+          </section>
+
+          <!-- 4 · Seguridad y Cuidado del Equipo -->
+          <section class="policy-section">
+            <h4 class="policy-section__header">
+              <span class="policy-section__icon" aria-hidden="true">🛡️</span>
+              <span>Seguridad y Cuidado del Equipo</span>
+            </h4>
+            <ul class="policy-section__list">
+              <li><strong>Responsabilidad del cliente:</strong> durante el evento, el cliente responde por el bienestar
+                de los músicos y por el cuidado del equipo de sonido e iluminación.</li>
+              <li><strong>Daños, vandalismo y líquidos:</strong> cualquier daño, acto vandálico o derrame de líquidos
+                sobre el equipo será facturado según la cotización de reparación o reposición.</li>
+            </ul>
+          </section>
+
+          <!-- 5 · Viáticos y Costos Adicionales -->
+          <section class="policy-section">
+            <h4 class="policy-section__header">
+              <span class="policy-section__icon" aria-hidden="true">📍</span>
+              <span>Viáticos y Costos Adicionales</span>
+            </h4>
+            <ul class="policy-section__list">
+              <li><strong>Cobertura base (GAM):</strong> la tarifa cotizada incluye el Gran Área Metropolitana (San
+                José, Heredia, Alajuela y Cartago).</li>
+              <li><strong>Fuera del GAM o jornadas extendidas:</strong> los viáticos de transporte y/o hospedaje se
+                cotizan por separado según la distancia, la duración del evento y la logística requerida.</li>
+            </ul>
+          </section>
+
+          <p class="policy-section__disclaimer">
+            Al completar su reserva, usted declara haber leído y aceptado estos Términos y Condiciones de Contratación
+            y Políticas de Cancelación en su totalidad.
+          </p>
+        </div>
+
+        <!-- Cierre del modal -->
+        <div class="mt-8 flex justify-end">
+          <button type="button" id="btn-close-policies-cta" onclick="closePoliciesModal()" class="btn-cta-primary">
+            Entendido / Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title"
     class="fixed inset-0 z-50 items-center justify-center p-4 overflow-y-auto overscroll-contain hidden opacity-0 pointer-events-none invisible">
     <div class="modal-overlay" id="modal-overlay">
@@ -1399,6 +1566,17 @@
                 </div>
               </section>
 
+              <!-- Políticas de Empresa & Términos: aceptación obligatoria para continuar al pago -->
+              <div class="mt-4 p-3 bg-purple-950/40 border border-purple-500/30 rounded-xl flex items-start gap-3">
+                <input type="checkbox" id="accept-policies-checkbox"
+                  class="mt-1 w-5 h-5 accent-purple-600 rounded cursor-pointer">
+                <label for="accept-policies-checkbox" class="text-xs text-slate-200 cursor-pointer select-none">
+                  He leído y acepto los <button type="button" id="btn-open-policies-inline"
+                    class="text-purple-400 underline font-semibold hover:text-purple-300">Términos y Condiciones de
+                    Contratación y Políticas de Cancelación de Arkik Productions</button>.
+                </label>
+              </div>
+
               <div class="flex flex-col-reverse sm:flex-row gap-3 pt-2 sm:justify-between">
                 <button type="button" onclick="goToStep(2)" class="btn-cta-secondary">
                   Regresar
@@ -1652,9 +1830,9 @@
   <!-- ============================================================ -->
   <div id="mediaLightboxModal" role="dialog" aria-modal="true" aria-labelledby="lightbox-title"
     onclick="if (event.target === this) closeMediaLightbox()"
-    class="fixed inset-0 z-[90] hidden items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-2xl overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
+    class="fixed inset-0 z-[90] hidden items-center justify-center p-3 sm:p-6 bg-black/40 overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
     <div
-      class="relative m-auto max-w-4xl w-full rounded-3xl bg-[#0d0918]/95 border border-purple-500/30 p-5 sm:p-8 shadow-[0_0_50px_rgba(168,85,247,0.35)] overflow-hidden flex flex-col my-auto">
+      class="relative m-auto max-w-5xl w-full rounded-[2rem] bg-[#0d0918]/95 border border-purple-500/30 p-4 sm:p-6 shadow-[0_0_80px_rgba(168,85,247,0.35)] overflow-hidden flex flex-col my-auto">
 
       <!-- Ambient Glows -->
       <div class="absolute -top-24 -right-24 w-60 h-60 bg-glow-pink pointer-events-none opacity-40"></div>
@@ -1668,37 +1846,73 @@
         </svg>
       </button>
 
-      <!-- Media Display Area -->
+      <!-- Cinema Pro Media Display Area (HD) -->
       <div id="lightbox-media-container"
-        class="relative z-10 w-full rounded-2xl overflow-hidden bg-black/70 aspect-video max-h-[55vh] flex items-center justify-center border border-purple-500/20 shadow-inner">
+        class="relative z-10 w-full rounded-2xl overflow-hidden bg-black/80 aspect-video max-h-[70vh] flex items-center justify-center border border-purple-500/25 shadow-inner">
+
         <!-- Injected dynamically by app.js (Image, Video iframe, or Player) -->
+        <div id="lightbox-media-slot" class="relative w-full h-full"></div>
+
+        <!-- Media Counter -->
+        <span id="lightbox-counter"
+          class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-black/60 border border-white/15 text-[11px] font-bold text-gray-200 backdrop-blur-md">
+          1 / 8
+        </span>
+
+        <!-- Prev / Next Arrows -->
+        <button type="button" id="lightbox-prev-btn" onclick="navigateLightbox(-1)" aria-label="Contenido anterior"
+          class="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-pink-500">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button type="button" id="lightbox-next-btn" onclick="navigateLightbox(1)" aria-label="Contenido siguiente"
+          class="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-pink-500">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        <!-- Cinema Overlay: Title, Location Tag & Date -->
+        <div
+          class="absolute inset-x-0 bottom-0 z-20 p-4 sm:p-6 pointer-events-none bg-gradient-to-t from-black/95 via-black/50 to-transparent">
+          <div class="flex flex-wrap items-center gap-2">
+            <span id="lightbox-category-badge"
+              class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-950/80 border border-purple-500/40 text-purple-300 backdrop-blur-md">
+              Categoría
+            </span>
+            <span
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/50 border border-white/10 text-[10px] font-semibold text-purple-200 backdrop-blur-md">
+              <svg class="w-3 h-3 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+              </svg>
+              <span id="lightbox-location">Costa Rica</span>
+            </span>
+            <span id="lightbox-date"
+              class="px-2.5 py-1 rounded-full bg-black/50 border border-white/10 text-[10px] font-semibold text-gray-300 backdrop-blur-md">
+              Fecha
+            </span>
+          </div>
+          <h3 id="lightbox-title"
+            class="mt-2.5 text-xl sm:text-3xl font-extrabold text-white leading-tight font-heading drop-shadow-lg">
+            Título del Contenido
+          </h3>
+        </div>
       </div>
 
       <!-- Media Details & Metadata -->
-      <div class="relative z-10 mt-5 space-y-3">
+      <div class="relative z-10 mt-4 sm:mt-5 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span id="lightbox-category-badge"
-              class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-purple-950/80 border border-purple-500/40 text-purple-300">
-              Categoría
-            </span>
-            <span id="lightbox-date" class="text-xs font-semibold text-gray-400">
-              Fecha
-            </span>
-            <span
-              class="inline-flex items-center gap-1 text-xs text-pink-400 font-semibold bg-pink-500/10 border border-pink-500/30 px-2.5 py-0.5 rounded-full">
-              <svg class="w-3 h-3 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-              </svg>
-              @kikeramirezcr Verificado
-            </span>
-          </div>
+          <span
+            class="inline-flex items-center gap-1 text-xs text-pink-400 font-semibold bg-pink-500/10 border border-pink-500/30 px-2.5 py-0.5 rounded-full">
+            <svg class="w-3 h-3 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+            </svg>
+            @kikeramirezcr Verificado
+          </span>
         </div>
-
-        <h3 id="lightbox-title" class="text-xl sm:text-2xl font-extrabold text-white leading-tight font-heading">
-          Título del Contenido
-        </h3>
 
         <p id="lightbox-caption" class="text-sm text-gray-300 leading-relaxed max-w-3xl">
           Descripción detallada y créditos del show en vivo.
@@ -1728,8 +1942,8 @@
           </div>
 
           <button type="button" id="lightbox-quote-btn" onclick="closeMediaLightbox(); openBookingModal(1);"
-            class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-900/40 transition-all flex items-center gap-1.5 min-h-[44px]">
-            <span>Cotizar Formato</span>
+            class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/40 transition-all flex items-center gap-1.5 min-h-[44px]">
+            <span>Cotizar Este Formato Similar</span>
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
@@ -1870,7 +2084,8 @@
           </div>
 
           <!-- Filtro Temporal de Analítica -->
-          <div id="portal-period-filters" class="flex flex-wrap gap-2"></div>
+          <div id="portal-period-filters" class="flex overflow-x-auto no-scrollbar items-center gap-2 py-1 snap-x">
+          </div>
 
           <!-- KPI Grid Financiero -->
           <div id="admin-metrics" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
@@ -1913,19 +2128,40 @@
                 placeholder="Buscar por código ARK, cliente, teléfono o ubicación..." aria-label="Buscar reservas"
                 class="glass-input w-full rounded-xl px-3.5 py-2.5 text-sm">
             </div>
-            <div id="admin-status-filters" class="flex flex-wrap gap-2 mb-4"></div>
+            <div id="admin-status-filters"
+              class="flex overflow-x-auto no-scrollbar items-center gap-2 py-1 snap-x mb-4"></div>
             <div id="admin-bookings-list" class="space-y-3"></div>
           </div>
         </div>
 
-        <!-- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) -->
-        <div id="admin-it-view" class="hidden">
-          <div id="admin-it-tabs" class="flex flex-wrap gap-2 mb-6">
-            <button type="button" data-it-tab="prices" class="admin-tab-btn admin-tab-btn--active">1. Matriz de
-              Tarifas</button>
-            <button type="button" data-it-tab="gallery" class="admin-tab-btn">2. Gestor de Galería</button>
-            <button type="button" data-it-tab="availability" class="admin-tab-btn">3. Bloqueo de Agenda</button>
-            <button type="button" data-it-tab="backup" class="admin-tab-btn">4. Base de Datos &amp; Auditoría</button>
+        <!-- Rol Ingeniero de TI: Suite de Control Técnico Cyber-Ops (4 Pestañas Modulares) -->
+        <div id="admin-it-view" class="it-console hidden">
+          <!-- Telemetría en vivo: uptime, criptografía y latencia del sistema -->
+          <div id="admin-it-status-chips" class="it-status-chips" aria-label="Telemetría del sistema"></div>
+
+          <div id="admin-it-tabs" class="it-tab-track flex flex-wrap gap-2 mb-6" role="tablist"
+            aria-label="Módulos de control técnico">
+            <button type="button" role="tab" aria-selected="true" data-it-tab="prices"
+              class="admin-tab-btn admin-tab-btn--active">
+              <span class="it-tab-idx">01</span>
+              <span class="it-tab-label">Matriz de Tarifas</span>
+              <span class="admin-tab-count">6</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-it-tab="gallery" class="admin-tab-btn">
+              <span class="it-tab-idx">02</span>
+              <span class="it-tab-label">Gestor de Galería</span>
+              <span class="admin-tab-count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-it-tab="availability" class="admin-tab-btn">
+              <span class="it-tab-idx">03</span>
+              <span class="it-tab-label">Bloqueo de Agenda</span>
+              <span class="admin-tab-count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-it-tab="backup" class="admin-tab-btn">
+              <span class="it-tab-idx">04</span>
+              <span class="it-tab-label">Base de Datos &amp; Auditoría</span>
+              <span class="admin-tab-count">0</span>
+            </button>
           </div>
           <div id="admin-it-prices" class="space-y-5"></div>
           <div id="admin-it-gallery" class="hidden space-y-5"></div>
@@ -2147,6 +2383,7 @@
           Cerrar
         </button>
       </div>
+
     </div>
   </div>
 

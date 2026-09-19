@@ -119,7 +119,8 @@ const CATALOG_SERVICES = [
     setup_display: "2.5 horas antes",
     teardown_display: "1.5 horas después",
     tech_specs: "5 Músicos en escena, instrumentos profesionales, monitoreo In-Ear y sistema PA completo.",
-    image_url: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1200&auto=format&fit=crop",
+    alt: "Banda Completa en vivo en escenario principal con iluminación profesional",
     badge: "Formato Estelar",
     is_popular: true
   },
@@ -135,7 +136,8 @@ const CATALOG_SERVICES = [
     setup_display: "2 horas antes",
     teardown_display: "1 hora después",
     tech_specs: "4 Músicos en escena, percusión, bajo, guitarra/teclado, voz principal y PA estéreo.",
-    image_url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1200&auto=format&fit=crop",
+    alt: "Cuarteto Arkik en presentación en vivo",
     badge: "Versatilidad Total",
     is_popular: false
   },
@@ -151,7 +153,8 @@ const CATALOG_SERVICES = [
     setup_display: "1h 45m antes",
     teardown_display: "45 min después",
     tech_specs: "3 Músicos en vivo, instrumentos acústicos/eléctricos y microfonía profesional.",
-    image_url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1200&auto=format&fit=crop",
+    alt: "Trío Acústico Premium para recepción elegante",
     badge: "Elegancia Pura",
     is_popular: false
   },
@@ -167,7 +170,8 @@ const CATALOG_SERVICES = [
     setup_display: "1.5 horas antes",
     teardown_display: "1 hora después",
     tech_specs: "2 Músicos en vivo, 1 instrumento armónico y sistema de audio estéreo.",
-    image_url: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1469488865564-c2de10f69f96?q=80&w=1200&auto=format&fit=crop",
+    alt: "Dúo Íntimo Arkik para ceremonia o coctél privado",
     badge: "Recomendado Ceremonia",
     is_popular: false
   },
@@ -183,7 +187,8 @@ const CATALOG_SERVICES = [
     setup_display: "1 hora antes",
     teardown_display: "30 min después",
     tech_specs: "Voz / Instrumento solista, pistas backing tracks HD y audio personal.",
-    image_url: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?q=80&w=1200&auto=format&fit=crop",
+    alt: "Solista Instrumental en vivo",
     badge: "Ideal Coctel",
     is_popular: false
   },
@@ -199,7 +204,8 @@ const CATALOG_SERVICES = [
     setup_display: "2 horas antes",
     teardown_display: "1.5 horas después",
     tech_specs: "Parlantes activos, luces LED, consolas digitales, microfonía y operador de audio.",
-    image_url: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1200&auto=format&fit=crop",
+    alt: "Sistema de sonido profesional y consola de mezclas digital",
     badge: "Producción Técnica",
     is_popular: false
   }

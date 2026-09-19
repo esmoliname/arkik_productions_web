@@ -387,7 +387,8 @@ const StorageEngine = {
   },
 
   importFullDatabase(payload) {
-    validateBackupPayload(payload);
+    const v = validateBackupPayload(payload);
+    if (!v.ok) throw new Error("Backup inválido: " + v.error);
     if (payload.bookings !== undefined && Array.isArray(payload.bookings)) {
       BookingStore.replace(payload.bookings);
     }
@@ -545,13 +546,37 @@ const AvailabilityManager = {
 
   get(iso) {
     if (!this._data) this.load();
-    return this._data[iso] || null;
+    const raw = this._data[iso] || null;
+    // Soporte v3.3: los valores pueden ser string ("soldout"/"disabled")
+    // o un objeto { state, reason } — normaliza siempre al estado.
+    if (raw && typeof raw === "object") return raw.state || null;
+    return raw;
   },
 
-  set(iso, status) {
+  /**
+   * Devuelve el detalle completo de un override: { state, reason }.
+   * Compatible con valores string legacy (reason queda null).
+   */
+  getDetails(iso) {
     if (!this._data) this.load();
-    if (status === "available") delete this._data[iso];
-    else this._data[iso] = status;
+    const raw = this._data[iso] || null;
+    if (!raw) return { state: "available", reason: null };
+    if (typeof raw === "object") {
+      return { state: raw.state || "available", reason: raw.reason || null };
+    }
+    return { state: raw, reason: null };
+  },
+
+  set(iso, status, reason) {
+    if (!this._data) this.load();
+    if (status === "available") {
+      delete this._data[iso];
+    } else if (reason && typeof reason === "string" && reason.trim()) {
+      // Guarda estado + motivo documentado (auditable por el rol IT)
+      this._data[iso] = { state: status, reason: reason.trim().slice(0, 120) };
+    } else {
+      this._data[iso] = status;
+    }
     this.persist();
     if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
       StorageEngine.onDataChange("availability");
@@ -571,7 +596,15 @@ const AvailabilityManager = {
   replace(payload) {
     this._data = {};
     Object.keys(payload || {}).forEach(k => {
-      if (payload[k] === "soldout" || payload[k] === "disabled") this._data[k] = payload[k];
+      const v = payload[k];
+      if (v === "soldout" || v === "disabled") {
+        this._data[k] = v;
+      } else if (v && typeof v === "object") {
+        const state = v.state;
+        if (state === "soldout" || state === "disabled") {
+          this._data[k] = { state, reason: typeof v.reason === "string" ? v.reason.slice(0, 120) : null };
+        }
+      }
     });
   }
 };
@@ -1175,6 +1208,19 @@ const CalendarModule = {
   },
 
   selectDate(iso) {
+    // Guardia defensiva: las fechas bloqueadas/agotadas ya se renderizan
+    // deshabilitadas, pero si el estado cambia con el modal abierto o un
+    // flujo externo intenta seleccionarlas, se rechaza con aviso elegante.
+    const override = AvailabilityManager.get(iso);
+    if (override === "disabled") {
+      showToast("Fecha bloqueada por mantenimiento: no disponible. Elija otra fecha.", "error");
+      return;
+    }
+    if (override === "soldout") {
+      showToast("Fecha agotada (capacidad completa de 2 eventos). Elija otra fecha.", "error");
+      return;
+    }
+
     this.selectedDate = iso;
     cart.selectedDate = iso;
     cart.persist();
@@ -1267,7 +1313,7 @@ const AuditLog = {
   load() {
     const data = safeParse(STORAGE_KEYS.audit, null);
     if (data && typeof data === "object" && !Array.isArray(data)) return data;
-    return { engineVersion: ENGINE_VERSION, logins: [], lastLogin: null };
+    return { engineVersion: ENGINE_VERSION, logins: [], lastLogin: null, events: [] };
   },
 
   persist(data) {
@@ -1280,6 +1326,24 @@ const AuditLog = {
     data.logins.unshift({ role: role ? role.label : roleId, at: new Date().toISOString() });
     data.logins = data.logins.slice(0, 50);
     data.lastLogin = data.logins[0].at;
+    data.engineVersion = ENGINE_VERSION;
+    this.persist(data);
+  },
+
+  /**
+   * Registra un evento operativo del rol IT (telemetría de auditoría v3.3).
+   * type ∈ { login, block, price, gallery, backup, reset }
+   */
+  recordEvent(type, message, meta) {
+    const data = this.load();
+    if (!Array.isArray(data.events)) data.events = [];
+    data.events.unshift({
+      type,
+      message: String(message || "").slice(0, 200),
+      at: new Date().toISOString(),
+      meta: meta || null
+    });
+    data.events = data.events.slice(0, 80);
     data.engineVersion = ENGINE_VERSION;
     this.persist(data);
   },
@@ -1595,8 +1659,8 @@ const AdminModule = {
     const box = document.getElementById("portal-period-filters");
     if (!box) return;
     box.innerHTML = PERIOD_FILTERS.map(f => {
-      const active = f.key === this.periodFilter ? "admin-tab-btn--active" : "";
-      return `<button type="button" data-period="${f.key}" class="admin-tab-btn ${active}">${f.label}</button>`;
+      const active = f.key === this.periodFilter ? "pill-btn--active" : "";
+      return `<button type="button" data-period="${f.key}" class="pill-btn ${active}">${f.label}</button>`;
     }).join("");
   },
 
@@ -1605,9 +1669,9 @@ const AdminModule = {
     const active = list.filter(b => b.status !== "cancelada");
     const validatedDeposits = active
       .filter(b => b.status === "confirmada" || b.status === "realizada")
-      .reduce((s, b) => s + b.deposit50Amount, 0);
-    const receivable = active.reduce((s, b) => s + b.remainingBalance, 0);
-    const projected = active.reduce((s, b) => s + b.granTotal, 0);
+      .reduce((s, b) => s + (b.deposit50Amount || 0), 0);
+    const receivable = active.reduce((s, b) => s + (b.remainingBalance || 0), 0);
+    const projected = active.reduce((s, b) => s + (b.granTotal || 0), 0);
 
     let spanDays = Math.max(1, Math.round((parseISO(periodRange(this.periodFilter).end) - parseISO(periodRange(this.periodFilter).start)) / 86400000) + 1);
     if (this.periodFilter === "total") {
@@ -1620,10 +1684,10 @@ const AdminModule = {
     const box = document.getElementById("admin-metrics");
     if (!box) return;
     box.innerHTML = [
-      kpiCard("💳", "Adelantos SINPE Validados (50%)", formatCRC(validatedDeposits), "border-emerald-500/40"),
-      kpiCard("🤝", "Saldos por Cobrar en Escenario", formatCRC(receivable), "border-pink-500/40"),
-      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "border-cyan-500/40"),
-      kpiCard("📅", "Eventos Activos & Ocupación", `${active.length} activos · ${occupancy}% ocupación`, "border-purple-500/40")
+      kpiCard("💳", "Adelantos SINPE", formatCRC(validatedDeposits), "exec-kpi--emerald"),
+      kpiCard("🤝", "Saldos por Cobrar", formatCRC(receivable), "exec-kpi--cyan"),
+      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "exec-kpi--fuchsia"),
+      kpiCard("📅", "Eventos Activos & Ocupación", `${active.length} activos · ${occupancy}% ocupación`, "exec-kpi--purple")
     ].join("");
   },
 
@@ -1699,7 +1763,7 @@ const AdminModule = {
     if (!box) return;
     const statuses = [
       ["todas", "Todas"],
-      ["pendiente", "Pendientes de Aprobación"],
+      ["pendiente", "Pendientes"],
       ["confirmada", "Confirmadas"],
       ["realizada", "Realizadas"],
       ["cancelada", "Canceladas"]
@@ -1707,8 +1771,8 @@ const AdminModule = {
     const periodList = bookingsInPeriod(this.periodFilter);
     box.innerHTML = statuses.map(([key, label]) => {
       const count = key === "todas" ? periodList.length : periodList.filter(b => b.status === key).length;
-      const active = key === this.ownerFilter ? "admin-tab-btn--active" : "";
-      return `<button type="button" data-filter="${key}" class="admin-tab-btn ${active}">${label} (${count})</button>`;
+      const active = key === this.ownerFilter ? "pill-btn--active" : "";
+      return `<button type="button" data-filter="${key}" class="pill-btn ${active}">${label} <span class="pill-count">${count}</span></button>`;
     }).join("");
   },
 
@@ -1930,6 +1994,7 @@ const AdminModule = {
   // ---- Rol Ingeniero de TI: Suite de Control Técnico (4 Pestañas Modulares) ----
 
   renderIT() {
+    this.renderITStatusChips();
     const tabs = ["prices", "gallery", "availability", "backup"];
     tabs.forEach(p => {
       const el = document.getElementById(`admin-it-${p}`);
@@ -1937,6 +2002,19 @@ const AdminModule = {
     });
     document.querySelectorAll("[data-it-tab]").forEach(t => {
       t.classList.toggle("admin-tab-btn--active", t.getAttribute("data-it-tab") === this.itTab);
+      t.setAttribute("aria-selected", t.getAttribute("data-it-tab") === this.itTab ? "true" : "false");
+    });
+    // Contadores de estado vivos en cada pestaña (badges)
+    const audit = AuditLog.load();
+    const counts = {
+      prices: CATALOG_SERVICES.length,
+      gallery: StorageEngine.getGalleryItems().length,
+      availability: Object.keys(AvailabilityManager.all()).length,
+      backup: (Array.isArray(audit.events) ? audit.events.length : 0) + audit.logins.length
+    };
+    document.querySelectorAll("#admin-it-tabs [data-it-tab]").forEach(t => {
+      const badge = t.querySelector(".admin-tab-count");
+      if (badge) badge.textContent = counts[t.getAttribute("data-it-tab")] || 0;
     });
     const pricesEl = document.getElementById("admin-it-prices");
     const galleryEl = document.getElementById("admin-it-gallery");
@@ -1946,6 +2024,48 @@ const AdminModule = {
     if (galleryEl && this.itTab === "gallery") galleryEl.innerHTML = this.itGalleryHtml();
     if (availEl && this.itTab === "availability") availEl.innerHTML = this.itAvailabilityHtml();
     if (backupEl && this.itTab === "backup") backupEl.innerHTML = this.itBackupHtml();
+  },
+
+  // ---- Telemetría en vivo de la consola IT ----
+
+  renderITStatusChips() {
+    const box = document.getElementById("admin-it-status-chips");
+    if (!box) return;
+    const secureCtx = typeof window !== "undefined" && window.isSecureContext;
+    const cryptoOk = typeof window !== "undefined" && window.crypto && !!window.crypto.subtle;
+    const cryptoClass = cryptoOk ? "it-status-chip--ok" : "it-status-chip--warn";
+    const cryptoLabel = cryptoOk ? "SHA-256 SECURED" : "FNV-1a FALLBACK";
+    const tlsClass = secureCtx ? "it-status-chip--ok" : "it-status-chip--warn";
+    const tlsLabel = secureCtx ? "TLS 1.3 ENCRYPTED" : "HTTP PLANO";
+    const engine = sanitizeInput(String(ENGINE_VERSION || "arkik-engine"));
+    box.innerHTML = `
+      <span class="it-status-chip it-status-chip--purple"><span class="it-chip-dot"></span>${engine}</span>
+      <span class="it-status-chip ${tlsClass}">${tlsLabel}</span>
+      <span class="it-status-chip ${cryptoClass}">${cryptoLabel}</span>
+      <span class="it-status-chip"><span class="it-chip-dot"></span>UPTIME <span id="it-uptime-value">00:00:00</span></span>
+      <span class="it-status-chip">PING <span id="it-ping-value">--</span>ms</span>`;
+    this.startITTelemetry();
+  },
+
+  startITTelemetry() {
+    if (!this._telemetryStarted) {
+      this._telemetryStarted = true;
+      this._telemetryStart = Date.now();
+      const tick = () => {
+        const uptimeEl = document.getElementById("it-uptime-value");
+        if (uptimeEl) {
+          const s = Math.max(0, Math.floor((Date.now() - this._telemetryStart) / 1000));
+          const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+          const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+          const ss = String(s % 60).padStart(2, "0");
+          uptimeEl.textContent = `${hh}:${mm}:${ss}`;
+        }
+        const pingEl = document.getElementById("it-ping-value");
+        if (pingEl) pingEl.textContent = measureStorageLatency() + "ms";
+      };
+      tick();
+      setInterval(tick, 1000);
+    }
   },
 
   setItTab(tab) {
@@ -1970,15 +2090,18 @@ const AdminModule = {
           <div class="flex items-center gap-1.5 justify-end">
             <span class="text-xs text-gray-400 font-bold">₡</span>
             <input type="number" data-price="service-${s.id}" value="${PriceManager.getServicePrice(s)}"
-              min="0" step="5000" class="glass-input rounded-xl px-3 py-2 w-32 sm:w-36 text-sm font-bold">
+              min="0" step="5000" class="it-price-input rounded-xl px-3 py-2 w-32 sm:w-36 text-sm font-bold">
           </div>
         </td>
       </tr>`).join("");
 
     return `
-      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 overflow-x-auto space-y-6">
+      <div class="it-console-panel overflow-x-auto space-y-6">
+        <div class="it-panel-header">
+          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Matriz de Tarifas Base en Vivo (${CATALOG_SERVICES.length} Formatos)</p>
+          <span class="it-live-dot">Tiempo Real</span>
+        </div>
         <div>
-          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">Matriz de Tarifas Base en Vivo (6 Formatos)</p>
           <table class="w-full min-w-[520px] text-xs">
             <thead>
               <tr class="text-left text-[10px] uppercase tracking-wider text-gray-500 border-b border-white/10">
@@ -2000,7 +2123,7 @@ const AdminModule = {
               <label class="block text-[11px] font-bold text-purple-300" for="admin-extra-multiplier">Multiplicador Hora Extra</label>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="admin-extra-multiplier" value="${extraMultiplier}" min="0.1" max="2.0" step="0.05"
-                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
                 <span class="text-xs text-gray-400 font-bold">(${(extraMultiplier * 100).toFixed(0)}%)</span>
               </div>
               <p class="text-[10px] text-gray-500">Por defecto: 0.50 (50% de la tarifa base)</p>
@@ -2010,7 +2133,7 @@ const AdminModule = {
               <label class="block text-[11px] font-bold text-pink-300" for="admin-travel-rate">Recargo Fuera de GAM (%)</label>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="admin-travel-rate" value="${(travelRate * 100).toFixed(0)}" min="0" max="100" step="1"
-                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
                 <span class="text-xs text-gray-400 font-bold">%</span>
               </div>
               <p class="text-[10px] text-gray-500">Por defecto: 12% viáticos de transporte</p>
@@ -2021,7 +2144,7 @@ const AdminModule = {
               <div class="flex items-center gap-1.5">
                 <span class="text-xs text-gray-400 font-bold">₡</span>
                 <input type="number" id="admin-subwoofer-price" data-price="extra-subwoofers" value="${subPrice}" min="0" step="5000"
-                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
               </div>
               <p class="text-[10px] text-gray-500">Original: ₡80,000 / unidad</p>
             </div>
@@ -2031,7 +2154,7 @@ const AdminModule = {
               <div class="flex items-center gap-1.5">
                 <span class="text-xs text-gray-400 font-bold">₡</span>
                 <input type="number" id="admin-dj-price" data-price="extra-dj_service" value="${djPrice}" min="0" step="5000"
-                  class="glass-input rounded-xl px-3 py-2 w-full text-sm font-bold text-white">
+                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
               </div>
               <p class="text-[10px] text-gray-500">Original: ₡75,000 / hora</p>
             </div>
@@ -2039,8 +2162,9 @@ const AdminModule = {
         </div>
 
         <div class="flex flex-wrap gap-3 pt-2">
-          <button type="button" id="admin-save-prices" class="admin-act-btn admin-act-btn--confirm">💾 Guardar y Aplicar Precios</button>
+          <button type="button" id="admin-save-prices" class="admin-act-btn admin-act-btn--confirm">💾 Aplicar Cambios (Guardar)</button>
           <button type="button" id="admin-reset-prices" class="admin-act-btn admin-act-btn--neutral">↺ Restaurar Precios de Fábrica</button>
+          <span class="text-[11px] text-gray-500 self-center">Los cambios persisten al instante y recalibran el catálogo público.</span>
         </div>
       </div>`;
   },
@@ -2050,7 +2174,7 @@ const AdminModule = {
     const featuredCount = items.filter(i => i.featured).length;
 
     const rows = items.map(item => `
-      <div class="admin-media-row flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/10" data-media-id="${item.id}">
+      <div class="admin-media-row flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/10" data-media-id="${sanitizeInput(item.id)}">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-12 h-12 rounded-xl overflow-hidden bg-black/50 flex-shrink-0 border border-white/15">
             <img src="${sanitizeUrl(item.thumbnail)}" alt="${sanitizeInput(item.title)}" class="w-full h-full object-cover">
@@ -2076,7 +2200,7 @@ const AdminModule = {
             title="Alternar estado destacado">
             ${item.featured ? '★ Quitar Destacado' : '☆ Destacar'}
           </button>
-          <button type="button" onclick="AdminModule.openMediaModal('${item.id}')"
+          <button type="button" onclick="AdminModule.openMediaModal('${sanitizeInput(item.id)}')"
             class="admin-act-btn admin-act-btn--neutral text-xs py-1.5 px-3 min-h-[38px]">
             ✏️ Editar
           </button>
@@ -2089,8 +2213,8 @@ const AdminModule = {
     `).join("");
 
     return `
-      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="it-console-panel space-y-4">
+        <div class="it-panel-header">
           <div>
             <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Gestor Dinámico de Galería & Social Showcase</p>
             <p class="text-[11px] text-gray-400">Total: <strong>${items.length}</strong> elementos registrados · <strong>${featuredCount}</strong> destacados</p>
@@ -2118,29 +2242,57 @@ const AdminModule = {
     const todayISO = isoOf(new Date());
     const overrides = AvailabilityManager.all();
     const entries = Object.keys(overrides).sort();
-    return `
-      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-5">
-        <div>
-          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Bloqueo de Fechas (Mantenimiento · Cierre Privado · Descanso)</p>
-          <div class="flex flex-wrap items-end gap-2">
-            <input type="date" id="admin-avail-date" min="${todayISO}" class="glass-input rounded-xl px-3 py-2.5 text-sm">
-            <button type="button" data-avail="disabled" class="admin-act-btn admin-act-btn--cancel">⛔ Bloquear Fecha</button>
-            <button type="button" data-avail="available" class="admin-act-btn admin-act-btn--confirm">🟢 Desbloquear Fecha</button>
-            <button type="button" data-avail="soldout" class="admin-act-btn admin-act-btn--neutral">🔴 Marcar Agotado (2 eventos)</button>
+    const rows = entries.map(k => {
+      const details = AvailabilityManager.getDetails(k);
+      const isSoldout = details.state === "soldout";
+      return `
+        <div class="it-blocked-row">
+          <div class="min-w-0">
+            <span class="it-blocked-date">${k}</span>
+            ${details.reason ? `<span class="it-blocked-reason">${sanitizeInput(details.reason)}</span>` : ""}
           </div>
+          <span class="status-badge ${isSoldout ? "status-badge--soldout" : "status-badge--disabled"}">
+            ${isSoldout ? "Agotado" : "Bloqueado"}
+          </span>
+          <button type="button" data-avail-remove="${k}" class="it-unlock-btn">🔓 Desbloquear Fecha</button>
+        </div>`;
+    }).join("");
+
+    return `
+      <div class="it-console-panel space-y-5">
+        <div class="it-panel-header">
+          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Bloqueo de Agenda — Mantenimiento · Cierre Privado · Descanso</p>
+          <span class="it-live-dot">Sincroniza calendario público</span>
         </div>
+
+        <div>
+          <div class="flex flex-wrap items-end gap-2">
+            <label class="block">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Desde (obligatorio)</span>
+              <input type="date" id="admin-avail-from" min="${todayISO}" class="it-date-input rounded-xl px-3 py-2.5 text-sm">
+            </label>
+            <label class="block">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Hasta (rango opcional)</span>
+              <input type="date" id="admin-avail-to" min="${todayISO}" class="it-date-input rounded-xl px-3 py-2.5 text-sm">
+            </label>
+            <label class="block flex-1 min-w-[180px]">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Motivo (auditado)</span>
+              <input type="text" id="admin-avail-reason" maxlength="120" placeholder="Ej. Mantenimiento de iluminación"
+                class="glass-input rounded-xl px-3 py-2.5 text-sm w-full">
+            </label>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button type="button" data-avail="disabled" class="admin-act-btn admin-act-btn--cancel">⛔ Bloquear Fecha(s)</button>
+            <button type="button" data-avail="soldout" class="admin-act-btn admin-act-btn--neutral">🔴 Marcar Agotado</button>
+            <button type="button" data-avail="available" class="admin-act-btn admin-act-btn--confirm">🟢 Desbloquear (rango)</button>
+          </div>
+          <p class="text-[11px] text-gray-500 mt-2">Si completa "Hasta", la operación aplica a todo el rango inclusive. Las fechas bloqueadas se deshabilitan al instante en el calendario público y el motivo queda registrado en la auditoría.</p>
+        </div>
+
         <div>
           <p class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Fechas con Gestión Manual (${entries.length})</p>
           <div class="space-y-2">
-            ${entries.length ? entries.map(k => `
-              <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
-                <span class="text-sm font-bold text-white">${k}</span>
-                <span class="status-badge ${overrides[k] === "soldout" ? "status-badge--soldout" : "status-badge--disabled"}">
-                  ${overrides[k] === "soldout" ? "Agotado" : "Bloqueado"}
-                </span>
-                <button type="button" data-avail-remove="${k}" class="text-xs text-red-400 hover:text-red-300 font-semibold">Quitar Bloqueo</button>
-              </div>`).join("")
-        : `<p class="text-xs text-gray-500">Sin bloqueos manuales. Disponibilidad calculada automáticamente (máx. 2 eventos/día · antelación mínima 72 h).</p>`}
+            ${entries.length ? rows : '<p class="text-xs text-gray-500">Sin bloqueos manuales. Disponibilidad calculada automáticamente (máx. 2 eventos/día · antelación mínima 72 h).</p>'}
           </div>
         </div>
       </div>`;
@@ -2160,13 +2312,38 @@ const AdminModule = {
         </span>
       </div>`).join("");
 
+    const events = Array.isArray(audit.events) ? audit.events : [];
+    const LOG_TYPES = ["login", "block", "price", "gallery", "backup", "reset"];
+    const fmtTime = at => new Date(at).toLocaleString("es-CR",
+      { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const logRows = events.length
+      ? events.slice(0, 20).map(ev => {
+          const type = LOG_TYPES.includes(ev.type) ? ev.type : "login";
+          return `
+            <div class="it-log-row">
+              <span class="it-log-time">${fmtTime(ev.at)}</span>
+              <span class="it-log-type it-log-type--${type}">${type}</span>
+              <span class="it-log-message">${sanitizeInput(ev.message)}</span>
+            </div>`;
+        }).join("")
+      : audit.logins.slice(0, 20).map(l => `
+          <div class="it-log-row">
+            <span class="it-log-time">${fmtTime(l.at)}</span>
+            <span class="it-log-type it-log-type--login">login</span>
+            <span class="it-log-message">Acceso registrado: ${sanitizeInput(l.role)}</span>
+          </div>`).join("");
+
     return `
       <div class="space-y-5">
-        <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
-          <p class="text-sm font-bold text-white">Database Vault — Respaldo & Restauración Total</p>
-          <p class="text-xs text-gray-400 leading-relaxed">Exporte la base de datos completa (reservas, tarifas en vivo, agenda de bloqueos, biblioteca multimedia y configuración) en un archivo JSON validable.</p>
+        <div class="it-console-panel space-y-4">
+          <div class="it-panel-header">
+            <p class="text-sm font-bold text-white">Database Vault — Respaldo & Restauración Total</p>
+            <span class="it-live-dot">${ENGINE_VERSION}</span>
+          </div>
+          <p class="text-xs text-gray-400 leading-relaxed">Exporte la base de datos completa (reservas, tarifas en vivo, agenda de bloqueos, biblioteca multimedia y configuración) en un archivo JSON validable o en sentencias SQL listas para restaurar.</p>
           <div class="flex flex-wrap gap-3">
-            <button type="button" id="admin-export-backup" class="admin-act-btn admin-act-btn--confirm">⬇ Exportar Base de Datos (JSON)</button>
+            <button type="button" id="admin-export-backup" class="it-backup-cta">💾 Generar y Descargar Respaldo JSON/SQL</button>
+            <button type="button" id="admin-export-sql" class="admin-act-btn admin-act-btn--neutral">⬇ Solo SQL</button>
             <label class="admin-act-btn admin-act-btn--neutral cursor-pointer">
               ⬆ Importar / Restaurar Respaldo (JSON)
               <input type="file" id="admin-import-backup" accept=".json,application/json" class="hidden">
@@ -2177,8 +2354,8 @@ const AdminModule = {
           </p>
         </div>
 
-        <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/25 space-y-4">
-          <div class="flex items-center justify-between">
+        <div class="it-console-panel space-y-4">
+          <div class="it-panel-header">
             <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Telemetría de Almacenamiento & Seguridad</p>
             <span class="text-xs font-mono text-emerald-400 font-bold">Uso LocalStorage: ${storageStats.totalKb} KB</span>
           </div>
@@ -2204,18 +2381,25 @@ const AdminModule = {
           </div>
 
           <div class="space-y-2 pt-2">${integrityRows}</div>
+        </div>
 
-          ${audit.logins.length ? `
-          <div class="mt-4 pt-3 border-t border-white/10">
-            <p class="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">Historial de Ingresos de Seguridad</p>
-            <div class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              ${audit.logins.slice(0, 10).map(l => `
-                <div class="flex items-center justify-between text-[11px] py-1 border-b border-white/5">
-                  <span class="text-gray-300 font-semibold">${sanitizeInput(l.role)}</span>
-                  <span class="text-gray-500 font-mono">${new Date(l.at).toLocaleString("es-CR")}</span>
-                </div>`).join("")}
-            </div>
-          </div>` : ""}
+        <div class="it-console-panel space-y-4">
+          <div class="it-panel-header">
+            <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Telemetría de Auditoría en Vivo</p>
+            <span class="text-[10px] font-mono text-emerald-400 font-bold">${events.length + audit.logins.length} eventos</span>
+          </div>
+          <div class="it-log-feed">
+            ${logRows || '<p class="text-xs text-gray-500 py-3">Sin eventos todavía. La actividad del rol IT quedará registrada aquí (bloqueos, tarifas, backups, accesos).</p>'}
+          </div>
+        </div>
+
+        <div class="it-console-panel it-danger-zone space-y-3">
+          <p class="text-xs font-bold text-red-300 uppercase tracking-wider">Zona de Riesgo — Operaciones Destructivas</p>
+          <p class="text-[11px] text-gray-400 leading-relaxed">Limpie la caché local (carrito y estado transitorio) o restablezca el motor completo al estado de fábrica. Ambas acciones piden confirmación explícita.</p>
+          <div class="flex flex-wrap gap-3">
+            <button type="button" id="admin-clear-cache" class="it-danger-btn">🧹 Limpiar Caché Local</button>
+            <button type="button" id="admin-factory-reset" class="it-danger-btn">💥 Restablecer Estado de Fábrica</button>
+          </div>
         </div>
       </div>`;
   },
@@ -2315,9 +2499,11 @@ const AdminModule = {
     const editId = idInput ? idInput.value : "";
     if (editId) {
       StorageEngine.updateGalleryItem(editId, payload);
+      AuditLog.recordEvent("gallery", `Elemento actualizado (${sanitizeInput(title).slice(0, 60)}).`);
       showToast("Elemento actualizado correctamente.", "success");
     } else {
       StorageEngine.addGalleryItem(payload);
+      AuditLog.recordEvent("gallery", `Nuevo elemento añadido (${sanitizeInput(title).slice(0, 60)}).`);
       showToast("Nuevo elemento añadido a la galería.", "success");
     }
 
@@ -2328,6 +2514,7 @@ const AdminModule = {
   deleteMediaItem(id) {
     if (confirm("¿Está seguro de eliminar este elemento de la galería?")) {
       StorageEngine.deleteGalleryItem(id);
+      AuditLog.recordEvent("gallery", `Elemento de galería eliminado (${id}).`);
       showToast("Elemento eliminado de la galería.", "success");
       this.renderIT();
     }
@@ -2335,6 +2522,8 @@ const AdminModule = {
 
   toggleFeaturedMedia(id) {
     StorageEngine.toggleFeaturedGalleryItem(id);
+    const item = StorageEngine.getGalleryItems().find(g => String(g.id) === String(id));
+    AuditLog.recordEvent("gallery", `Estado destacado ${item && item.featured ? "activado" : "desactivado"} (${id}).`);
     showToast("Estado destacado actualizado.", "success");
     this.renderIT();
   },
@@ -2342,15 +2531,59 @@ const AdminModule = {
   resetMediaItems() {
     if (confirm("¿Restaurar la galería de contenido original por defecto?")) {
       StorageEngine.resetGalleryItems();
+      AuditLog.recordEvent("gallery", "Galería restaurada a los valores por defecto.");
       showToast("Galería restaurada a valores por defecto.", "success");
       this.renderIT();
     }
+  },
+
+  // ---- Zona de Riesgo (Rol IT): caché y estado de fábrica ----
+
+  clearLocalCache() {
+    if (!confirm("¿Limpiar la caché local? Se elimina el carrito de cotización y el estado transitorio del navegador. Los datos comerciales (reservas, tarifas, agenda, galería) NO se tocan.")) {
+      return;
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("arkik_recents_v1");
+    } catch (e) { /* almacenamiento no disponible */ }
+    if (typeof resetBooking === "function") resetBooking();
+    AuditLog.recordEvent("reset", "Caché local limpiada (carrito y estado transitorio).");
+    showToast("Caché local limpiada. Los datos comerciales se conservan.", "success");
+    this.renderIT();
+  },
+
+  factoryReset() {
+    if (!confirm("💥 RESTABLECER ESTADO DE FÁBRICA: se BORRARÁN todas las reservas, tarifas personalizadas, bloqueos de agenda, elementos de galería, configuración y auditoría. Esta acción es irreversible. ¿Continuar?")) {
+      return;
+    }
+    if (!confirm("Confirmación final: ¿está absolutamente seguro? Se perderá toda la base de datos local de Arkik Productions.")) {
+      return;
+    }
+    Object.values(STORAGE_KEYS).forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) { /* ignorar */ }
+    });
+    // Recargar todos los managers desde cero (estado de fábrica)
+    PriceManager.load();
+    AvailabilityManager.load();
+    BookingStore.load();
+    StorageEngine.loadGallery();
+    StorageEngine.loadConfig();
+    if (typeof resetBooking === "function") resetBooking();
+    if (typeof renderGalleryFilters === "function") renderGalleryFilters("todos");
+    if (typeof renderMediaGallery === "function") renderMediaGallery(StorageEngine.getGalleryItems(), "todos");
+    if (typeof renderCatalog === "function") renderCatalog(CATALOG_SERVICES, typeof currentCatalogCategory !== "undefined" ? currentCatalogCategory : "Todos");
+    if (typeof updateSummaryPrices === "function") updateSummaryPrices();
+    if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") CalendarModule.render();
+    AuditLog.recordEvent("reset", "Motor restablecido al estado de fábrica (borrado total).");
+    this.renderIT();
+    showToast("Sistema restablecido al estado de fábrica.", "success");
   }
 };
 
-function kpiCard(icon, label, value, border) {
+function kpiCard(icon, label, value, accent) {
   return `
-    <div class="exec-kpi ${border}">
+    <div class="exec-kpi ${accent}">
       <p class="exec-kpi-label"><span class="exec-kpi-icon">${icon}</span>${label}</p>
       <p class="exec-kpi-value">${value}</p>
     </div>`;
@@ -2376,7 +2609,7 @@ function bookingCard(b) {
     actions.push(`<button type="button" data-action="complete" class="admin-act-btn admin-act-btn--confirm">✅ Marcar Realizada</button>`);
   }
   if (b.voucherImage) {
-    actions.push(`<button type="button" data-action="view" class="admin-act-btn admin-act-btn--neutral">👁️ Ver Comprobante SINPE</button>`);
+    actions.push(`<button type="button" data-action="view" class="admin-act-btn bg-gradient-to-r from-purple-900/80 to-indigo-900/80 hover:from-purple-800 hover:to-indigo-800 border border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.25)] text-white font-bold rounded-xl h-11 px-4 flex items-center justify-center gap-2.5 transition-all active:scale-95"><span class="bg-purple-500/30 p-1.5 rounded-lg border border-purple-400/40 text-purple-200">👁️</span><span class="text-purple-100 font-semibold tracking-wide text-xs sm:text-sm">Ver Comprobante SINPE</span></button>`);
   }
   if (b.status === "pendiente" || b.status === "confirmada") {
     actions.push(`<button type="button" data-action="cancel" class="admin-act-btn admin-act-btn--cancel">❌ Rechazar / Cancelar</button>`);
@@ -2387,63 +2620,60 @@ function bookingCard(b) {
   actions.push(`<button type="button" data-action="whatsapp" class="admin-act-btn admin-act-btn--whatsapp">💬 Notificar WhatsApp</button>`);
 
   return `
-  <div class="admin-booking-row flex flex-col gap-2 p-4 rounded-2xl bg-white/[0.02] border border-white/10 pb-safe" data-id="${b.code}">
-    <!-- Encabezado: código + estado + badge GAM + fecha -->
-    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-      <div class="flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="admin-booking-code font-extrabold text-purple-300 text-sm px-2 py-0.5 rounded-md bg-purple-950/50 border border-purple-500/30">${b.code}</span>
-        <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
-        ${gamBadge}
-      </div>
-      <span class="text-xs text-gray-400">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</span>
+  <div class="admin-booking-row bg-[#0b0518]/95 border border-purple-500/25 rounded-2xl p-4 sm:p-6 mb-4 shadow-xl transition-all hover:border-purple-500/50" data-id="${b.code}">
+    <!-- Encabezado: código + estado + GAM/Viáticos + fecha/hora -->
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="admin-booking-code font-mono text-xs font-bold text-purple-300 bg-purple-950/80 px-2.5 py-1 rounded-lg border border-purple-500/30">${b.code}</span>
+      <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
+      ${gamBadge}
+      <span class="text-xs font-semibold text-slate-300 flex items-center gap-1">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
     </div>
 
-    <div class="admin-booking-cols">
+    <div class="admin-booking-cols grid grid-cols-1 md:grid-cols-3 gap-3 my-4 py-3 border-y border-purple-900/40">
       <!-- COL 1: Cliente / Empresa -->
       <div class="admin-booking-col">
-        <p class="text-gray-500 block text-[10px] uppercase tracking-wider mb-1">Cliente / Empresa</p>
-        <p class="text-sm font-bold text-white leading-snug">${sanitizeInput(b.clientName)}</p>
+        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Cliente / Empresa</p>
+        <p class="text-base font-bold text-white tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
         ${b.voucherImage
-      ? `<button type="button" data-action="view"
-                class="mt-2 text-[10px] font-semibold text-purple-300 hover:text-purple-200 underline underline-offset-2">👁️ Ver comprobante SINPE</button>`
+      ? ""
       : `<p class="mt-2 text-[10px] text-amber-300/70">⚠️ comprobante SINPE no adjuntado</p>`}
       </div>
 
-      <!-- COL 2: Formato y Horarios de Montaje -->
+      <!-- COL 2: Formato y Horarios -->
       <div class="admin-booking-col">
-        <p class="text-gray-500 block text-[10px] uppercase tracking-wider mb-1">Formato &amp; Horarios</p>
-        <p class="text-sm font-semibold text-white">${sanitizeInput(b.serviceName)}<span class="text-gray-400"> · ${sanitizeInput(b.eventType || "")}</span></p>
-        <p class="text-[11px] text-gray-400 mt-1">⏱️ Montaje ${setupDisplay} · Desmontaje ${teardownDisplay}</p>
-        <p class="text-[11px] text-gray-500">📍 ${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
+        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Formato &amp; Horarios</p>
+        <p class="text-sm sm:text-base font-bold text-white">${sanitizeInput(b.serviceName)}<span class="text-slate-400"> · ${sanitizeInput(b.eventType || "")}</span></p>
+        <p class="text-xs text-slate-400 mt-1 flex items-center gap-1">⏱️ Montaje ${sanitizeInput(setupDisplay)} · Desmontaje ${sanitizeInput(teardownDisplay)}</p>
+        <p class="text-xs text-slate-500 flex items-center gap-1">📍 ${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
       </div>
 
-      <!-- COL 3: Contacto click-to-WhatsApp y SINPE -->
+      <!-- COL 3: Contacto y SINPE -->
       <div class="admin-booking-col">
-        <p class="text-gray-500 block text-[10px] uppercase tracking-wider mb-1">Contacto &amp; SINPE</p>
-        <p class="text-[11px] text-gray-300">${sanitizeInput(b.clientPhone)}</p>
-        <a href="${waLink}" target="_blank" rel="noopener" class="wa-click-link text-[11px] mt-0.5">💬 WhatsApp</a>
-        <p class="text-[11px] text-gray-500 mt-0.5 truncate">${sanitizeInput(b.clientEmail || "S/N")}</p>
-        <p class="text-[11px] text-gray-500 mt-1">Ref. SINPE: <span class="admin-booking-code font-bold text-cyan-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></p>
+        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Contacto &amp; SINPE</p>
+        <p class="text-xs text-slate-300">${sanitizeInput(b.clientPhone)}</p>
+        <a href="${waLink}" target="_blank" rel="noopener" class="wa-click-link text-xs mt-0.5">💬 WhatsApp</a>
+        <p class="text-xs text-slate-500 mt-0.5 truncate">${sanitizeInput(b.clientEmail || "S/N")}</p>
+        <p class="text-xs text-slate-500 mt-1">Ref. SINPE: <span class="admin-booking-code font-bold text-cyan-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></p>
       </div>
     </div>
 
-    <!-- Barra financiera sub: 50% depósito + saldo en sitio (tabular-nums) -->
-    <div class="mt-4 p-3 rounded-xl bg-black/30 border border-white/5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs admin-booking-fin">
-      <div class="flex justify-between sm:block">
-        <span class="text-gray-500 block text-[10px] uppercase tracking-wider">Gran Total</span>
-        <span class="font-bold text-white">${formatCRC(b.granTotal)}</span>
+    <!-- Mini-grid financiera 3 columnas: Gran Total / Adelanto / Saldo -->
+    <div class="admin-booking-fin grid grid-cols-3 gap-2 bg-[#05020c]/80 p-3 rounded-xl border border-white/5">
+      <div class="min-w-0">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Gran Total</p>
+        <p class="font-mono text-sm sm:text-base font-bold text-white break-words">${formatCRC(b.granTotal)}</p>
       </div>
-      <div class="flex justify-between sm:block">
-        <span class="text-gray-500 block text-[10px] uppercase tracking-wider">Adelanto SINPE (50%)</span>
-        <span class="font-bold text-emerald-400">${formatCRC(b.deposit50Amount)}</span>
+      <div class="min-w-0">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Adelanto SINPE</p>
+        <p class="font-mono text-sm sm:text-base font-bold text-emerald-400 break-words">${formatCRC(b.deposit50Amount)}</p>
       </div>
-      <div class="flex justify-between sm:block">
-        <span class="text-gray-500 block text-[10px] uppercase tracking-wider">Saldo en Evento</span>
-        <span class="font-bold text-pink-400">${formatCRC(b.remainingBalance)}</span>
+      <div class="min-w-0">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90 mb-1">Saldo Pendiente</p>
+        <p class="text-amber-400 font-mono font-bold text-base sm:text-lg break-words">${formatCRC(b.remainingBalance)}</p>
       </div>
     </div>
 
-    <!-- Deck de acciones -->
+    <!-- Deck de acciones touch -->
     <div class="admin-booking-deck mt-4 pt-3 border-t border-white/5">
       ${actions.join("")}
     </div>
@@ -2838,7 +3068,7 @@ function buildVoucherHtml(b) {
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #6b7280;">Fecha & Hora del Show:</td>
-        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</td>
+        <td style="padding: 6px 0; font-weight: 800; color: #7c3aed;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td>
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #6b7280;">Ubicación & Dirección:</td>
@@ -3635,7 +3865,6 @@ function initApp() {
   guardInternalPathLinks();
   populateProvinces();
   restoreBookingToUI();
-  initFooterFluidEffect();
   initHeroStringsEffect();
   window.addEventListener("hashchange", handleHashRoute);
   handleHashRoute();
@@ -3665,9 +3894,9 @@ function renderCatalog(services, category = "Todos") {
       ` : ""}
 
       <div>
-        <div class="relative h-56 overflow-hidden">
-          <img src="${service.image_url}" alt="${sanitizeInput(service.name)}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
-          <div class="absolute inset-0 bg-gradient-to-t from-[#0b0914] via-transparent to-transparent"></div>
+        <div class="catalog-card__media h-48 sm:h-52 w-full relative overflow-hidden rounded-t-2xl bg-[#090514]">
+          <img src="${service.image_url}" alt="${sanitizeInput(service.alt || service.name)}" loading="lazy" decoding="async" class="catalog-card__img w-full h-full object-cover" />
+          <div class="catalog-card__overlay absolute inset-0"></div>
           <span class="absolute bottom-3 left-4 text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-300">
             ${sanitizeInput(service.category)}
           </span>
@@ -3736,11 +3965,11 @@ function renderGalleryFilters(activeKey = "todos") {
     }
 
     const active = filter.key === activeKey;
-    const base = "gallery-filter-btn min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 border flex items-center justify-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer";
+    const base = "gallery-filter-btn gallery-filter-pill min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold border flex items-center justify-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer whitespace-nowrap shrink-0";
     const state = active
-      ? " bg-gradient-to-r from-purple-600 via-pink-600 to-pink-500 text-white border-transparent shadow-lg shadow-pink-900/40 scale-105"
-      : " bg-white/5 text-gray-300 border-white/10 hover:text-white hover:border-pink-500/40 hover:bg-pink-500/10 hover:scale-102";
-    return `<button type="button" data-filter="${filter.key}" class="${base}${state}">${sanitizeInput(filter.label)} <span class="text-xs opacity-75 font-semibold bg-black/30 px-1.5 py-0.5 rounded-full">(${count})</span></button>`;
+      ? " gallery-filter-pill--active text-white border-transparent"
+      : " text-gray-300 border-white/10 hover:text-white";
+    return `<button type="button" data-filter="${filter.key}" class="${base}${state}">${sanitizeInput(filter.label)} <span class="text-[10px] opacity-75 font-semibold bg-black/30 px-1.5 py-0.5 rounded-full">${count}</span></button>`;
   }).join("");
 }
 
@@ -3769,6 +3998,14 @@ function renderMediaGallery(items, filterKey = "todos") {
   container.classList.add("gallery-fade-in");
 }
 
+// Badge dinámico según el contenido: Destacado / Audio En Vivo / Instagram Reel.
+function galleryDynamicBadge(item) {
+  if (item.featured) return '<span class="gallery-badge gallery-badge--featured">🔥 Evento Destacado</span>';
+  if (item.type === "video") return '<span class="gallery-badge gallery-badge--video">🎵 Audio En Vivo</span>';
+  if (item.type === "instagram") return '<span class="gallery-badge gallery-badge--instagram">🎬 Instagram Reel</span>';
+  return "";
+}
+
 function galleryCategoryBadge(item) {
   const label = GALLERY_CATEGORY_LABELS[item.category] || item.category;
   return `
@@ -3790,8 +4027,8 @@ function galleryInstagramCard(item) {
   const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group rounded-3xl overflow-hidden relative block border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1.5 hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer"
-             onclick="openMediaLightbox('${item.id}')">
+    <article class="gallery-card ${featuredClass} group rounded-3xl overflow-hidden relative block cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+             onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       
       <!-- Media Aspect Ratio Container -->
       <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
@@ -3806,7 +4043,7 @@ function galleryInstagramCard(item) {
         <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between pointer-events-none z-10">
           <div class="flex items-center gap-1.5">
             ${galleryCategoryBadge(item)}
-            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+            ${galleryDynamicBadge(item)}
           </div>
           ${date ? `
             <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">
@@ -3854,16 +4091,16 @@ function galleryVideoCard(item) {
   const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-300 hover:scale-[1.02] hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] cursor-pointer"
-             onclick="openMediaLightbox('${item.id}')">
-      <div id="gallery-media-${item.id}" class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden cursor-pointer"
+             onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
+      <div id="gallery-media-${sanitizeInput(item.id)}" class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
           class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
         <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
         <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
           <div class="flex items-center gap-1.5">
             ${galleryCategoryBadge(item)}
-            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+            ${galleryDynamicBadge(item)}
           </div>
           ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
@@ -3891,8 +4128,8 @@ function galleryImageCard(item) {
   const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden border border-purple-500/20 bg-[#0d0918]/85 backdrop-blur-xl transition-all duration-300 hover:scale-[1.02] hover:border-pink-500/50 hover:shadow-[0_0_30px_rgba(236,72,153,0.25)] cursor-pointer"
-             onclick="openMediaLightbox('${item.id}')">
+    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden cursor-pointer"
+             onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
         <img src="${url}" alt="${title}" loading="lazy"
           class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
@@ -3900,7 +4137,7 @@ function galleryImageCard(item) {
         <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
           <div class="flex items-center gap-1.5">
             ${galleryCategoryBadge(item)}
-            ${item.featured ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-500/80 text-white border border-pink-400 backdrop-blur-md shadow-sm">⭐ Destacado</span>' : ''}
+            ${galleryDynamicBadge(item)}
           </div>
           ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
@@ -3932,99 +4169,156 @@ function embeddableHostLabel(url) {
   }
 }
 
-function openMediaLightbox(id) {
-  const items = StorageEngine.getGalleryItems();
-  const item = items.find(m => String(m.id) === String(id));
-  if (!item) return;
+// Lightbox navigation state (lista visible = filtro actual + índice)
+let lightboxList = [];
+let lightboxIndex = -1;
+let lightboxTouchX = null;
 
-  const modal = document.getElementById("mediaLightboxModal");
-  const container = document.getElementById("lightbox-media-container");
+// Misma lógica de filtro que renderMediaGallery: navegar solo por lo visible en el grid.
+function lightboxFilteredItems() {
+  const items = StorageEngine.getGalleryItems();
+  const f = currentGalleryFilter;
+  if (f === "todos") return items;
+  return items.filter(item => item.category === f || (f === "instagram" && item.type === "instagram"));
+}
+
+// Ubicación best-effort desde la leyenda ("Lugar — Descripción" -> "Lugar").
+function extractLightboxLocation(item) {
+  const raw = String(item.caption || item.subtitle || "").trim();
+  if (!raw) return "";
+  return raw.split(/\s*[—–]\s*/)[0].trim();
+}
+
+// Rellena el visor (slot multimedia + metadatos) para un item.
+function renderLightboxItem(item) {
+  const slot = document.getElementById("lightbox-media-slot");
   const titleEl = document.getElementById("lightbox-title");
   const captionEl = document.getElementById("lightbox-caption");
   const dateEl = document.getElementById("lightbox-date");
   const catEl = document.getElementById("lightbox-category-badge");
+  const locEl = document.getElementById("lightbox-location");
+  const counterEl = document.getElementById("lightbox-counter");
   const directLink = document.getElementById("lightbox-direct-link");
 
   if (titleEl) titleEl.textContent = item.title;
   if (captionEl) captionEl.textContent = item.caption || item.subtitle || "Muestra en vivo oficial de Arkik Productions.";
   if (dateEl) dateEl.textContent = item.date || "2026";
   if (catEl) catEl.textContent = GALLERY_CATEGORY_LABELS[item.category] || item.category;
+  if (locEl) locEl.textContent = extractLightboxLocation(item) || "Costa Rica";
+  if (counterEl && lightboxList.length > 0) counterEl.textContent = `${lightboxIndex + 1} / ${lightboxList.length}`;
 
   activeLightboxUrl = item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr";
   if (directLink) {
     directLink.href = activeLightboxUrl;
   }
 
-  if (container) {
-    container.innerHTML = "";
-    if (item.type === "video" && item.embedUrl && !NOT_EMBEDDABLE.test(item.embedUrl)) {
-      // Dominios embebibles (YouTube, Vimeo, etc.): iframe normal.
-      const iframe = document.createElement("iframe");
-      iframe.src = item.embedUrl + (item.embedUrl.includes("?") ? "&" : "?") + "autoplay=1";
-      iframe.title = item.title;
-      iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
-      iframe.setAttribute("allowfullscreen", "");
-      iframe.className = "w-full h-full border-0 rounded-2xl";
-      container.appendChild(iframe);
-    } else if (item.type === "video" && item.embedUrl && NOT_EMBEDDABLE.test(item.embedUrl)) {
-      // Dominio no embebible (Instagram/Drive/Facebook/…): NO crear iframe.
-      // Mostrar placeholder visual + botón para abrir el original en pestaña nueva.
-      const src = item.thumbnail || "img/Foto Kike .jpg";
-      const openUrl = sanitizeUrl(item.directUrl || item.embedUrl);
-      const hostLabel = embeddableHostLabel(openUrl);
-      const wrap = document.createElement("div");
-      wrap.className = "relative w-full h-full flex flex-col items-center justify-center gap-4 rounded-2xl overflow-hidden";
-      wrap.style.cssText = "background:linear-gradient(160deg,rgba(139,92,246,0.10),rgba(11,6,26,0.85));border:1px solid rgba(139,92,246,0.25);";
-      const imgWrap = document.createElement("div");
-      imgWrap.className = "w-full h-[42vh] overflow-hidden";
-      const img = document.createElement("img");
-      img.src = src;
-      img.alt = item.title;
-      img.className = "w-full h-full object-cover";
-      img.style.cssText = "filter:saturate(1.05);";
-      imgWrap.appendChild(img);
-      const overlay = document.createElement("div");
-      overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center";
-      overlay.style.cssText = "background:rgba(11,6,26,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);";
-      const icon = document.createElement("div");
-      icon.textContent = "📹";
-      icon.style.cssText = "font-size:2rem;opacity:0.9;";
-      const msg = document.createElement("p");
-      msg.style.cssText = "font-weight:700;color:#ffffff;font-size:0.9rem;max-width:34ch;text-shadow:0 1px 3px rgba(0,0,0,0.6);";
-      msg.textContent = "Este video no se puede reproducir embebido.";
-      const sub = document.createElement("p");
-      sub.style.cssText = "font-size:0.75rem;color:#c4b5fd;margin-bottom:0.25rem;";
-      sub.textContent = `Solo se permite incrustarlo en una pestaña nueva.`;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.style.cssText = "display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;min-height:44px;padding:0.75rem 1.25rem;border-radius:0.75rem;font-weight:700;font-size:0.875rem;color:#ffffff;background:linear-gradient(135deg,#8b5cf6 0%,#5b21b6 100%);box-shadow:0 8px 24px rgba(139,92,246,0.3);border:1px solid transparent;cursor:pointer;";
-      btn.textContent = `Abrir en ${hostLabel}`;
-      btn.addEventListener("click", () => window.open(openUrl, "_blank", "noopener"));
-      overlay.appendChild(icon);
-      overlay.appendChild(msg);
-      overlay.appendChild(sub);
-      overlay.appendChild(btn);
-      wrap.appendChild(imgWrap);
-      wrap.appendChild(overlay);
-      container.appendChild(wrap);
-    } else {
-      const img = document.createElement("img");
-      img.src = item.thumbnail || item.directUrl || "img/Foto Kike .jpg";
-      img.alt = item.title;
-      img.className = "w-full h-full object-contain max-h-[55vh] rounded-2xl shadow-2xl";
-      container.appendChild(img);
-    }
+  if (!slot) return;
+  slot.innerHTML = "";
+  if (item.type === "video" && item.embedUrl && !NOT_EMBEDDABLE.test(item.embedUrl)) {
+    // Dominios embebibles (YouTube, Vimeo, etc.): iframe normal.
+    const iframe = document.createElement("iframe");
+    iframe.src = item.embedUrl + (item.embedUrl.includes("?") ? "&" : "?") + "autoplay=1";
+    iframe.title = item.title;
+    iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
+    iframe.setAttribute("allowfullscreen", "");
+    iframe.className = "w-full h-full border-0 rounded-2xl";
+    slot.appendChild(iframe);
+  } else if (item.type === "video" && item.embedUrl && NOT_EMBEDDABLE.test(item.embedUrl)) {
+    // Dominio no embebible (Instagram/Drive/Facebook/…): NO crear iframe.
+    // Mostrar placeholder visual + botón para abrir el original en pestaña nueva.
+    const src = item.thumbnail || "img/Foto Kike .jpg";
+    const openUrl = sanitizeUrl(item.directUrl || item.embedUrl);
+    const hostLabel = embeddableHostLabel(openUrl);
+    const wrap = document.createElement("div");
+    wrap.className = "relative w-full h-full flex flex-col items-center justify-center gap-4 rounded-2xl overflow-hidden";
+    wrap.style.cssText = "background:linear-gradient(160deg,rgba(139,92,246,0.10),rgba(11,6,26,0.85));border:1px solid rgba(139,92,246,0.25);";
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "w-full h-[60vh] overflow-hidden";
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = item.title;
+    img.className = "w-full h-full object-cover";
+    img.style.cssText = "filter:saturate(1.05);";
+    imgWrap.appendChild(img);
+    const overlay = document.createElement("div");
+    overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center";
+    overlay.style.cssText = "background:rgba(11,6,26,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);";
+    const icon = document.createElement("div");
+    icon.textContent = "📹";
+    icon.style.cssText = "font-size:2rem;opacity:0.9;";
+    const msg = document.createElement("p");
+    msg.style.cssText = "font-weight:700;color:#ffffff;font-size:0.9rem;max-width:34ch;text-shadow:0 1px 3px rgba(0,0,0,0.6);";
+    msg.textContent = "Este video no se puede reproducir embebido.";
+    const sub = document.createElement("p");
+    sub.style.cssText = "font-size:0.75rem;color:#c4b5fd;margin-bottom:0.25rem;";
+    sub.textContent = `Solo se permite incrustarlo en una pestaña nueva.`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.style.cssText = "display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;min-height:44px;padding:0.75rem 1.25rem;border-radius:0.75rem;font-weight:700;font-size:0.875rem;color:#ffffff;background:linear-gradient(135deg,#8b5cf6 0%,#5b21b6 100%);box-shadow:0 8px 24px rgba(139,92,246,0.3);border:1px solid transparent;cursor:pointer;";
+    btn.textContent = `Abrir en ${hostLabel}`;
+    btn.addEventListener("click", () => window.open(openUrl, "_blank", "noopener"));
+    overlay.appendChild(icon);
+    overlay.appendChild(msg);
+    overlay.appendChild(sub);
+    overlay.appendChild(btn);
+    wrap.appendChild(imgWrap);
+    wrap.appendChild(overlay);
+    slot.appendChild(wrap);
+  } else {
+    const img = document.createElement("img");
+    img.src = item.thumbnail || item.directUrl || "img/Foto Kike .jpg";
+    img.alt = item.title;
+    img.className = "w-full h-full object-contain max-h-[70vh] rounded-2xl shadow-2xl";
+    slot.appendChild(img);
   }
+}
 
+// Gestos táctiles horizontales (swipe) dentro del visor.
+function attachLightboxSwipe(el) {
+  if (!el || el.dataset.swipeBound) return;
+  el.dataset.swipeBound = "1";
+  el.addEventListener("touchstart", (e) => {
+    lightboxTouchX = e.touches[0].clientX;
+  }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (lightboxTouchX === null) return;
+    const dx = e.changedTouches[0].clientX - lightboxTouchX;
+    if (Math.abs(dx) > 40) navigateLightbox(dx < 0 ? 1 : -1);
+    lightboxTouchX = null;
+  }, { passive: true });
+}
+
+function openMediaLightbox(id) {
+  const items = lightboxFilteredItems();
+  const idx = items.findIndex(m => String(m.id) === String(id));
+  if (idx === -1) return;
+
+  lightboxList = items;
+  lightboxIndex = idx;
+  renderLightboxItem(items[idx]);
+  attachLightboxSwipe(document.getElementById("lightbox-media-container"));
+
+  const modal = document.getElementById("mediaLightboxModal");
   if (modal) {
     ModalController.open("mediaLightboxModal");
   }
 }
 
+function navigateLightbox(dir) {
+  if (lightboxList.length === 0) return;
+  lightboxIndex = (lightboxIndex + dir + lightboxList.length) % lightboxList.length;
+  renderLightboxItem(lightboxList[lightboxIndex]);
+}
+
 function closeMediaLightbox() {
   const modal = document.getElementById("mediaLightboxModal");
+  const slot = document.getElementById("lightbox-media-slot");
+  if (slot) slot.innerHTML = ""; // Stop video playback
+  lightboxList = [];
+  lightboxIndex = -1;
+  lightboxTouchX = null;
   const container = document.getElementById("lightbox-media-container");
-  if (container) container.innerHTML = ""; // Stop video playback
+  if (container) delete container.dataset.swipeBound;
   if (modal) {
     ModalController.close("mediaLightboxModal");
   }
@@ -4224,7 +4518,7 @@ function setupEventListeners() {
 
       const action = btn.getAttribute("data-action");
       if (action === "whatsapp") {
-        const firstName = String(booking.clientName).split(" ")[0];
+        const firstName = String(booking.clientName || "Cliente").split(" ")[0];
         window.open(whatsappClientUrl(booking, `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. Te contacto para confirmar los detalles de tu evento con código ${booking.code}.`), "_blank", "noopener");
         return;
       }
@@ -4291,21 +4585,73 @@ function setupEventListeners() {
 
       const availBtn = e.target.closest("[data-avail]");
       if (availBtn) {
-        const input = document.getElementById("admin-avail-date");
-        const iso = input ? input.value : "";
-        if (!iso) {
-          showToast("Seleccione una fecha primero.", "error");
+        const fromInput = document.getElementById("admin-avail-from");
+        const toInput = document.getElementById("admin-avail-to");
+        const reasonInput = document.getElementById("admin-avail-reason");
+        const from = fromInput ? fromInput.value : "";
+        const to = toInput ? toInput.value : "";
+        const state = availBtn.getAttribute("data-avail");
+        const reason = reasonInput ? reasonInput.value.trim() : "";
+        const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+        if (!from || !isoRe.test(from)) {
+          showToast("Seleccione una fecha válida (formato AAAA-MM-DD).", "error");
           return;
         }
-        AvailabilityManager.set(iso, availBtn.getAttribute("data-avail"));
-        showToast(`Disponibilidad actualizada para ${iso}.`, "success");
+        if (to && !isoRe.test(to)) {
+          showToast("La fecha final tiene formato inválido (AAAA-MM-DD).", "error");
+          return;
+        }
+        const [fy, fm, fd] = from.split("-").map(Number);
+        const startISO = new Date(fy, fm - 1, fd);
+        if (Number.isNaN(startISO.getTime())) {
+          showToast("La fecha inicial no es una fecha real.", "error");
+          return;
+        }
+        if (startISO.getFullYear() !== fy || startISO.getMonth() !== fm - 1 || startISO.getDate() !== fd) {
+          showToast("La fecha inicial no es una fecha real.", "error");
+          return;
+        }
+        const endISO = to
+          ? (() => {
+              const [ty, tm, td] = to.split("-").map(Number);
+              const d = new Date(ty, tm - 1, td);
+              if (Number.isNaN(d.getTime())) return null;
+              if (d.getFullYear() !== ty || d.getMonth() !== tm - 1 || d.getDate() !== td) return null;
+              return d;
+            })()
+          : null;
+        if (to && !endISO) {
+          showToast("La fecha final no es una fecha real.", "error");
+          return;
+        }
+        if (endISO && endISO < startISO) {
+          showToast("La fecha final no puede ser anterior a la inicial.", "error");
+          return;
+        }
+        const cursor = new Date(startISO);
+        const end = endISO || startISO;
+        let appliedCount = 0;
+        while (cursor <= end) {
+          const iso = isoOf(cursor);
+          AvailabilityManager.set(iso, state, reason);
+          appliedCount += 1;
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        const verb = state === "available"
+          ? `Desbloqueado(s) ${appliedCount} fecha(s) (${from}${to ? " → " + to : ""}).`
+          : `${state === "soldout" ? "Marcado(s) agotado(s)" : "Bloqueada(s)"} ${appliedCount} fecha(s) (${from}${to ? " → " + to : ""})${reason ? " · Motivo: " + reason : ""}.`;
+        AuditLog.recordEvent("block", verb);
+        showToast(`Disponibilidad actualizada: ${verb}`, "success");
         AdminModule.renderIT();
+        if (reasonInput) reasonInput.value = "";
         return;
       }
 
       const removeBtn = e.target.closest("[data-avail-remove]");
       if (removeBtn) {
-        AvailabilityManager.set(removeBtn.getAttribute("data-avail-remove"), "available");
+        const iso = removeBtn.getAttribute("data-avail-remove");
+        AvailabilityManager.set(iso, "available");
+        AuditLog.recordEvent("block", `Fecha desbloqueada: ${iso}.`);
         showToast("Bloqueo manual eliminado.", "success");
         AdminModule.renderIT();
         return;
@@ -4341,6 +4687,7 @@ function setupEventListeners() {
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
         AdminModule.renderIT();
+        AuditLog.recordEvent("price", "Tarifas y configuración aplicadas en lote.");
         showToast("Precios y configuración actualizados en tiempo real.", "success");
         return;
       }
@@ -4352,25 +4699,67 @@ function setupEventListeners() {
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
         AdminModule.renderIT();
+        AuditLog.recordEvent("price", "Tarifas restauradas a los valores de fábrica.");
         showToast("Precios restaurados a los originales.", "success");
         return;
       }
 
       if (e.target.closest("#admin-export-backup")) {
-        exportAdminBackup();
+        exportAdminBackup(true);
+        return;
+      }
+
+      if (e.target.closest("#admin-export-sql")) {
+        exportAdminSQL();
+        return;
+      }
+
+      if (e.target.closest("#admin-clear-cache")) {
+        AdminModule.clearLocalCache();
+        return;
+      }
+
+      if (e.target.closest("#admin-factory-reset")) {
+        AdminModule.factoryReset();
+        return;
       }
     });
 
     itView.addEventListener("change", (e) => {
-      if (e.target.id === "admin-import-backup" && e.target.files && e.target.files[0]) {
-        importAdminBackup(e.target.files[0]);
+      // Solo los inputs de archivo se vacían tras el cambio; nunca los de
+      // fecha/tarifa (el borrado global eliminaba valores recién editados).
+      if (e.target.id === "admin-import-backup") {
+        if (e.target.files && e.target.files[0]) importAdminBackup(e.target.files[0]);
+        e.target.value = "";
       }
-      e.target.value = "";
+    });
+
+    // Persistencia en vivo: cada edición de tarifa/config se guarda en
+    // localStorage y recalibra el catálogo público sin recargar la página.
+    let itLivePersistTimer = null;
+    itView.addEventListener("input", (e) => {
+      const t = e.target;
+      const isLivePrice = t.hasAttribute("data-price") && t.closest("#admin-it-prices");
+      const isLiveConfig = t.id === "admin-extra-multiplier" || t.id === "admin-travel-rate";
+      if (!isLivePrice && !isLiveConfig) return;
+      clearTimeout(itLivePersistTimer);
+      itLivePersistTimer = setTimeout(() => {
+        persistITLiveInputs();
+      }, 350);
     });
   }
 
-  // --- Teclado Global: ESC cierra modales + Ctrl+Shift+A abre panel admin ---
+  // --- Teclado Global: ESC cierra modales + flechas navegan lightbox multimedia + Ctrl+Shift+A abre panel admin ---
   document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const mediaLightbox = document.getElementById("mediaLightboxModal");
+      if (mediaLightbox && !mediaLightbox.classList.contains("hidden")) {
+        e.preventDefault();
+        navigateLightbox(e.key === "ArrowRight" ? 1 : -1);
+        return;
+      }
+    }
+
     if (e.key === "Escape") {
       const mediaLightbox = document.getElementById("mediaLightboxModal");
       if (mediaLightbox && !mediaLightbox.classList.contains("hidden")) {
@@ -4402,6 +4791,11 @@ function setupEventListeners() {
         closeBrandModal();
         return;
       }
+      const policiesModal = document.getElementById("modal-politicas");
+      if (policiesModal && !policiesModal.classList.contains("hidden")) {
+        closePoliciesModal();
+        return;
+      }
       const profileLb = document.getElementById("profile-lightbox");
       if (profileLb && !profileLb.classList.contains("hidden")) {
         closeProfileLightbox();
@@ -4418,6 +4812,72 @@ function setupEventListeners() {
       AdminModule.open();
     }
   });
+
+  // --- Master Liquid Footer: event handlers ---
+  const bindClick = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", handler);
+  };
+
+  // 1. Open Booking Wizard Modal
+  bindClick("btn-footer-cta-booking", () => {
+    if (typeof openBookingModal === "function") openBookingModal();
+    else if (typeof goToStep === "function") goToStep(1);
+  });
+
+  // 2. Open Policies Modal
+  const handleFooterPolicies = () => {
+    if (typeof openPoliciesModal === "function") openPoliciesModal();
+    else {
+      const modal = document.getElementById("modal-politicas");
+      if (modal) modal.classList.remove("hidden");
+    }
+  };
+  bindClick("btn-footer-policies-link", handleFooterPolicies);
+
+  // 3. SINPE Móvil copy logic (mirrors copySinpeData safeguards — no console errors)
+  const handleFooterCopySinpe = () => {
+    const num = (typeof SINPE_CONFIG !== "undefined" && SINPE_CONFIG.phone) ? SINPE_CONFIG.phone : "+506 6227-4984";
+    const done = () => {
+      if (typeof showToast === "function") {
+        showToast("¡Número SINPE copiado con éxito!", "success");
+      } else {
+        alert("SINPE Móvil copiado: +506 6227-4984 (Juan José Ramírez Chaves)");
+      }
+    };
+    const fail = () => {
+      if (typeof showToast === "function") {
+        showToast("No se pudo copiar el número automáticamente.", "error");
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(num).then(done).catch(fail);
+    } else {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = num;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        ok ? done() : fail();
+      } catch (err) {
+        fail();
+      }
+    }
+  };
+  bindClick("btn-footer-sinpe-link", handleFooterCopySinpe);
+  bindClick("btn-copy-sinpe-num", handleFooterCopySinpe);
+  const inlinePoliciesBtn = document.getElementById("btn-open-policies-inline");
+  if (inlinePoliciesBtn) {
+    inlinePoliciesBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      openPoliciesModal();
+    });
+  }
 }
 
 // ---- Exportación e Importación de Respaldo (Rol IT) ----
@@ -4452,33 +4912,243 @@ function validateBackupPayload(payload) {
       if (typeof b.selectedDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.selectedDate)) {
         return { ok: false, error: `Fecha inválida en reserva ${b.code}.` };
       }
+      const [byy, bmm, bdd] = b.selectedDate.split("-").map(Number);
+      const bdt = new Date(byy, bmm - 1, bdd);
+      if (bdt.getFullYear() !== byy || bdt.getMonth() !== bmm - 1 || bdt.getDate() !== bdd) {
+        return { ok: false, error: `Backup inválido: fecha imposible en reserva ${b.code}.` };
+      }
       if (typeof b.granTotal !== "number" || b.granTotal < 0 || typeof b.deposit50Amount !== "number" || b.deposit50Amount < 0) {
         return { ok: false, error: `Montos inválidos en reserva ${b.code}.` };
+      }
+      if (b.selectedTime !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.selectedTime)) {
+        return { ok: false, error: `Backup inválido: hora seleccionada inválida en reserva ${b.code}.` };
+      }
+      if (b.startTime !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.startTime)) {
+        return { ok: false, error: `Backup inválido: hora seleccionada inválida en reserva ${b.code}.` };
+      }
+      if (b.endTime !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.endTime)) {
+        return { ok: false, error: `Backup inválido: hora seleccionada inválida en reserva ${b.code}.` };
+      }
+      if (typeof b.clientName !== "string" || b.clientName.length > 200) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (typeof b.clientPhone !== "string" || b.clientPhone.length > 40) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (b.clientEmail !== undefined && (typeof b.clientEmail !== "string" || b.clientEmail.length > 320)) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (b.location !== undefined && (typeof b.location !== "string" || b.location.length > 255)) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (typeof b.setupDisplay !== "string" || b.setupDisplay.length > 200) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (typeof b.teardownDisplay !== "string" || b.teardownDisplay.length > 200) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (typeof b.serviceName !== "string" || b.serviceName.length > 200) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
+      }
+      if (typeof b.eventType !== "string" || b.eventType.length > 200) {
+        return { ok: false, error: `Backup inválido: campo de texto inválido en la reserva ${b.code}.` };
       }
     }
   }
   if (payload.availability) {
     for (const [date, state] of Object.entries(payload.availability)) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["available", "soldout", "disabled"].includes(state)) {
+      const st = state && typeof state === "object" ? state.state : state;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["available", "soldout", "disabled"].includes(st)) {
         return { ok: false, error: `Estado de disponibilidad inválido para ${date}.` };
       }
+      const [ayy, amm, add] = date.split("-").map(Number);
+      const adt = new Date(ayy, amm - 1, add);
+      if (adt.getFullYear() !== ayy || adt.getMonth() !== amm - 1 || adt.getDate() !== add) {
+        return { ok: false, error: `Backup inválido: fecha imposible en disponibilidad: ${date}.` };
+      }
     }
+  }
+  if (payload.gallery !== undefined) {
+    if (!Array.isArray(payload.gallery)) {
+      return { ok: false, error: "Backup inválido: galería con formato incorrecto." };
+    }
+    for (let gi = 0; gi < payload.gallery.length; gi++) {
+      const g = payload.gallery[gi];
+      if (!g || typeof g !== "object" || !/^[A-Za-z0-9_-]{1,40}$/.test(g.id || "")) {
+        return { ok: false, error: `Backup inválido: id de galería inválido en la posición ${gi}.` };
+      }
+      if (typeof g.url !== "string" || g.url.length > 512) {
+        return { ok: false, error: `Backup inválido: id de galería inválido en la posición ${gi}.` };
+      }
+    }
+  }
+  if (payload.customConfig !== undefined && (typeof payload.customConfig !== "object" || payload.customConfig === null || Array.isArray(payload.customConfig))) {
+    return { ok: false, error: "Backup inválido: configuración personalizada con formato incorrecto." };
   }
   return { ok: true, error: "" };
 }
 
-function exportAdminBackup() {
+function exportAdminBackup(alsoSQL) {
   const payload = StorageEngine.exportFullDatabase();
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `arkik-database-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `arkik-database-backup-${stamp}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  showToast("Base de datos exportada (JSON).", "success");
+  if (alsoSQL) exportAdminSQL(payload);
+  AuditLog.recordEvent("backup", `Respaldo completo descargado (JSON${alsoSQL ? " + SQL" : ""}).`);
+  showToast("Base de datos exportada (JSON" + (alsoSQL ? " + SQL" : "") + ").", "success");
+}
+
+function exportAdminSQL(payload) {
+  const sql = generateSQLBackup(payload || StorageEngine.exportFullDatabase());
+  const blob = new Blob([sql], { type: "application/sql;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `arkik-database-backup-${new Date().toISOString().slice(0, 10)}.sql`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/**
+ * Convierte SQLite-friendly: escapa comillas simples duplicándolas.
+ */
+function sqlEscape(v) {
+  if (v === null || v === undefined) return "NULL";
+  return "'" + String(v).replace(/'/g, "''").slice(0, 400) + "'";
+}
+
+/**
+ * Genera un respaldo SQL (CREATE TABLE + INSERTs) equivalente al payload JSON.
+ * Cubre reservas, disponibilidad, tarifas, configuración, galería y auditoría.
+ */
+function generateSQLBackup(payload) {
+  const L = [];
+  const stamp = new Date().toISOString();
+  L.push("-- Arkik Productions — Database backup (" + stamp + ")");
+  L.push("PRAGMA foreign_keys = OFF;");
+  L.push("BEGIN TRANSACTION;");
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_bookings (");
+  L.push("  code TEXT PRIMARY KEY,");
+  L.push("  client_name TEXT, client_phone TEXT, client_email TEXT,");
+  L.push("  location TEXT, selected_date TEXT, start_time TEXT, end_time TEXT,");
+  L.push("  service_ids TEXT, extra_ids TEXT, status TEXT,");
+  L.push("  gran_total REAL, deposit50_amount REAL, remaining_balance REAL, raw_json TEXT");
+  L.push(");");
+  (Array.isArray(payload.bookings) ? payload.bookings : []).forEach(b => {
+    if (!b || !b.code) return;
+    const row = [
+      sqlEscape(b.code), sqlEscape(b.clientName || b.nombre || ""),
+      sqlEscape(b.clientPhone || b.telefono || ""), sqlEscape(b.clientEmail || b.email || ""),
+      sqlEscape(b.location || ""), sqlEscape(b.selectedDate || ""),
+      sqlEscape(b.startTime || ""), sqlEscape(b.endTime || ""),
+      sqlEscape(JSON.stringify(b.services || b.cartServices || [])),
+      sqlEscape(JSON.stringify(b.extras || b.cartExtras || [])),
+      sqlEscape(b.status || ""),
+      Number(b.granTotal) || 0, Number(b.deposit50Amount) || 0, Number(b.remainingBalance) || 0,
+      sqlEscape(JSON.stringify(b))
+    ].join(", ");
+    L.push("INSERT INTO arkik_bookings VALUES (" + row + ");");
+  });
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_availability (iso_date TEXT PRIMARY KEY, state TEXT, reason TEXT);");
+  Object.entries(payload.availability || {}).forEach(([date, raw]) => {
+    const st = raw && typeof raw === "object" ? raw.state : raw;
+    const reason = raw && typeof raw === "object" ? raw.reason : null;
+    L.push("INSERT INTO arkik_availability VALUES (" + [sqlEscape(date), sqlEscape(st), sqlEscape(reason)].join(", ") + ");");
+  });
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_prices (scope TEXT, key TEXT, value REAL, PRIMARY KEY (scope, key));");
+  Object.entries((payload.prices && payload.prices.services) || {}).forEach(([k, v]) => {
+    L.push("INSERT INTO arkik_prices VALUES ('service', " + sqlEscape(k) + ", " + (Number(v) || 0) + ");");
+  });
+  Object.entries((payload.prices && payload.prices.extras) || {}).forEach(([k, v]) => {
+    L.push("INSERT INTO arkik_prices VALUES ('extra', " + sqlEscape(k) + ", " + (Number(v) || 0) + ");");
+  });
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_config (key TEXT PRIMARY KEY, value TEXT);");
+  Object.entries(payload.customConfig || {}).forEach(([k, v]) => {
+    L.push("INSERT INTO arkik_config VALUES (" + [sqlEscape(k), sqlEscape(v)].join(", ") + ");");
+  });
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_gallery (id TEXT PRIMARY KEY, title TEXT, category TEXT, type TEXT, thumbnail TEXT, url TEXT, caption TEXT, date TEXT, featured INTEGER);");
+  (Array.isArray(payload.gallery) ? payload.gallery : []).forEach(m => {
+    if (!m || !m.id) return;
+    L.push("INSERT INTO arkik_gallery VALUES (" + [
+      sqlEscape(m.id), sqlEscape(m.title || ""), sqlEscape(m.category || ""), sqlEscape(m.type || ""),
+      sqlEscape(m.thumbnail || ""), sqlEscape(m.url || ""), sqlEscape(m.caption || ""),
+      sqlEscape(m.date || ""), m.featured ? 1 : 0
+    ].join(", ") + ");");
+  });
+  L.push("");
+  L.push("CREATE TABLE IF NOT EXISTS arkik_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, message TEXT, at TEXT);");
+  const audit = payload.audit || {};
+  (Array.isArray(audit.logins) ? audit.logins : []).forEach(l => {
+    L.push("INSERT INTO arkik_audit (type, message, at) VALUES ('login', " + sqlEscape(("Acceso: " + (l.role || ""))) + ", " + sqlEscape(l.at || "") + ");");
+  });
+  (Array.isArray(audit.events) ? audit.events : []).forEach(ev => {
+    L.push("INSERT INTO arkik_audit (type, message, at) VALUES (" + [sqlEscape(ev.type || "login"), sqlEscape(ev.message || ""), sqlEscape(ev.at || "")].join(", ") + ");");
+  });
+  L.push("");
+  L.push("COMMIT;");
+  L.push("-- End of backup");
+  return L.join("\n");
+}
+
+/**
+ * Persistencia en vivo de la suite IT: lee los inputs actuales de la matriz
+ * y los guarda con recálculo global (catálogo + resumen) sin recargar.
+ */
+function persistITLiveInputs() {
+  const inputs = document.querySelectorAll("#admin-it-prices [data-price]");
+  let changed = 0;
+  inputs.forEach(input => {
+    const key = input.getAttribute("data-price");
+    const val = Number(input.value) || 0;
+    if (key.startsWith("service-")) {
+      PriceManager.setServicePrice(Number(key.split("-")[1]), val);
+    } else {
+      PriceManager.setExtraPrice(key.split("-")[1], val);
+    }
+    changed += 1;
+  });
+  const multInput = document.getElementById("admin-extra-multiplier");
+  if (multInput) {
+    const val = parseFloat(multInput.value);
+    if (Number.isFinite(val) && val > 0) StorageEngine.setConfig("extraHourMultiplier", val);
+  }
+  const travelInput = document.getElementById("admin-travel-rate");
+  if (travelInput) {
+    const val = parseFloat(travelInput.value);
+    if (Number.isFinite(val) && val >= 0) StorageEngine.setConfig("travelSurchargeRate", val / 100);
+  }
+  if (changed > 0) {
+    AuditLog.recordEvent("price", `Tarifas persistidas en tiempo real (${changed} campos).`);
+    showToast("Tarifas persistidas y catálogo recalibrado en tiempo real.", "info");
+  }
+}
+
+/**
+ * Latencia real de lectura/escritura de localStorage (PING del sistema).
+ */
+function measureStorageLatency() {
+  const t0 = performance.now();
+  try {
+    const k = "__ark_lat_probe__";
+    localStorage.setItem(k, "1");
+    localStorage.getItem(k);
+    localStorage.removeItem(k);
+  } catch (e) { /* almacenamiento no disponible */ }
+  return Math.max(1, Math.round(performance.now() - t0));
 }
 
 function importAdminBackup(file) {
@@ -4537,6 +5207,27 @@ function closeBrandModal() {
   modal.classList.add("hidden");
   modal.classList.remove("flex");
   document.body.style.overflow = "";
+}
+
+function openPoliciesModal() {
+  const modal = document.getElementById("modal-politicas");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  document.body.style.overflow = "hidden";
+}
+
+function closePoliciesModal() {
+  const modal = document.getElementById("modal-politicas");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+  // Solo restaura el scroll si ningún otro modal sigue abierto
+  // (puede abrirse sobre el modal de reserva desde el paso 3).
+  const bookingModal = document.getElementById("booking-modal");
+  if (!bookingModal || !bookingModal.classList.contains("flex")) {
+    document.body.style.overflow = "";
+  }
 }
 
 function openProfileLightbox() {
@@ -4800,12 +5491,30 @@ function goToStep(stepNumber) {
       updateModalStep(3);
       return;
     }
+    // T&C de contratación: bloquear el avance al Paso 4 si la casilla no está
+    // marcada. Cubre también el salto directo desde el stepper (nodo "4").
+    if (cart.currentStep === 3 && !validatePoliciesAcceptance()) {
+      showToast("⚠️ Debe aceptar los Términos y Condiciones para continuar.", "error");
+      updateModalStep(3);
+      return;
+    }
     saveClientAndLocationValues();
   }
 
   cart.currentStep = stepNumber;
   cart.persist();
   updateModalStep(stepNumber);
+}
+
+/**
+ * Verifica que el cliente haya aceptado los Términos y Condiciones de
+ * Contratación y Políticas de Cancelación antes del Paso 4 (Pago SINPE).
+ * Devuelve true si la casilla está marcada (o si el checkbox no existe,
+ * para no bloquear flujos heredados que no lo rendericen).
+ */
+function validatePoliciesAcceptance() {
+  const policiesCheckbox = document.getElementById("accept-policies-checkbox");
+  return !policiesCheckbox || policiesCheckbox.checked;
 }
 
 // ---- Prevención de Doble Envío (Rate Limiting) ----
@@ -4831,6 +5540,12 @@ function handleStep3Submit(event) {
     return;
   }
   if (!validateClientData()) return;
+
+  // T&C de contratación: obligatorio marcar la casilla para avanzar al pago.
+  if (!validatePoliciesAcceptance()) {
+    showToast("⚠️ Debe aceptar los Términos y Condiciones para continuar.", "error");
+    return;
+  }
 
   lockStep3Submit();
   goToStep(4); // goToStep re-valida (mismo estado) y hace la transición formal
@@ -5842,179 +6557,11 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
 }
 
 // ============================================================
-// 18. FOOTER: FLUID NEON WAVE ENGINE (Canvas 2D, 60 FPS)
+// 18. FOOTER: AMBIENT LIGHT NEÓN EN CSS PURO
+// El fondo del footer ya NO usa canvas: la animación vive en
+// footer::before (CSS, sólo opacidad con compositing por hardware).
+// El JS del footer queda limitado a eventos DOM (click/copy/SINPE).
 // ============================================================
-
-function initFooterFluidEffect() {
-  const footer = document.getElementById("site-footer");
-  const canvas = document.getElementById("footerFluidCanvas");
-  if (!footer || !canvas) return;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const NEON = ["#a855f7", "#38bdf8", "#10b981", "#ec4899"];
-  const RIBBON_COUNT = 3;
-  const RIBBON_POINTS = 64;
-  const MAX_PARTICLES = 140;
-
-  let logicalW = 0;
-  let logicalH = 0;
-  let rafId = null;
-  let footerInView = false;
-  let lastBurstAt = 0;
-  let lastScrollAt = 0;
-  const ribbons = [];
-  const particles = [];
-
-  function buildRibbons() {
-    ribbons.length = 0;
-    for (let i = 0; i < RIBBON_COUNT; i++) {
-      ribbons.push({
-        color: NEON[i % NEON.length],
-        baseY: (0.28 + i * 0.2 + Math.random() * 0.12) * logicalH,
-        amp: (0.02 + Math.random() * 0.018) * logicalH,
-        freq: 0.004 + Math.random() * 0.003,
-        speed: 0.00022 + Math.random() * 0.00018,
-        phase: Math.random() * Math.PI * 2,
-        width: 1.6 + Math.random() * 1.4,
-        alpha: 0.34 + Math.random() * 0.2
-      });
-    }
-  }
-
-  const canvasController = createDynamicCanvasController(canvas, footer, ctx, () => {
-    logicalW = canvasController.width;
-    logicalH = canvasController.height;
-    buildRibbons();
-  });
-
-  function spawnBurst(x, y, count, spread) {
-    if (particles.length >= MAX_PARTICLES) return;
-    for (let i = 0; i < count; i++) {
-      if (particles.length >= MAX_PARTICLES) break;
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 0.5 + Math.random() * 2.2;
-      const life = 700 + Math.random() * 900;
-      particles.push({
-        x: x + (Math.random() - 0.5) * spread,
-        y: y + (Math.random() - 0.5) * spread,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life,
-        maxLife: life,
-        size: 1 + Math.random() * 1.6,
-        color: NEON[Math.floor(Math.random() * NEON.length)],
-        history: []
-      });
-    }
-  }
-
-  function pointerBurst(e) {
-    const now = performance.now();
-    if (now - lastBurstAt < 70) return;
-    lastBurstAt = now;
-    const rect = footer.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (x < 0 || y < 0 || x > logicalW || y > logicalH) return;
-    spawnBurst(x, y, 5, 26);
-  }
-
-  function scrollBurst() {
-    if (!footerInView) return;
-    const now = performance.now();
-    if (now - lastScrollAt < 260) return;
-    lastScrollAt = now;
-    for (let i = 0; i < 3; i++) {
-      spawnBurst(Math.random() * logicalW, Math.random() * logicalH * 0.4, 4, 40);
-    }
-  }
-
-  function tick() {
-    ctx.clearRect(0, 0, logicalW, logicalH);
-
-    for (const r of ribbons) {
-      ctx.beginPath();
-      for (let i = 0; i <= RIBBON_POINTS; i++) {
-        const x = (i / RIBBON_POINTS) * logicalW;
-        const y = r.baseY
-          + Math.sin(x * r.freq + performance.now() * r.speed + r.phase) * r.amp
-          + Math.sin(x * r.freq * 2.7 - performance.now() * r.speed * 0.6 + r.phase * 2) * r.amp * 0.35;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = r.color;
-      ctx.globalAlpha = r.alpha;
-      ctx.lineWidth = r.width;
-      ctx.shadowBlur = 16;
-      ctx.shadowColor = r.color;
-      ctx.stroke();
-    }
-
-    ctx.shadowBlur = 12;
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.985;
-      p.vy *= 0.985;
-      p.life -= 16.67;
-      p.history.push({ x: p.x, y: p.y });
-      if (p.history.length > 7) p.history.shift();
-      if (p.life <= 0 || p.y > logicalH + 30) {
-        particles.splice(i, 1);
-        continue;
-      }
-      const alpha = Math.max(0, p.life / p.maxLife) * 0.8;
-      ctx.strokeStyle = p.color;
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = p.size;
-      ctx.shadowColor = p.color;
-      ctx.beginPath();
-      p.history.forEach((pt, idx) => {
-        if (idx === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      });
-      ctx.stroke();
-    }
-
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-
-    rafId = requestAnimationFrame(tick);
-  }
-
-  function start() {
-    if (rafId != null || reducedMotion) return;
-    rafId = requestAnimationFrame(tick);
-  }
-
-  function stop() {
-    if (rafId == null) return;
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
-
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      footerInView = entry.isIntersecting;
-      footerInView ? start() : stop();
-    });
-  }, { rootMargin: "120px" });
-  observer.observe(footer);
-
-  footer.addEventListener("pointermove", pointerBurst, { passive: true });
-  window.addEventListener("scroll", scrollBurst, { passive: true });
-
-  canvasController.resizeNow();
-  start();
-
-  const handle = { start, stop };
-  AnimationRegistry.register("footer-fluid", handle);
-  return handle;
-}
 
 // ============================================================
 // 19. HERO: CUERDAS DE GUITARRA NEÓN INTERACTIVAS (Canvas 2D)
