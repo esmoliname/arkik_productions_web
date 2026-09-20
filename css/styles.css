@@ -7,7 +7,7 @@
    sobre fondo degradado #0B061A → #1A1028, acento Violet-500.
    ============================================================ */
 :root {
-  --bg-dark: #0a0712;
+  --bg-dark: #07040e;
   --ark-bg-card: rgba(255, 255, 255, 0.04);
   --ark-bg-card-deep: rgba(255, 255, 255, 0.06);
   --ark-bg-input: rgba(255, 255, 255, 0.06);
@@ -206,6 +206,63 @@ body {
 
 .bg-glow-pink {
   background: radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, rgba(11, 9, 20, 0) 70%);
+}
+
+/* ---- Orbes Bioluminiscentes — Movimiento Orgánico (GPU, 60 FPS) ---- */
+/* Flotación suave por hardware: solo transform + opacidad, nunca layout */
+@keyframes orbFloatSlow {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(30px, -40px, 0) scale(1.1); }
+}
+
+@keyframes orbFloatReverse {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-35px, 25px, 0) scale(0.95); }
+}
+
+/* Promoción a capa GPU propia: compositor la mueve sin tocar el layout */
+.animate-orb-slow {
+  animation: orbFloatSlow 12s ease-in-out infinite;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.animate-orb-reverse {
+  animation: orbFloatReverse 15s ease-in-out infinite;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* ---- Orbes Float (60 FPS, GPU) — capa fija global del fondo ---- */
+@keyframes floatOrb1 {
+  0%, 100% { transform: translate3d(-50%, 0, 0) scale(1); }
+  50% { transform: translate3d(-50%, 40px, 0) scale(1.15); }
+}
+
+@keyframes floatOrb2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(50px, -30px, 0) scale(0.9); }
+}
+
+@keyframes floatOrb3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-40px, 40px, 0) scale(1.1); }
+}
+
+.animate-orb-1 { animation: floatOrb1 14s ease-in-out infinite; will-change: transform; }
+.animate-orb-2 { animation: floatOrb2 18s ease-in-out infinite; will-change: transform; }
+.animate-orb-3 { animation: floatOrb3 16s ease-in-out infinite; will-change: transform; }
+
+/* Reduce trabajo del compositor cuando la pestaña está oculta */
+@media (prefers-reduced-motion: reduce) {
+  .animate-orb-slow,
+  .animate-orb-reverse,
+  .animate-orb-1,
+  .animate-orb-2,
+  .animate-orb-3 {
+    animation: none;
+    transform: none;
+  }
 }
 
 /* Enveloping Hero Title Wrapper */
@@ -936,15 +993,13 @@ html {
   box-shadow: 0 0 14px rgba(99, 102, 241, 0.45), inset 0 0 8px rgba(99, 102, 241, 0.18);
 }
 
-/* ---- Marco de Esencia: Esferas 3D de Cristal & Matriz de Luz Neón ---- */
+/* ---- Marco de Esencia: cristal limpio + ambientación continua estilo footer ---- */
 
-/* Cuadro grande principal (#esencia): vidrio profundo + resplandor ambiental en bordes */
+/* Cuadro grande principal (#esencia): fondo fluido transparente, solo marco y luz */
 .esencia-sphere-card {
   position: relative;
   overflow: hidden;
-  background: rgba(13, 8, 24, 0.55);
-  backdrop-filter: blur(28px) saturate(1.2);
-  -webkit-backdrop-filter: blur(28px) saturate(1.2);
+  background: transparent;
   border: 1px solid rgba(168, 85, 247, 0.3);
   box-shadow: 0 0 50px rgba(168, 85, 247, 0.2), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
   transition: box-shadow 0.3s ease;
@@ -967,24 +1022,6 @@ html {
   transition: opacity 0.3s ease;
 }
 
-/* Matriz de microesferas 3D luminosas (magenta, cian, púrpura y violeta) */
-.esencia-sphere-card::after {
-  content: "";
-  position: absolute;
-  inset: -80px;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.55) 0%, rgba(236, 72, 153, 0.5) 14%, rgba(236, 72, 153, 0) 42%),
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.5) 0%, rgba(34, 211, 238, 0.45) 14%, rgba(34, 211, 238, 0) 42%),
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.45) 0%, rgba(168, 85, 247, 0.45) 14%, rgba(168, 85, 247, 0) 42%),
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.45) 0%, rgba(139, 92, 246, 0.45) 14%, rgba(139, 92, 246, 0) 42%);
-  background-size: 80px 80px;
-  background-position: 0 0, 40px 0, 0 40px, 40px 40px;
-  animation: sphereDrift 16s linear infinite;
-  transition: opacity 0.3s ease;
-}
-
 .esencia-sphere-card:hover {
   box-shadow: 0 0 65px rgba(168, 85, 247, 0.3), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
 }
@@ -993,18 +1030,23 @@ html {
   opacity: 1;
 }
 
-.esencia-sphere-card:hover::after {
-  opacity: 0.7;
+/* Cristal ultralimpio translúcido para las tarjetas interiores */
+/* Fondo oscuro fluido continuo SIN mallas ni tramas; solo luz ambiental difusa */
+.esencia-glass-card {
+  position: relative;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Deriva sutil de la matriz de esferas (solo transform: compositor GPU, 60 FPS) */
-@keyframes sphereDrift {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    transform: translate3d(80px, 80px, 0);
-  }
+/* Tarjeta de Juan José: mismo cristal continuo con borde bioluminiscente púrpura.
+   Recorta los glows internos para no generar el parche oscuro (bache negro). */
+.esencia-testimonial-card {
+  overflow: hidden;
+  border-color: rgba(168, 85, 247, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px rgba(168, 85, 247, 0.12);
 }
 
 /* ---- Full-Bleed Section Continuity (no gaps at any zoom level) ---- */
@@ -1022,6 +1064,19 @@ footer {
   position: relative;
 }
 
+/* ---- Scroll & Paint Performance ----
+   Secciones fuera de pantalla: render súper liviano durante el scroll.
+   #hero queda excluido para no alterar la medición inicial del canvas interactivo. */
+#esencia,
+#formatos,
+#proceso,
+#cobertura,
+#biblioteca,
+footer {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 800px;
+}
+
 /* Hero background override - full bleed with gradient */
 #hero {
   background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, rgba(11, 9, 20, 1) 80%);
@@ -1037,14 +1092,14 @@ footer > .max-w-7xl {
 }
 
 /* ---- Bioluminiscencia Ambiental Continua (hero → footer) ---- */
-/* Contenedor de #esencia: capa base estable, luz visible, sin recorte */
+/* Contenedor de #esencia: fondo fluido continuo sin mallas, luz visible, sin recorte */
 #esencia {
   position: relative;
   z-index: 1;
-  overflow: visible;
+  background: transparent;
 }
 
-/* Luz de fondo de #esencia: aura central intensa y envolvente */
+/* Luz de fondo de #esencia: aura central difusa y envolvente (sin texturas) */
 #esencia::before {
   content: "";
   position: absolute;
@@ -1052,11 +1107,11 @@ footer > .max-w-7xl {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 100%;
-  max-width: 900px;
+  max-width: 1000px;
   height: 100%;
   max-height: 500px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, rgba(59, 130, 246, 0.12) 45%, transparent 75%);
-  filter: blur(60px);
+  background: radial-gradient(circle, rgba(147, 51, 234, 0.15) 0%, rgba(59, 130, 246, 0.08) 50%, transparent 80%);
+  filter: blur(80px);
   pointer-events: none;
   z-index: 0;
 }
@@ -1169,8 +1224,10 @@ footer > .max-w-7xl {
 }
 
 /* Esencia legibilidad: texto sobre glow ambiental y vidrio oscuro */
-#esencia .bg-white\/\[0\.03\] h2,
-#esencia .bg-white\/\[0\.03\] p,
+#esencia .esencia-glass-card h2,
+#esencia .esencia-glass-card p,
+#esencia .esencia-glass-card blockquote,
+#esencia .esencia-glass-card span,
 .esencia-profile-card h3,
 .esencia-profile-card p,
 .esencia-profile-card blockquote {
@@ -4833,7 +4890,7 @@ select.ark-input:active {
 /* =============================================
    MASTER UNIFIED FOOTER — UNIFICADO CON EL FONDO GLOBAL
    El footer NO tiene fondo propio: hereda el mismo
-   fondo del sitio (#0a0712 vía var(--bg-dark), regla
+   fondo del sitio (#07040e vía var(--bg-dark), regla
    compartida "Full-Bleed Section Continuity" que ya
    incluía footer). Sin caja oscura ni bordes: el flujo
    desde #cobertura/#servicios hacia el footer es continuo.
@@ -4980,5 +5037,68 @@ select.ark-input:active {
 
   #master-liquid-footer .animate-pulse {
     animation: none !important;
+  }
+}
+
+/* ============================================================
+   CONTINUOUS DARK AMBIENT — REFACTOR DE TONO UNIFICADO (v2)
+   #07040e como único fondo: sin cortes ni líneas entre secciones.
+   Auras estáticas por sección (máx. violeta 0.12 / índigo 0.08).
+   ============================================================ */
+
+/* Capa de atmósfera fija: baña toda la web con el mismo tono
+   morado oscuro uniforme (sin interactuar con el contenido). */
+#site-atmosphere {
+  z-index: 30;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% -20%, rgba(88, 28, 135, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, rgba(49, 46, 129, 0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 50% at 0% 100%, rgba(126, 34, 206, 0.12) 0%, transparent 65%);
+}
+
+/* Orbe del mouse: el z-0 de Tailwind queda detrás de las secciones
+   opacas y el efecto sería invisible; se eleva por encima del
+   contenido (z-30/40) y por debajo del nav (z-40) y modales (z-50). */
+#mouseGlowOrb {
+  z-index: 40;
+}
+
+/* Auras de sección: tintes radiales violeta / índigo alternados */
+#hero {
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% -10%, rgba(147, 51, 234, 0.12) 0%, transparent 60%);
+}
+#garantias {
+  background-image:
+    radial-gradient(ellipse 70% 120% at 100% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 70%);
+}
+#formatos {
+  background-image:
+    radial-gradient(ellipse 90% 90% at 50% 20%, rgba(147, 51, 234, 0.10) 0%, transparent 65%);
+}
+#biblioteca {
+  background-image:
+    radial-gradient(ellipse 80% 120% at 0% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 65%);
+}
+#proceso {
+  background-image:
+    radial-gradient(ellipse 90% 90% at 80% 30%, rgba(147, 51, 234, 0.08) 0%, transparent 65%);
+}
+#cobertura {
+  background-image:
+    radial-gradient(ellipse 90% 100% at 20% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 65%);
+}
+#master-liquid-footer {
+  background-image:
+    radial-gradient(ellipse 120% 60% at 50% 110%, rgba(147, 51, 234, 0.10) 0%, transparent 70%);
+}
+
+/* Reduced motion: sin orbe ni atmósfera animada */
+@media (prefers-reduced-motion: reduce) {
+  #mouseGlowOrb {
+    display: none;
+  }
+  #site-atmosphere {
+    background: none !important;
   }
 }

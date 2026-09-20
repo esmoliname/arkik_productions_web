@@ -3871,6 +3871,40 @@ function initApp() {
 }
 
 // ============================================================
+// MOUSE GLOW ORB — seguidor suave del cursor (LERP 0.08 a 60 FPS)
+// ============================================================
+(function initMouseGlowOrb() {
+  const orb = document.getElementById("mouseGlowOrb");
+  if (!orb) return;
+
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  let targetX = window.innerWidth / 2;
+  let targetY = window.innerHeight / 2;
+  let orbX = targetX;
+  let orbY = targetY;
+  let shown = false;
+
+  window.addEventListener("mousemove", (e) => {
+    targetX = e.clientX;
+    targetY = e.clientY;
+    if (!shown) {
+      shown = true;
+      orb.style.opacity = "1";
+    }
+  }, { passive: true });
+
+  function lerpOrb() {
+    orbX += (targetX - orbX) * 0.08;
+    orbY += (targetY - orbY) * 0.08;
+    orb.style.transform =
+      "translate3d(" + orbX + "px, " + orbY + "px, 0) translate(-50%, -50%)";
+    window.requestAnimationFrame(lerpOrb);
+  }
+  window.requestAnimationFrame(lerpOrb);
+})();
+
+// ============================================================
 // 12. CATALOG & GALLERY RENDERING
 // ============================================================
 
@@ -3930,9 +3964,9 @@ function renderCatalog(services, category = "Todos") {
           <span class="text-2xl font-extrabold text-gradient-purple">${formatCRC(PriceManager.getServicePrice(service))}</span>
         </div>
 
-        <button onclick="openBookingModal(${service.id})" class="w-full py-3 px-4 rounded-xl font-bold text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/30 hover:shadow-purple-600/40 transition-all flex items-center justify-center space-x-2">
+        <button onclick="openBookingModal(${service.id})" class="w-full py-3 px-5 rounded-xl font-medium text-sm text-white bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-[0_0_20px_rgba(168,85,247,0.35)] hover:shadow-[0_0_28px_rgba(168,85,247,0.55)] border border-purple-400/30 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group">
           <span>Cotizar y Reservar</span>
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+          <svg class="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
         </button>
       </div>
     </div>
