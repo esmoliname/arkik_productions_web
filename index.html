@@ -751,10 +751,10 @@
         </div>
 
         <!-- Capa informativa unificada -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-6 lg:gap-8 pt-8 sm:pt-10 pb-8 text-slate-300 text-sm items-start">
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8 pt-8 sm:pt-10 pb-8 text-slate-300 text-sm items-start">
 
           <!-- Columna 1 — Brand con logo oficial -->
-          <div class="md:col-span-4 space-y-4">
+          <div class="sm:col-span-1 flex flex-col items-center sm:items-start space-y-4">
             <div
               class="footer-brand-card backdrop-blur-md bg-white/5 border border-white/10 p-3 rounded-2xl inline-flex items-center gap-3">
               <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
@@ -766,59 +766,72 @@
                   Engineering</span>
               </div>
             </div>
-            <p class="text-xs text-slate-300 leading-relaxed max-w-xs">
+            <p class="text-xs text-slate-300 leading-relaxed max-w-xs text-center sm:text-left">
               Música en vivo y sonido profesional para bodas, eventos corporativos y privados en Costa Rica.
             </p>
           </div>
 
           <!-- Columna 2 — Navegación -->
-          <div class="md:col-span-4">
-            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4">Navegación</h4>
-            <ul class="space-y-3 text-xs">
-              <li>
+          <div class="sm:col-span-1 flex flex-col items-center sm:items-start">
+            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4 text-center sm:text-left">Navegación</h4>
+            <ul class="w-full sm:w-auto flex flex-col gap-2.5 items-center sm:items-start">
+              <li class="w-full sm:w-auto">
                 <a href="#formatos"
-                  class="group inline-flex items-center gap-3 hover:text-cyan-300 transition-colors duration-300">
-                  <span class="footer-nav-dash"></span>
-                  Formatos Musicales
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  <span>Formatos Musicales</span>
+                  <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
                 </a>
               </li>
-              <li>
+              <li class="w-full sm:w-auto">
                 <a href="#biblioteca"
-                  class="group inline-flex items-center gap-3 hover:text-cyan-300 transition-colors duration-300">
-                  <span class="footer-nav-dash"></span>
-                  Galería / Videos
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  <span>Galería / Videos</span>
+                  <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
                 </a>
               </li>
-              <li>
+              <li class="w-full sm:w-auto">
                 <button type="button" id="btn-footer-sinpe-link"
-                  class="group inline-flex items-center gap-3 hover:text-cyan-300 transition-colors duration-300 text-left w-full">
-                  <span class="footer-nav-dash"></span>
-                  Reserva SINPE Móvil
-                </button>
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  <span>Reserva SINPE Móvil</span>
+                  <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
               </li>
-              <li>
+              <li class="w-full sm:w-auto">
                 <button type="button" id="btn-footer-policies-link"
-                  class="group inline-flex items-center gap-3 text-slate-300 hover:text-cyan-300 transition-colors duration-300 text-left w-full">
-                  <span class="footer-nav-dash footer-nav-dash--active"></span>
-                  Políticas de Empresa &amp; Términos
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  <span>Políticas de Empresa &amp; Términos</span>
+                  <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               </li>
             </ul>
           </div>
 
           <!-- Columna 3 — Contacto: tarjeta SINPE glassmorphism 3D + WhatsApp + sociales -->
-          <div class="md:col-span-4">
-            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4">Contacto Directo</h4>
+          <div class="sm:col-span-1 flex flex-col items-center sm:items-start">
+            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4 text-center sm:text-left">Contacto
+              Directo</h4>
 
             <!-- Tarjeta SINPE: glassmorphism 3D compacta con click-to-copy -->
-            <div class="footer-sinpe-card p-4 rounded-2xl space-y-3.5 mb-4">
-              <div class="flex justify-between items-center gap-3 text-xs">
+            <div class="footer-sinpe-card p-4 rounded-2xl space-y-3.5 mb-4 w-full max-w-sm sm:max-w-none">
+              <div class="flex justify-center sm:justify-between items-center gap-3 text-xs">
                 <span class="text-slate-300">SINPE Móvil (50%)</span>
                 <span
                   class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">Disponible</span>
               </div>
               <button type="button" id="btn-copy-sinpe-num" data-sinpe-num="+50662274984"
-                class="footer-copy-btn group w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 min-h-[44px] text-left">
+                class="footer-copy-btn group w-full flex items-center justify-center sm:justify-between gap-3 rounded-xl px-3.5 py-3 min-h-[44px] text-center sm:text-left">
                 <span class="min-w-0">
                   <span class="block font-mono text-sm sm:text-base font-bold text-white tracking-wide">+506
                     6227-4984</span>
@@ -830,7 +843,7 @@
                     d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               </button>
-              <div class="flex justify-between items-center gap-3 text-xs">
+              <div class="flex justify-center sm:justify-between items-center gap-3 text-xs">
                 <span class="text-slate-300">Teléfono / WhatsApp</span>
                 <a href="tel:+50662274984"
                   class="font-mono text-slate-200 font-bold hover:text-cyan-300 inline-flex items-center min-h-[44px]">
@@ -842,7 +855,7 @@
             <!-- WhatsApp: botón dedicado -->
             <a href="https://wa.me/50662274984?text=Hola%20Arkik%20Productions%2C%20vi%20su%20sitio%20web%20y%20me%20gustar%C3%ADa%20recibir%20una%20cotizaci%C3%B3n%20para%20mi%20evento"
               target="_blank" rel="noopener noreferrer"
-              class="footer-wa-card group flex items-center gap-4 p-4 rounded-2xl min-h-[68px]">
+              class="footer-wa-card group flex items-center gap-4 p-4 rounded-2xl min-h-[68px] w-full max-w-sm sm:max-w-none">
               <span
                 class="w-12 h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_18px_rgba(16,185,129,0.45)] group-hover:scale-105 group-hover:shadow-[0_0_26px_rgba(16,185,129,0.65)] transition-all shrink-0">
                 <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
@@ -868,7 +881,7 @@
             </a>
 
             <!-- Redes Sociales circulares con brillo perimetral -->
-            <div class="flex gap-4 mt-4">
+            <div class="flex gap-4 mt-4 justify-center sm:justify-start">
               <a href="https://www.instagram.com/kikeramirezcr?igsh=MWVtNTFqandkdW80aA%3D%3D&utm_source=qr"
                 target="_blank" rel="noopener noreferrer" aria-label="Instagram de Arkik Productions"
                 class="footer-social w-12 h-12 rounded-full flex items-center justify-center group">

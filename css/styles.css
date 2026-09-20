@@ -4813,23 +4813,6 @@ select.ark-input:active {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-/* Links de navegación: dash que se alarga con luminosidad en hover */
-.footer-nav-dash {
-  width: 1.5rem;
-  height: 1px;
-  background: rgba(168, 85, 247, 0.6);
-  transition: width 0.3s ease, background-color 0.3s ease;
-}
-
-.footer-nav-dash--active {
-  background: rgba(217, 70, 239, 0.85);
-}
-
-.group:hover > .footer-nav-dash {
-  width: 2.5rem;
-  background: rgba(232, 121, 249, 0.95);
-}
-
 /* Tarjeta SINPE: glassmorphism 3D compacto (click-to-copy) */
 .footer-sinpe-card {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 100%);
@@ -4906,8 +4889,7 @@ select.ark-input:active {
   #master-liquid-footer .footer-sinpe-card,
   #master-liquid-footer .footer-copy-btn,
   #master-liquid-footer .footer-wa-card,
-  #master-liquid-footer .footer-social,
-  #master-liquid-footer .footer-nav-dash {
+  #master-liquid-footer .footer-social {
     transition-duration: 0.01ms !important;
   }
 
