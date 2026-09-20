@@ -466,7 +466,7 @@
 
     <!-- Headquarters & Executive Contact Command Hub (Full-Bleed VIP Section) -->
     <section id="cobertura"
-      class="w-full py-14 sm:py-20 md:py-28 relative z-10 bg-[#080511] border-t border-purple-500/15 overflow-hidden">
+      class="w-full py-14 sm:py-20 md:py-28 relative z-10 bg-[#0a0712] overflow-hidden">
       <!-- Ambient Backdrops -->
       <div class="absolute -top-32 -left-32 w-96 h-96 bg-glow-purple pointer-events-none opacity-40"></div>
       <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-glow-indigo pointer-events-none opacity-30"></div>
@@ -723,7 +723,7 @@
   </main>
 
   <!-- Footer Unificado (Full-Bleed) — ARKIK LIGHT NEON AMBIENT, un solo bloque sin cortes -->
-  <footer id="master-liquid-footer" class="w-full overflow-hidden relative font-jakarta text-slate-200 select-none z-20">
+  <footer id="master-liquid-footer" class="w-full overflow-hidden relative font-jakarta text-slate-200 select-none z-20 bg-[#0a0712]">
 
     <!-- Ambient light CSS puro: footer::before anima solo la opacidad del glow superior
          (sin canvas, sin rAF, sin repintados continuos). El contenido queda por encima. -->
@@ -733,9 +733,9 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
         <!-- Mensaje principal + CTAs -->
-        <div class="pt-16 sm:pt-20 md:pt-24 text-center">
+        <div class="pt-8 sm:pt-10 text-center">
           <span
-            class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-[0.22em] text-purple-200 bg-purple-500/10 border border-purple-500/25 backdrop-blur-md">
+            class="inline-flex items-center gap-2.5 px-3.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold uppercase tracking-[0.22em] text-purple-200 bg-purple-500/10 border border-purple-500/25 backdrop-blur-md">
             <svg class="w-3.5 h-3.5 text-fuchsia-400" fill="none" stroke="currentColor" stroke-width="2"
               viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round"
@@ -745,72 +745,56 @@
           </span>
 
           <h2
-            class="footer-title mt-7 mx-auto max-w-4xl font-syne text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-purple-200">
+            class="footer-title mt-5 mx-auto max-w-4xl text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug">
             Transformamos tu evento en una experiencia audiovisual inolvidable.
           </h2>
 
-          <p class="mt-5 text-sm sm:text-base text-slate-200 max-w-2xl mx-auto leading-relaxed">
+          <p class="mt-3 text-sm text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Música en vivo, ingeniería de sonido y producción de nivel elite en Costa Rica.
           </p>
 
-          <div class="mt-9 sm:mt-11 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div class="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button type="button" id="btn-footer-cta-booking"
-              class="footer-cta-primary font-syne group relative overflow-hidden px-9 py-4 rounded-full font-bold text-xs sm:text-sm tracking-wider uppercase">
-              <span class="relative z-10 flex items-center gap-3">
-                <span>Agendar Cotización</span>
-                <svg class="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1.5" fill="none"
-                  stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-              </span>
-              <span aria-hidden="true"
-                class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500"></span>
+              class="group inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-medium px-5 py-2 rounded-full transition-all">
+              <span>Agendar Cotización</span>
+              <svg class="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-1" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
             </button>
 
             <a href="#formatos"
-              class="footer-cta-ghost font-syne inline-flex items-center gap-2.5 px-9 py-4 rounded-full font-bold text-xs sm:text-sm tracking-wider uppercase backdrop-blur-md bg-white/10 hover:bg-white/20 text-white border border-white/20">
+              class="group inline-flex items-center gap-2 bg-transparent border border-slate-600 hover:border-slate-400 text-slate-300 text-xs font-medium px-5 py-2 rounded-full transition-all">
               <span>Explorar Formatos</span>
             </a>
           </div>
         </div>
 
         <!-- Capa informativa unificada -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6 lg:gap-10 pt-14 sm:pt-16 md:pt-20 pb-12 sm:pb-14 text-slate-300 text-sm items-start">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-6 lg:gap-8 pt-8 sm:pt-10 pb-8 text-slate-300 text-sm items-start">
 
-          <!-- Columna 1 — Brand con logo en glassmorphism -->
-          <div class="md:col-span-4 space-y-5">
+          <!-- Columna 1 — Brand con logo oficial -->
+          <div class="md:col-span-4 space-y-4">
             <div
-              class="footer-brand-card backdrop-blur-md bg-white/5 border border-white/10 p-3 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)] inline-flex items-center gap-3">
-              <div
-                class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/40 to-fuchsia-500/25 border border-white/25 flex items-center justify-center font-syne font-extrabold text-white text-lg shadow-[0_0_20px_rgba(168,85,247,0.3)]">
-                AP
-              </div>
+              class="footer-brand-card backdrop-blur-md bg-white/5 border border-white/10 p-3 rounded-2xl inline-flex items-center gap-3">
+              <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
+                class="h-10 w-auto object-contain rounded-lg border border-purple-500/20 shrink-0" />
               <div class="min-w-0">
-                <span class="font-syne text-lg sm:text-xl font-bold text-white tracking-wide block leading-tight">Arkik
+                <span class="font-jakarta text-base sm:text-lg font-bold text-white tracking-wide block leading-tight">Arkik
                   Productions</span>
                 <span class="text-[10px] uppercase tracking-widest text-purple-200 font-semibold">Live Music &amp; Sound
                   Engineering</span>
               </div>
             </div>
-            <p class="text-xs text-slate-200 leading-relaxed max-w-xs">
+            <p class="text-xs text-slate-300 leading-relaxed max-w-xs">
               Música en vivo y sonido profesional para bodas, eventos corporativos y privados en Costa Rica.
             </p>
-            <div class="flex items-center gap-2 text-xs text-slate-300 pt-1">
-              <svg class="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>Granadilla, San José, Costa Rica</span>
-            </div>
           </div>
 
           <!-- Columna 2 — Navegación -->
           <div class="md:col-span-4">
-            <h4 class="font-syne text-xs font-bold uppercase tracking-widest text-white mb-6">Navegación</h4>
-            <ul class="space-y-3.5 text-xs">
+            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4">Navegación</h4>
+            <ul class="space-y-3 text-xs">
               <li>
                 <a href="#formatos"
                   class="group inline-flex items-center gap-3 hover:text-cyan-300 transition-colors duration-300">
@@ -844,7 +828,7 @@
 
           <!-- Columna 3 — Contacto: tarjeta SINPE glassmorphism 3D + WhatsApp + sociales -->
           <div class="md:col-span-4">
-            <h4 class="font-syne text-xs font-bold uppercase tracking-widest text-white mb-6">Contacto Directo</h4>
+            <h4 class="text-xs font-bold uppercase tracking-widest text-white mb-4">Contacto Directo</h4>
 
             <!-- Tarjeta SINPE: glassmorphism 3D compacta con click-to-copy -->
             <div class="footer-sinpe-card p-4 rounded-2xl space-y-3.5 mb-4">
@@ -928,7 +912,7 @@
         </div>
 
         <!-- Copyright -->
-        <div class="mt-12 pt-7 border-t border-white/10 text-center text-xs text-slate-400">
+        <div class="mt-8 pt-5 border-t border-white/10 text-center text-xs text-slate-400">
           © 2026 Arkik Productions. Todos los derechos reservados. | Operaciones verificadas por Esteban Molina (Ingeniero
           TI).
         </div>
