@@ -942,9 +942,9 @@ html {
 .esencia-sphere-card {
   position: relative;
   overflow: hidden;
-  background: rgba(13, 8, 24, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(13, 8, 24, 0.55);
+  backdrop-filter: blur(28px) saturate(1.2);
+  -webkit-backdrop-filter: blur(28px) saturate(1.2);
   border: 1px solid rgba(168, 85, 247, 0.3);
   box-shadow: 0 0 50px rgba(168, 85, 247, 0.2), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
   transition: box-shadow 0.3s ease;
@@ -1036,6 +1036,91 @@ footer > .max-w-7xl {
   padding-right: 1rem;
 }
 
+/* ---- Bioluminiscencia Ambiental Continua (hero → footer) ---- */
+/* Contenedor de #esencia: capa base estable, luz visible, sin recorte */
+#esencia {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+}
+
+/* Luz de fondo de #esencia: aura central intensa y envolvente */
+#esencia::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 900px;
+  height: 100%;
+  max-height: 500px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, rgba(59, 130, 246, 0.12) 45%, transparent 75%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Resplandor violeta/azul difuso detrás del contenido de las demás secciones intermedias */
+#formatos::before,
+#proceso::before,
+#cobertura::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 50% 30%, rgba(168, 85, 247, 0.12) 0%, rgba(59, 130, 246, 0.05) 50%, transparent 80%);
+}
+
+/* Contenido siempre por encima del resplandor ambiental */
+#esencia > .max-w-7xl,
+#formatos > .max-w-7xl,
+#proceso > .max-w-7xl,
+#cobertura > .max-w-7xl {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- Vidrio Esmerilado de Alto Contraste (secciones intermedias) ---- */
+/* Tarjetas del Proceso y de la Matriz Operativa / Cobertura */
+#proceso .glass-panel,
+#cobertura .glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* Hover: feedback púrpura original conservado en las tarjetas realzadas */
+#proceso .glass-panel:hover,
+#cobertura .glass-panel:hover {
+  border-color: rgba(168, 85, 247, 0.45);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 12px 35px -10px rgba(168, 85, 247, 0.25);
+}
+
+/* Cuadros de valor de la matriz (frameworks de cobertura) */
+#cobertura .command-val-card {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+#cobertura .command-val-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Legibilidad total: cuerpo de tarjetas realzadas en slate-200 */
+#proceso .glass-panel p,
+#cobertura .glass-panel p {
+  color: rgb(226, 232, 240);
+}
+
 @media (min-width: 640px) {
   section > .max-w-7xl,
   footer > .max-w-7xl {
@@ -1084,8 +1169,8 @@ footer > .max-w-7xl {
 }
 
 /* Esencia legibilidad: texto sobre glow ambiental y vidrio oscuro */
-#esencia .bg-\[\#0d0818\]\/85 h2,
-#esencia .bg-\[\#0d0818\]\/85 p,
+#esencia .bg-white\/\[0\.03\] h2,
+#esencia .bg-white\/\[0\.03\] p,
 .esencia-profile-card h3,
 .esencia-profile-card p,
 .esencia-profile-card blockquote {
