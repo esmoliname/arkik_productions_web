@@ -100,8 +100,6 @@
           <div class="min-w-0">
             <span class="hidden sm:block text-xl font-extrabold text-white tracking-tight">Arkik <span
                 class="text-gradient-purple">Producciones</span></span>
-            <p class="hidden sm:block text-[10px] text-gray-400 font-medium tracking-widest uppercase">Granadilla, SJ
-              ⬢ Live Sound</p>
           </div>
         </a>
 
@@ -2034,11 +2032,12 @@
     class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
     <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
 
-      <div class="shrink-0 px-6 py-4 border-b border-white/10 flex items-center justify-between bg-purple-950/40">
+      <div class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
         <div class="min-w-0">
           <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Sistema de Operaciones
             Ejecutivas</span>
-          <h3 id="admin-modal-title" class="text-lg font-bold text-white">Panel de Control de Arkik Productions</h3>
+          <h3 id="admin-modal-title" class="text-lg sm:text-2xl font-bold text-white tracking-tight">Panel de Control
+            de Arkik Productions</h3>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
           <button type="button" onclick="adminLogout()" aria-label="Cerrar sesión"
@@ -2052,15 +2051,17 @@
         </div>
       </div>
 
-      <div class="shrink-0 px-6 py-3 border-b border-white/10 bg-[#0f0c1a] flex items-center justify-between">
-        <div class="flex items-center gap-3 min-w-0">
-          <span id="admin-role-badge" class="admin-role-badge admin-role-badge--owner">Rol</span>
-          <span class="text-xs text-gray-400 hidden sm:inline">Sesión autenticada en memoria segura</span>
-        </div>
-        <div class="flex items-center gap-3 flex-shrink-0 min-w-0">
+      <!-- Badge de propietario + timer de sesión (píldora esmerilada) -->
+      <div class="shrink-0 px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0f0c1a]">
+        <div class="flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white/[0.04] border border-purple-500/20 text-xs text-slate-300">
+          <span class="flex items-center gap-2 min-w-0">
+            <span id="admin-role-dot" class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span id="admin-role-badge" class="text-white font-medium truncate">Propietario</span>
+          </span>
+          <span class="hidden xs:inline text-slate-400">Sesión autenticada en memoria segura</span>
           <span id="admin-session-timer" class="admin-session-timer"></span>
-          <span class="text-[10px] font-mono text-gray-500 whitespace-nowrap">ID: <span
-              id="admin-session-id"></span></span>
+          <span class="text-slate-400 font-mono text-[11px] whitespace-nowrap">ID: <span
+              id="admin-session-id" class="text-purple-300"></span></span>
         </div>
       </div>
 
@@ -2074,7 +2075,7 @@
               <h4 class="text-sm font-bold text-white">Analítica Ejecutiva &amp; Flujo Financiero</h4>
               <p class="text-[11px] text-gray-500">KPIs recalibrados dinámicamente por período seleccionado.</p>
             </div>
-            <button type="button" onclick="exportOwnerReportPDF()"
+            <button type="button" id="btnExportPDF" onclick="exportOwnerReportPDF()"
               class="admin-act-btn admin-act-btn--confirm flex items-center gap-1.5 text-xs py-2 px-4 shadow-lg">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2086,14 +2087,29 @@
           </div>
 
           <!-- Filtro Temporal de Analítica -->
-          <div id="portal-period-filters" class="flex overflow-x-auto no-scrollbar items-center gap-2 py-1 snap-x">
+          <div id="portal-period-filters"
+            class="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 px-1 w-full snap-x">
           </div>
 
-          <!-- KPI Grid Financiero -->
-          <div id="admin-metrics" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+          <!-- KPI Grid Financiero (Fintech Glass) -->
+          <div id="admin-metrics" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 my-6"></div>
 
-          <!-- Trend Bar de Flujo de Caja (SVG puro) -->
-          <div id="portal-sparkline"></div>
+          <!-- Dashboard Ejecutivo: balance, barras, ring + tarjeta corporativa y actividad reciente -->
+          <div id="portal-sparkline" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Columna principal (2 cols): Balance & Rendimiento -->
+            <div class="lg:col-span-2 space-y-6">
+              <div id="admin-balance-box"></div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="admin-bar-chart"></div>
+                <div id="admin-ring-chart"></div>
+              </div>
+            </div>
+            <!-- Columna secundaria (1 col): Tarjeta corporativa + Actividad reciente -->
+            <div class="space-y-6">
+              <div id="admin-corporate-card"></div>
+              <div id="admin-recent-activity"></div>
+            </div>
+          </div>
 
           <!-- Calendario de Disponibilidad y Logística -->
           <section aria-label="Calendario de disponibilidad y logística">
