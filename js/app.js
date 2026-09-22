@@ -1632,10 +1632,9 @@ const AdminModule = {
   renderDashboard() {
     const role = ADMIN_CONFIG.roles[ADMIN_SESSION.role] || ADMIN_CONFIG.roles.owner;
     const badge = document.getElementById("admin-role-badge");
-    if (badge) {
-      badge.textContent = `${role.label} · ${role.name}`;
-      badge.className = `admin-role-badge ${ADMIN_SESSION.role === "owner" ? "admin-role-badge--owner" : "admin-role-badge--it"}`;
-    }
+    if (badge) badge.textContent = `${role.label} · ${role.name}`;
+    const dot = document.getElementById("admin-role-dot");
+    if (dot) dot.className = `h-2 w-2 rounded-full animate-pulse shrink-0 ${ADMIN_SESSION.role === "owner" ? "bg-emerald-400" : "bg-indigo-400"}`;
     const ownerView = document.getElementById("admin-owner-view");
     const itView = document.getElementById("admin-it-view");
     if (ownerView) ownerView.classList.toggle("hidden", ADMIN_SESSION.role !== "owner");
@@ -1659,8 +1658,10 @@ const AdminModule = {
     const box = document.getElementById("portal-period-filters");
     if (!box) return;
     box.innerHTML = PERIOD_FILTERS.map(f => {
-      const active = f.key === this.periodFilter ? "pill-btn--active" : "";
-      return `<button type="button" data-period="${f.key}" class="pill-btn ${active}">${f.label}</button>`;
+      const active = f.key === this.periodFilter
+        ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] border border-purple-400/30"
+        : "bg-white/[0.03] text-slate-400 hover:text-white border border-white/5 hover:border-purple-500/20";
+      return `<button type="button" data-period="${f.key}" class="snap-start shrink-0 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all duration-300 whitespace-nowrap ${active}">${f.label}</button>`;
     }).join("");
   },
 
@@ -1681,81 +1682,186 @@ const AdminModule = {
     const capacity = spanDays * DEFAULT_MAX_EVENTS_PER_DAY;
     const occupancy = Math.min(100, Math.round((active.length / capacity) * 100));
 
+    const paidCount = active.filter(b => b.status === "confirmada" || b.status === "realizada").length;
+    const pendingCount = active.filter(b => (b.remainingBalance || 0) > 0).length;
+
     const box = document.getElementById("admin-metrics");
     if (!box) return;
     box.innerHTML = [
-      kpiCard("💳", "Adelantos SINPE", formatCRC(validatedDeposits), "exec-kpi--emerald"),
-      kpiCard("🤝", "Saldos por Cobrar", formatCRC(receivable), "exec-kpi--cyan"),
-      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "exec-kpi--fuchsia"),
-      kpiCard("📅", "Eventos Activos & Ocupación", `${active.length} activos · ${occupancy}% ocupación`, "exec-kpi--purple")
+      kpiCard("💳", "Adelantos SINPE", formatCRC(validatedDeposits), "exec-kpi--emerald", `${paidCount} reserva(s) cobrada(s) · SINPE`),
+      kpiCard("🤝", "Saldos por Cobrar", formatCRC(receivable), "exec-kpi--cyan", `${pendingCount} reserva(s) con saldo pendiente`),
+      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "exec-kpi--fuchsia", `${active.length} eventos activos · ${occupancy}% ocupación`)
     ].join("");
   },
 
   renderOwnerSparkline() {
-    const box = document.getElementById("portal-sparkline");
-    if (!box) return;
     const list = bookingsInPeriod(this.periodFilter).filter(b => b.status !== "cancelada");
-    const byDate = {};
-    list.forEach(b => {
-      if (!byDate[b.selectedDate]) byDate[b.selectedDate] = { validated: 0, receivable: 0 };
-      const rec = byDate[b.selectedDate];
-      if (b.status === "confirmada" || b.status === "realizada") {
-        rec.validated += b.deposit50Amount;
-        rec.receivable += b.remainingBalance;
-      } else {
-        rec.receivable += b.granTotal;
-      }
-    });
-    const dates = Object.keys(byDate).sort();
-    if (!dates.length) {
-      box.innerHTML = `<div class="p-6 rounded-2xl bg-white/5 border border-white/10 text-center"><p class="text-xs text-gray-500">Sin flujo de caja en el período seleccionado.</p></div>`;
-      return;
-    }
-    const data = dates.map(d => ({ date: d, ...byDate[d] }));
-    const maxVal = Math.max(...data.map(x => x.validated + x.receivable), 1);
-    const W = 640, H = 200, padB = 26, padT = 12;
-    const chartH = H - padB - padT;
-    const step = data.length > 1 ? (W - 24) / (data.length - 1) : W - 24;
-    const barW = Math.min(26, Math.max(6, step * 0.55));
+    const periodLabel = (PERIOD_FILTERS.find(f => f.key === this.periodFilter) || PERIOD_FILTERS[PERIOD_FILTERS.length - 1]).label;
+    const active = list;
+    const validatedDeposits = active
+      .filter(b => b.status === "confirmada" || b.status === "realizada")
+      .reduce((s, b) => s + (b.deposit50Amount || 0), 0);
+    const receivable = active.reduce((s, b) => s + (b.remainingBalance || 0), 0);
+    const projected = active.reduce((s, b) => s + (b.granTotal || 0), 0);
 
-    const bars = data.map((x, i) => {
-      const cx = 12 + i * step;
-      const vH = (x.validated / maxVal) * chartH;
-      const rH = (x.receivable / maxVal) * chartH;
-      const vY = padT + chartH - vH;
-      const rY = vY - rH;
-      const title = `${x.date} — Validado: ${formatCRC(x.validated)} · Por cobrar: ${formatCRC(x.receivable)}`;
-      return `
-      <g>
-        <rect x="${(cx - barW / 2).toFixed(2)}" y="${rY.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(1, rH).toFixed(2)}" rx="3" fill="rgba(236,72,153,0.75)">
-          <title>${title}</title>
-        </rect>
-        <rect x="${(cx - barW / 2).toFixed(2)}" y="${vY.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(1, vH).toFixed(2)}" rx="3" fill="rgba(16,185,129,0.9)">
-          <title>${title}</title>
-        </rect>
-        <text x="${cx.toFixed(2)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="#94a3b8">${x.date.slice(5)}</text>
-      </g>`;
-    }).join("");
+    const balanceBox = document.getElementById("admin-balance-box");
+    const barBox = document.getElementById("admin-bar-chart");
+    const ringBox = document.getElementById("admin-ring-chart");
+    const corpBox = document.getElementById("admin-corporate-card");
+    const recBox = document.getElementById("admin-recent-activity");
 
-    box.innerHTML = `
-      <div class="p-5 rounded-2xl bg-white/5 border border-purple-500/20">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Flujo de Caja por Fecha de Evento</p>
-          <div class="flex items-center gap-4 text-[10px] font-semibold">
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span> Efectivo Validado (50%)</span>
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-pink-400 inline-block"></span> Saldo por Cobrar</span>
+    if (balanceBox) {
+      balanceBox.innerHTML = `
+        <div class="relative overflow-hidden p-5 sm:p-6 rounded-2xl bg-[#0e0a1a]/80 backdrop-blur-xl border border-purple-500/20 hover:border-purple-500/40 transition-all shadow-lg">
+          <div class="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-purple-600/20 blur-3xl pointer-events-none"></div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[11px] font-semibold tracking-wider text-purple-300/80 uppercase mb-1">Balance Total &amp; Proyección</p>
+              <p class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-sans mb-2">${formatCRC(projected)}</p>
+            </div>
+            <span class="px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] font-semibold whitespace-nowrap">${periodLabel}</span>
           </div>
-        </div>
-        <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="Gráfico de flujo de caja por fecha">
-          <line x1="12" y1="${padT}" x2="12" y2="${H - padB}" stroke="rgba(168,85,247,0.2)" stroke-width="1"/>
-          <line x1="12" y1="${H - padB}" x2="${W - 12}" y2="${H - padB}" stroke="rgba(168,85,247,0.2)" stroke-width="1"/>
-          ${bars}
-        </svg>
-        <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-white/10 text-[10px] font-semibold text-gray-400">
-          <span>Efectivo confirmado: <strong class="text-emerald-400 tabular-nums">${formatCRC(data.reduce((s, x) => s + x.validated, 0))}</strong></span>
-          <span>Saldo por cobrar: <strong class="text-pink-400 tabular-nums">${formatCRC(data.reduce((s, x) => s + x.receivable, 0))}</strong></span>
-        </div>
-      </div>`;
+          <div class="grid grid-cols-2 gap-3 mt-4">
+            <div class="px-3.5 py-2.5 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/20">
+              <p class="text-[10px] font-semibold tracking-wider text-emerald-300/80 uppercase">Cobrado vía SINPE</p>
+              <p class="text-base sm:text-lg font-extrabold text-emerald-300 tracking-tight font-sans tabular-nums">${formatCRC(validatedDeposits)}</p>
+            </div>
+            <div class="px-3.5 py-2.5 rounded-xl bg-amber-500/[0.07] border border-amber-500/20">
+              <p class="text-[10px] font-semibold tracking-wider text-amber-300/80 uppercase">Pendiente por Cobrar</p>
+              <p class="text-base sm:text-lg font-extrabold text-amber-300 tracking-tight font-sans tabular-nums">${formatCRC(receivable)}</p>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Visualizador de Barras: distribución por tipo de formato/evento
+    if (barBox) {
+      const byType = {};
+      active.forEach(b => {
+        const key = b.serviceName || "Evento";
+        if (!byType[key]) byType[key] = 0;
+        byType[key] += b.granTotal || 0;
+      });
+      const entries = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      const maxVal = Math.max(...entries.map(e => e[1]), 1);
+      const bars = entries.length
+        ? entries.map(([name, total]) => {
+            const h = Math.max(8, Math.round((total / maxVal) * 100));
+            const short = name.length > 12 ? name.slice(0, 12) + "…" : name;
+            return `
+            <div class="flex-1 flex flex-col items-center gap-1.5 min-w-0" title="${name}: ${formatCRC(total)}">
+              <div class="w-full rounded-t-lg bg-gradient-to-t from-purple-700 via-indigo-500 to-cyan-400 light-bar" style="height:${h}%"></div>
+              <span class="text-[9px] text-slate-500 truncate w-full text-center">${sanitizeInput(short)}</span>
+            </div>`;
+          }).join("")
+        : `<div class="w-full h-full flex items-center justify-center"><p class="text-xs text-slate-500">Sin eventos en el período.</p></div>`;
+      barBox.innerHTML = `
+        <div class="relative overflow-hidden p-5 rounded-2xl bg-[#0e0a1a]/70 backdrop-blur-xl border border-purple-500/15 hover:border-purple-500/30 transition-all shadow-lg">
+          <p class="text-[11px] font-semibold tracking-wider text-purple-300/80 uppercase mb-4">Distribución por Formato</p>
+          <div class="h-32 flex items-end gap-2 pt-2">${bars}</div>
+          <p class="text-[10px] text-slate-500 mt-3">Ingresos por tipo de evento · ${periodLabel}</p>
+        </div>`;
+    }
+
+    // Ring Progress: Cobrado vs Pendiente
+    if (ringBox) {
+      const total = validatedDeposits + receivable;
+      const pct = total > 0 ? Math.round((validatedDeposits / total) * 100) : 0;
+      const ringColor = total > 0
+        ? `conic-gradient(#34d399 0% ${pct}%, rgba(245,158,11,0.9) ${pct}% 100%)`
+        : "conic-gradient(rgba(148,163,184,0.25) 0% 100%)";
+      ringBox.innerHTML = `
+        <div class="relative overflow-hidden p-5 rounded-2xl bg-[#0e0a1a]/70 backdrop-blur-xl border border-purple-500/15 hover:border-purple-500/30 transition-all shadow-lg">
+          <p class="text-[11px] font-semibold tracking-wider text-purple-300/80 uppercase mb-4">Cobranza del Período</p>
+          <div class="flex items-center justify-center">
+            <div class="ring-chart" style="background:${ringColor}">
+              <div class="ring-chart__inner">
+                <p class="ring-chart__value">${pct}%</p>
+                <p class="ring-chart__label">cobrado</p>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 space-y-1.5 text-[11px]">
+            <div class="flex items-center justify-between">
+              <span class="flex items-center gap-2 text-slate-400"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span> Cobrado vía SINPE</span>
+              <span class="font-bold text-emerald-300 tabular-nums">${formatCRC(validatedDeposits)}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="flex items-center gap-2 text-slate-400"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span> Pendiente por Cobrar</span>
+              <span class="font-bold text-amber-300 tabular-nums">${formatCRC(receivable)}</span>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Tarjeta Ejecutiva "Arkik Corporate Card"
+    if (corpBox) {
+      const activeBalance = projected;
+      corpBox.innerHTML = `
+        <div class="corporate-card relative overflow-hidden p-5 rounded-2xl shadow-xl">
+          <div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-purple-500/30 blur-3xl pointer-events-none"></div>
+          <div class="absolute -bottom-12 -left-8 w-36 h-36 rounded-full bg-cyan-400/20 blur-3xl pointer-events-none"></div>
+          <div class="relative z-10">
+            <div class="flex items-center justify-between mb-5">
+              <div class="w-9 h-7 rounded-md chip-visual"></div>
+              <span class="text-[11px] font-bold tracking-widest text-white/70">ARKIK</span>
+            </div>
+            <p class="text-[10px] font-semibold tracking-wider text-purple-300/80 uppercase mb-0.5">Balance Activo</p>
+            <p class="text-xl sm:text-2xl font-extrabold text-white tracking-tight font-sans mb-4">${formatCRC(activeBalance)}</p>
+            <div class="flex items-end justify-between">
+              <div>
+                <p class="text-[10px] text-white/50 uppercase tracking-wider">Propietario</p>
+                <p class="text-xs font-semibold text-white">Juan José Ramírez</p>
+              </div>
+              <div class="text-right">
+                <p class="text-[10px] text-white/50 uppercase tracking-wider">Vence</p>
+                <p class="text-xs font-semibold text-white tabular-nums">•• / ••</p>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Actividad Reciente: últimos eventos agendados
+    if (recBox) {
+      const recent = [...active]
+        .sort((a, b) => {
+          const da = parseISO(a.selectedDate) || 0;
+          const db = parseISO(b.selectedDate) || 0;
+          if (db !== da) return db - da;
+          return String(b.selectedTime || "").localeCompare(String(a.selectedTime || ""));
+        })
+        .slice(0, 5);
+      const formatEmoji = (serviceId) => {
+        const map = { 1: "🎸", 2: "🎻", 3: "🎤", 4: "🎹", 5: "🎷", 6: "🔊" };
+        return map[serviceId] || "🎵";
+      };
+      const rows = recent.length
+        ? recent.map(b => {
+            const statusLabel = BOOKING_STATUSES[b.status] || b.status;
+            const statusDot = b.status === "cancelada" ? "bg-rose-400"
+              : (b.status === "pendiente" ? "bg-amber-400"
+                : (b.status === "realizada" ? "bg-indigo-400" : "bg-emerald-400"));
+            return `
+            <div class="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0">
+              <span class="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-base shrink-0">${formatEmoji(b.serviceId)}</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold text-white truncate">${sanitizeInput(b.clientName)}</p>
+                <p class="text-[10px] text-slate-500 truncate">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</p>
+              </div>
+              <div class="text-right shrink-0">
+                <p class="text-xs font-semibold text-white tabular-nums">${formatCRC(b.granTotal)}</p>
+                <p class="text-[10px] flex items-center justify-end gap-1 text-slate-400"><span class="w-1.5 h-1.5 rounded-full ${statusDot} inline-block"></span>${statusLabel}</p>
+              </div>
+            </div>`;
+          }).join("")
+        : `<div class="py-6 text-center"><p class="text-xs text-slate-500">Sin reservas recientes en el período.</p></div>`;
+      recBox.innerHTML = `
+        <div class="relative overflow-hidden p-5 rounded-2xl bg-[#0e0a1a]/70 backdrop-blur-xl border border-purple-500/15 hover:border-purple-500/30 transition-all shadow-lg">
+          <p class="text-[11px] font-semibold tracking-wider text-purple-300/80 uppercase mb-2">Actividad Reciente</p>
+          ${rows}
+        </div>`;
+    }
   },
 
   renderOwnerFilters() {
@@ -2581,16 +2687,24 @@ const AdminModule = {
   }
 };
 
-function kpiCard(icon, label, value, accent) {
+function kpiCard(icon, label, value, accent, sub) {
   return `
     <div class="exec-kpi ${accent}">
       <p class="exec-kpi-label"><span class="exec-kpi-icon">${icon}</span>${label}</p>
       <p class="exec-kpi-value">${value}</p>
+      ${sub ? `<p class="exec-kpi-sub">${sub}</p>` : ""}
     </div>`;
 }
 
 function bookingCard(b) {
   const statusLabel = BOOKING_STATUSES[b.status] || b.status;
+  const statusTone = {
+    pendiente: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+    confirmada: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+    cancelada: "bg-rose-500/10 text-rose-300 border-rose-500/20",
+    realizada: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
+    disabled: "bg-slate-500/10 text-slate-300 border-slate-500/20"
+  }[b.status] || "bg-slate-500/10 text-slate-300 border-slate-500/20";
   const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
   const setupDisplay = service ? service.setup_display : (b.setupDisplay || "2h antes");
   const teardownDisplay = service ? service.teardown_display : (b.teardownDisplay || "1h después");
@@ -2603,28 +2717,28 @@ function bookingCard(b) {
 
   const actions = [];
   if (b.status === "pendiente") {
-    actions.push(`<button type="button" data-action="confirm" class="admin-act-btn admin-act-btn--confirm">✅ Validar Pago Bancario</button>`);
+    actions.push(`<button type="button" data-action="confirm" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Validar Pago Bancario</button>`);
   }
   if (b.status === "confirmada") {
-    actions.push(`<button type="button" data-action="complete" class="admin-act-btn admin-act-btn--confirm">✅ Marcar Realizada</button>`);
+    actions.push(`<button type="button" data-action="complete" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Marcar Realizada</button>`);
   }
   if (b.voucherImage) {
-    actions.push(`<button type="button" data-action="view" class="admin-act-btn bg-gradient-to-r from-purple-900/80 to-indigo-900/80 hover:from-purple-800 hover:to-indigo-800 border border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.25)] text-white font-bold rounded-xl h-11 px-4 flex items-center justify-center gap-2.5 transition-all active:scale-95"><span class="bg-purple-500/30 p-1.5 rounded-lg border border-purple-400/40 text-purple-200">👁️</span><span class="text-purple-100 font-semibold tracking-wide text-xs sm:text-sm">Ver Comprobante SINPE</span></button>`);
+    actions.push(`<button type="button" data-action="view" class="bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-purple-200 rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 transition-all">👁️ Ver Comprobante SINPE</button>`);
   }
   if (b.status === "pendiente" || b.status === "confirmada") {
-    actions.push(`<button type="button" data-action="cancel" class="admin-act-btn admin-act-btn--cancel">❌ Rechazar / Cancelar</button>`);
+    actions.push(`<button type="button" data-action="cancel" class="bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">❌ Rechazar / Cancelar</button>`);
   }
   if (b.status !== "cancelada" && b.status !== "pendiente") {
-    actions.push(`<button type="button" data-action="voucher" class="admin-act-btn admin-act-btn--neutral">📄 Descargar Pre-Factura PDF</button>`);
+    actions.push(`<button type="button" data-action="voucher" class="bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 text-indigo-200 rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 transition-all">📄 Descargar Pre-Factura PDF</button>`);
   }
-  actions.push(`<button type="button" data-action="whatsapp" class="admin-act-btn admin-act-btn--whatsapp">💬 Notificar WhatsApp</button>`);
+  actions.push(`<button type="button" data-action="whatsapp" class="col-span-1 sm:col-span-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all">💬 Notificar WhatsApp</button>`);
 
   return `
   <div class="admin-booking-row bg-[#0b0518]/95 border border-purple-500/25 rounded-2xl p-4 sm:p-6 mb-4 shadow-xl transition-all hover:border-purple-500/50" data-id="${b.code}">
     <!-- Encabezado: código + estado + GAM/Viáticos + fecha/hora -->
     <div class="flex flex-wrap items-center gap-2">
       <span class="admin-booking-code font-mono text-xs font-bold text-purple-300 bg-purple-950/80 px-2.5 py-1 rounded-lg border border-purple-500/30">${b.code}</span>
-      <span class="status-badge status-badge--${b.status}">${statusLabel}</span>
+      <span class="px-2.5 py-1 rounded-lg text-xs font-medium border ${statusTone}">${statusLabel}</span>
       ${gamBadge}
       <span class="text-xs font-semibold text-slate-300 flex items-center gap-1">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
     </div>
@@ -2650,10 +2764,10 @@ function bookingCard(b) {
       <!-- COL 3: Contacto y SINPE -->
       <div class="admin-booking-col">
         <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Contacto &amp; SINPE</p>
-        <p class="text-xs text-slate-300">${sanitizeInput(b.clientPhone)}</p>
-        <a href="${waLink}" target="_blank" rel="noopener" class="wa-click-link text-xs mt-0.5">💬 WhatsApp</a>
-        <p class="text-xs text-slate-500 mt-0.5 truncate">${sanitizeInput(b.clientEmail || "S/N")}</p>
-        <p class="text-xs text-slate-500 mt-1">Ref. SINPE: <span class="admin-booking-code font-bold text-cyan-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></p>
+        <p class="text-xs text-slate-300 flex items-center gap-1.5">💬 <span>${sanitizeInput(b.clientPhone)}</span></p>
+        <a href="${waLink}" target="_blank" rel="noopener" class="text-xs mt-0.5 font-semibold text-slate-300 hover:text-purple-300 transition-colors">💬 WhatsApp</a>
+        <p class="text-xs text-slate-300 mt-0.5 truncate flex items-center gap-1.5">✉️ <span>${sanitizeInput(b.clientEmail || "S/N")}</span></p>
+        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1.5">💳 <span>Ref. SINPE: <span class="font-bold text-slate-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></span></p>
       </div>
     </div>
 
@@ -2661,20 +2775,20 @@ function bookingCard(b) {
     <div class="admin-booking-fin grid grid-cols-3 gap-2 bg-[#05020c]/80 p-3 rounded-xl border border-white/5">
       <div class="min-w-0">
         <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Gran Total</p>
-        <p class="font-mono text-sm sm:text-base font-bold text-white break-words">${formatCRC(b.granTotal)}</p>
+        <p class="text-white font-mono font-bold text-lg sm:text-xl break-words">${formatCRC(b.granTotal)}</p>
       </div>
       <div class="min-w-0">
         <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Adelanto SINPE</p>
-        <p class="font-mono text-sm sm:text-base font-bold text-emerald-400 break-words">${formatCRC(b.deposit50Amount)}</p>
+        <p class="text-emerald-300 font-mono font-semibold text-lg break-words">${formatCRC(b.deposit50Amount)}</p>
       </div>
       <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90 mb-1">Saldo Pendiente</p>
-        <p class="text-amber-400 font-mono font-bold text-base sm:text-lg break-words">${formatCRC(b.remainingBalance)}</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Saldo Pendiente</p>
+        <p class="text-slate-200 font-mono font-semibold text-lg break-words">${formatCRC(b.remainingBalance)}</p>
       </div>
     </div>
 
     <!-- Deck de acciones touch -->
-    <div class="admin-booking-deck mt-4 pt-3 border-t border-white/5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-3 border-t border-white/5">
       ${actions.join("")}
     </div>
   </div>`;
@@ -2792,23 +2906,22 @@ function buildExecutiveInvoiceHtml(booking, cartState) {
     : null;
 
   const container = document.createElement("div");
-  // Presentación A4: plantilla FLUIDA (width:100%) que se adapta al ancho
-  // imprimible del contenedor de html2pdf (A4 portrait + margin 10mm ≈ 718px).
-  // UNIDAD DE PRUEBA: un ancho fijo de 800px recorta ~82px del borde derecho
-  // porque el clon vive dentro del contenedor de ~718px del motor. El cap de
-  // 800px solo aplica si la plantilla se renderiza standalone (printFallback).
-  container.className = "ark-pre-invoice";
-  container.style.width = "100%";
-  container.style.minWidth = "0";
-  container.style.maxWidth = "800px";
-  container.style.padding = "40px";
-  container.style.background = "#ffffff";
-  container.style.color = "#111827";
-  container.style.fontFamily = "'Inter', 'Plus Jakarta Sans', sans-serif";
+  // Presentación A4 ESTRICTA 1 página: contenedor de 210×297mm con padding
+  // interno de 12×15mm y margen de página 0. Todo el contenido debe caber en
+  // UNA hoja (page-break-inside avoid) — header compacto, bloque 2 columnas,
+  // tabla de desglose, resumen financiero derecha y footer compacto.
+  container.className = "pdf-container";
+  container.style.width = "210mm";
+  container.style.maxHeight = "297mm";
+  container.style.padding = "12mm 15mm";
   container.style.boxSizing = "border-box";
+  container.style.fontFamily = "'Inter', system-ui, sans-serif";
+  container.style.background = "#ffffff";
+  container.style.color = "#0f172a";
+  container.style.pageBreakInside = "avoid";
   container.style.margin = "0";
-  container.style.fontSize = "13px";
-  container.style.lineHeight = "1.45";
+  container.style.fontSize = "12px";
+  container.style.lineHeight = "1.5";
 
   // Fila unificada de extras según spec (una sola línea en el Ledger
   // Financiero): "Horas Extra y Servicios Adicionales (DJ, Subwoofers)".
@@ -2820,133 +2933,128 @@ function buildExecutiveInvoiceHtml(booking, cartState) {
   const extrasTotal = (Number(extras.extraHoursTotal) || 0)
     + (Number(extras.djTotal) || 0)
     + (Number(extras.subwoofersTotal) || 0);
-  const extrasHtml = `<tr style="border-top:1px solid #e5e7eb;">
-        <td style="padding:9px 12px;">
-          <span style="font-weight:600; color:#374151;">Horas Extra y Servicios Adicionales (DJ, Subwoofers)</span>
-          ${extraCounts.length ? `<div style="font-size:10px; color:#6b7280; margin-top:2px;">${extraCounts.join(" · ")}</div>` : ""}
+  const extrasHtml = `<tr style="border-bottom:1px solid #e2e8f0;">
+        <td style="padding:7px 0;">
+          <span style="font-weight:600; color:#334155;">Horas Extra y Servicios Adicionales (DJ, Subwoofers)</span>
+          ${extraCounts.length ? `<div style="font-size:10px; color:#64748b;">${extraCounts.join(" · ")}</div>` : ""}
         </td>
-        <td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600;">${formatCRC(extrasTotal)}</td>
+        <td style="padding:7px 0; text-align:right; font-variant-numeric:tabular-nums; font-weight:700;">${formatCRC(extrasTotal)}</td>
       </tr>`;
 
   const travelHtml = nonGam
-    ? `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px;">Viáticos y Traslado — No-GAM (+12%)</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600;">${formatCRC(travelAmount)}</td></tr>`
-    : `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px;">Viáticos y Traslado — GAM (sin recargo)</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums;">₡0</td></tr>`;
+    ? `<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:7px 0;">Viáticos y Traslado — No-GAM (+12%)</td><td style="padding:7px 0; text-align:right; font-variant-numeric:tabular-nums; font-weight:700;">${formatCRC(travelAmount)}</td></tr>`
+    : `<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:7px 0;">Viáticos y Traslado — GAM (sin recargo)</td><td style="padding:7px 0; text-align:right; font-variant-numeric:tabular-nums;">₡0</td></tr>`;
 
   const lineItem = (label, amount) =>
-    `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 12px; font-weight:600; color:#374151;">${label}</td><td style="padding:9px 12px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700;">${formatCRC(amount)}</td></tr>`;
+    `<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:7px 0; font-weight:700; color:#1e293b;">${label}</td><td style="padding:7px 0; text-align:right; font-variant-numeric:tabular-nums; font-weight:800;">${formatCRC(amount)}</td></tr>`;
+
+  const infoRow = (label, value, strong) =>
+    `<tr><td style="padding:2px 6px; color:#64748b; width:38%; vertical-align:top;">${label}</td><td style="padding:2px 6px; ${strong ? "font-weight:700;" : "font-weight:600;"} color:#1e293b;">${value}</td></tr>`;
 
   container.innerHTML = `
-  <div style="color:#111827;">
+  <div style="color:#0f172a; display:flex; flex-direction:column; min-height:273mm; box-sizing:border-box;">
 
-    <!-- ══ 1. HEADER OFICIAL ══ -->
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; border-bottom:3px solid #a855f7; padding-bottom:18px;">
-      <div style="display:flex; align-items:center; gap:16px;">
+    <!-- ══ 1. HEADER COMPACTO: logo + N° Pre-Factura + fecha emisión ══ -->
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; border-bottom:2px solid #a855f7; padding-bottom:10px;">
+      <div style="display:flex; align-items:center; gap:12px;">
         <img src="img/arkik_logo.jpg" id="pdf-logo" alt="Arkik Productions"
-          style="max-height:80px; width:auto; height:80px; object-fit:contain; border-radius:10px; border:1px solid #d8b4fe;" />
+          style="height:54px; width:auto; object-fit:contain; border-radius:8px; border:1px solid #e9d5ff;" />
         <div>
-          <div style="margin:0; font-size:24px; font-weight:900; color:#4c1d95; letter-spacing:0.5px;">ARKIK PRODUCTIONS</div>
-          <div style="margin:2px 0 0; font-size:12px; font-weight:700; color:#6d28d9; text-transform:uppercase; letter-spacing:1px;">Servicios Musicales &amp; Audiovisuales Profesionales</div>
-          <div style="margin:3px 0 0; font-size:11px; color:#4b5563;">Ubicación: Granadilla, San José, Costa Rica</div>
-          <div style="font-size:11px; color:#4b5563;">Contacto: +506 6227-4984 · arkikproduc2023@gmail.com</div>
+          <div style="margin:0; font-size:18px; font-weight:900; color:#4c1d95; letter-spacing:0.4px;">ARKIK PRODUCTIONS</div>
+          <div style="margin:1px 0 0; font-size:10px; font-weight:700; color:#6d28d9; text-transform:uppercase; letter-spacing:0.8px;">Música en Vivo &amp; Sonido Profesional</div>
+          <div style="margin:2px 0 0; font-size:10px; color:#64748b;">Granadilla, San José, Costa Rica · +506 6227-4984</div>
         </div>
       </div>
       <div style="text-align:right; flex-shrink:0;">
-        <div style="display:inline-block; background:#f3e8ff; border:1px solid #c084fc; color:#5b21b6; padding:7px 14px; border-radius:10px; font-family:ui-monospace, 'Cascadia Mono', monospace; font-size:15px; font-weight:800; letter-spacing:0.5px;">${sanitizeInput(b.code)}</div>
+        <div style="display:inline-block; background:#faf5ff; border:1px solid #e9d5ff; border-radius:10px; padding:7px 12px;">
+          <div style="font-size:9px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:0.8px;">N° Pre-Factura</div>
+          <div style="margin:3px 0 0; font-family:ui-monospace, 'Cascadia Mono', monospace; font-size:14px; font-weight:900; letter-spacing:0.5px; color:#5b21b6;">${sanitizeInput(b.code)}</div>
+          <div style="margin:3px 0 0; font-size:10px; color:#64748b;">Fecha Emisión: <strong style="color:#1e293b;">${today}</strong></div>
+        </div>
       </div>
     </div>
 
-    <!-- ══ 2. DETALLES DEL DOCUMENTO ══ -->
-    <div style="text-align:center; margin:22px 0 8px;">
-      <div style="margin:0; font-size:18px; font-weight:900; color:#1f2937; letter-spacing:0.4px; text-transform:uppercase;">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</div>
-      <div style="margin:6px 0 0; font-size:11px; color:#6b7280;">
-        N° Comprobante: <strong style="color:#4c1d95; font-family:ui-monospace,monospace;">${sanitizeInput(b.code)}</strong>
-        &nbsp;·&nbsp; Fecha de Emisión: <strong>${today}</strong>
+    <!-- ══ 2. ESTADO DE VERIFICACIÓN (compacto) ══ -->
+    <div style="margin:10px 0 0; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <span style="font-size:10px; font-weight:800; letter-spacing:0.3px; color:${verification.color};">${verification.label}</span>
+      <span style="font-size:10px; color:#64748b;">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</span>
+    </div>
+
+    <!-- ══ 3. BLOQUE 2 COLUMNAS: Arkik vs Cliente/Evento ══ -->
+    <div style="display:grid; grid-template-columns:1fr 1.15fr; gap:12px; margin:10px 0 0;">
+      <div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:10px; padding:10px 12px;">
+        <div style="margin:0 0 4px; font-size:9px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1px;">Empresa / Proveedor</div>
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+          ${infoRow("Razón Social", "Arkik Productions", true)}
+          ${infoRow("Contacto", "+506 6227-4984")}
+          ${infoRow("Correo", "arkikproduc2023@gmail.com")}
+          ${infoRow("Sede", "Granadilla, San José, CR")}
+        </table>
       </div>
-      <div style="margin:12px 0 0;">
-        <span style="display:inline-block; padding:7px 16px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.3px; color:#fff; background:${verification.color};">${verification.label}</span>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px;">
+        <div style="margin:0 0 4px; font-size:9px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:1px;">Cliente / Evento</div>
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+          ${infoRow("Cliente", sanitizeInput(b.clientName), true)}
+          ${infoRow("Teléfono", sanitizeInput(b.clientPhone))}
+          ${infoRow("Correo", sanitizeInput(b.clientEmail || "No especificado"))}
+          ${infoRow("Lugar", `${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}${b.address ? " — " + sanitizeInput(b.address) : ""}`)}
+          ${infoRow("Fecha & Hora", `${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}`, true)}
+        </table>
       </div>
     </div>
 
-    <!-- ══ 3. PERFIL DEL CLIENTE ══ -->
-    <div style="margin:22px 0 0; background:#faf5ff; border:1px solid #e9d5ff; border-radius:12px; padding:16px 18px;">
-      <div style="margin:0 0 10px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Perfil del Cliente</div>
-      <table style="width:100%; border-collapse:collapse; font-size:12px;">
-        <tr><td style="padding:3px 0; color:#6b7280; width:30%;">Nombre / Razón Social:</td><td style="padding:3px 0; font-weight:700;">${sanitizeInput(b.clientName)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Teléfono (+506):</td><td style="padding:3px 0; font-weight:600; font-variant-numeric:tabular-nums;">${sanitizeInput(b.clientPhone)}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Correo Electrónico:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.clientEmail || "No especificado")}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Lugar del Evento:</td><td style="padding:3px 0; font-weight:600;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}${b.address ? " — " + sanitizeInput(b.address) : ""}</td></tr>
-        <tr><td style="padding:3px 0; color:#6b7280;">Fecha &amp; Hora del Show:</td><td style="padding:3px 0; font-weight:800; color:#6d28d9;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td></tr>
-      </table>
+    <!-- ══ 4. LEDGER DE LOGÍSTICA (compacto) ══ -->
+    <div style="margin:10px 0 0;">
+      <div style="margin:0 0 4px; font-size:9px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1px;">Ledger de Logística</div>
+      <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; font-size:10px; color:#475569;">
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px;"><span style="font-weight:800; color:#1e293b;">Formato:</span> ${sanitizeInput(b.serviceName || b.serviceId)}${extras.extraHoursCount > 0 ? " +" + extras.extraHoursCount + "hr" : ""}</div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px;"><span style="font-weight:800; color:#1e293b;">Llegada:</span> ${arrivalTime ? sanitizeInput(arrivalTime) + " (" + sanitizeInput(setupDisplay) + ")" : sanitizeInput(setupDisplay)}</div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px;"><span style="font-weight:800; color:#1e293b;">Show:</span> ${showTime ? sanitizeInput(showTime) : "Según formato"}</div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px;"><span style="font-weight:800; color:#1e293b;">Desmontaje:</span> ${sanitizeInput(teardownDisplay)}${teardownTime ? " (" + sanitizeInput(teardownTime) + ")" : ""}</div>
+      </div>
     </div>
 
-    <!-- ══ 4. LEDGER DE LOGÍSTICA ══ -->
-    <div style="margin:20px 0 0;">
-      <div style="margin:0 0 8px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Ledger de Logística</div>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid #e9d5ff; border-radius:8px; overflow:hidden; background:#ffffff;">
-        <tr style="background:#a855f7; color:#ffffff;">
-          <th style="padding:8px 12px; text-align:left; font-size:10px; letter-spacing:0.5px; text-transform:uppercase;">Etapa</th>
-          <th style="padding:8px 12px; text-align:left; font-size:10px; letter-spacing:0.5px; text-transform:uppercase;">Horario</th>
-        </tr>
-        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Formato Musical</td><td style="padding:8px 12px; font-weight:600;">${sanitizeInput(b.serviceName || b.serviceId)}${extras.extraHoursCount > 0 ? " · +" + extras.extraHoursCount + " hr extras" : ""}</td></tr>
-        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Llegada</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${arrivalTime ? sanitizeInput(arrivalTime) + " (" + sanitizeInput(setupDisplay) + ")" : sanitizeInput(setupDisplay)}</td></tr>
-        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Montaje Técnico</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${arrivalTime ? sanitizeInput(arrivalTime) + " → " + sanitizeInput(showTime) : sanitizeInput(setupDisplay)}</td></tr>
-        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Inicio de Show</td><td style="padding:8px 12px; font-weight:800; color:#6d28d9; font-variant-numeric:tabular-nums;">${showTime ? sanitizeInput(showTime) : "Según formato"}</td></tr>
-        <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 12px; font-weight:700;">Desmontaje</td><td style="padding:8px 12px; font-variant-numeric:tabular-nums;">${sanitizeInput(teardownDisplay)}${teardownTime ? " (" + sanitizeInput(teardownTime) + ")" : ""}</td></tr>
-      </table>
-    </div>
-
-    <!-- ══ 5. LEDGER FINANCIERO ══ -->
-    <div style="margin:20px 0 0;">
-      <div style="margin:0 0 8px; font-size:10px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1.2px;">Ledger Financiero</div>
+    <!-- ══ 5. TABLA DE DESGLOSE (border-b slate-200) ══ -->
+    <div style="margin:10px 0 0;">
+      <div style="margin:0 0 4px; font-size:9px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:1px;">Desglose del Servicio</div>
       <table style="width:100%; border-collapse:collapse; font-size:12px;">
         <thead>
-          <tr style="background:#f3f4f6; border-bottom:2px solid #a855f7;">
-            <th style="padding:10px 12px; text-align:left; font-size:11px; letter-spacing:0.4px; text-transform:uppercase; color:#374151;">Concepto</th>
-            <th style="padding:10px 12px; text-align:right; font-size:11px; letter-spacing:0.4px; text-transform:uppercase; font-variant-numeric:tabular-nums; color:#374151;">Monto ₡</th>
+          <tr style="border-bottom:1px solid #cbd5e1;">
+            <th style="padding:6px 0; text-align:left; font-size:10px; letter-spacing:0.4px; text-transform:uppercase; color:#475569;">Concepto</th>
+            <th style="padding:6px 0; text-align:right; font-size:10px; letter-spacing:0.4px; text-transform:uppercase; font-variant-numeric:tabular-nums; color:#475569;">Monto ₡</th>
           </tr>
         </thead>
         <tbody>
           ${lineItem(`Formato Base Contratado — ${sanitizeInput(b.serviceName || "Servicio")}`, basePrice)}
           ${extrasHtml}
           ${travelHtml}
-          <tr style="border-top:2px solid #a855f7; background:#faf5ff;">
-            <td style="padding:10px 12px; font-weight:900; color:#4c1d95; text-transform:uppercase; letter-spacing:0.3px;">Sub-Total Bruto</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; font-size:14px; color:#4c1d95; font-variant-numeric:tabular-nums;">${formatCRC(b.granTotal)}</td>
-          </tr>
-          <tr style="border-top:1px solid #e5e7eb; background:#ecfdf5;">
-            <td style="padding:10px 12px; font-weight:800; color:#047857;">Adelanto Requerido SINPE Móvil (50%)</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#047857; font-size:13px; font-variant-numeric:tabular-nums;">${formatCRC(b.deposit50Amount)}</td>
-          </tr>
-          <tr style="border-top:1px solid #e5e7eb; background:#fff1f2;">
-            <td style="padding:10px 12px; font-weight:800; color:#be123c;">Saldo Restante a Liquidar en Sitio (50%)</td>
-            <td style="padding:10px 12px; text-align:right; font-weight:900; color:#be123c; font-size:13px; font-variant-numeric:tabular-nums;">${formatCRC(b.remainingBalance)}</td>
+          <tr style="border-bottom:2px solid #a855f7; background:#faf5ff;">
+            <td style="padding:8px 0; font-weight:900; color:#4c1d95; text-transform:uppercase; letter-spacing:0.3px;">Gran Total</td>
+            <td style="padding:8px 0; text-align:right; font-weight:900; font-size:14px; color:#4c1d95; font-variant-numeric:tabular-nums;">${formatCRC(b.granTotal)}</td>
           </tr>
         </tbody>
       </table>
-      <div style="margin:8px 0 0; font-size:10px; color:#6b7280;">
-        Ref. SINPE: <strong>${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</strong> · Destino SINPE Móvil: <strong>${SINPE_CONFIG.phone}</strong> (${SINPE_CONFIG.holder})
-      </div>
     </div>
 
-    <!-- ══ 6. PIE — CLÁUSULAS LEGALES + FIRMA ══ -->
-    <div style="margin:24px 0 0; border-top:1px dashed #d1d5db; padding-top:16px;">
-      <div style="font-size:10px; color:#374151; line-height:1.6;">
-        <div style="margin:0 0 4px; font-weight:800; color:#4c1d95; text-transform:uppercase; letter-spacing:0.5px;">Cláusulas de Contratación</div>
-        <div style="margin:0;">1. El <strong>adelanto del 50% vía SINPE Móvil no es reembolsable</strong>: ${SINPE_CONFIG.policyText}</div>
-        <div style="margin:4px 0 0;">2. La <strong>agenda queda CONGELADA</strong> únicamente tras la verificación bancaria del adelanto del 50% y la firma digital del presente documento, conforme al Término de Congelamiento de Agenda.</div>
-        <div style="margin:4px 0 0;">3. Este documento constituye una <strong>cotización formal de validez comercial</strong> emitida por Arkik Productions; no constituye factura tributaria.</div>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-top:34px;">
-        <div style="text-align:center; flex:1;">
-          <div style="border-top:1.5px solid #4c1d95; padding-top:8px;">
-            <div style="font-size:11px; font-weight:800; color:#111827;">Arkik Productions</div>
-            <div style="font-size:9px; color:#6b7280;">Firma Autorizada</div>
-          </div>
-        </div>
-        <div style="font-size:9px; color:#9ca3af; text-align:right;">
-          Documento emitido por Arkik Productions<br>Granadilla, San José, Costa Rica · arkikproduc2023@gmail.com
-        </div>
-      </div>
+    <!-- ══ 6. RESUMEN FINANCIERO (derecha) ══ -->
+    <div style="margin:10px 0 0; display:flex; justify-content:flex-end;">
+      <table style="width:280px; border-collapse:collapse; font-size:12px;">
+        <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px 0; color:#475569;">Gran Total</td><td style="padding:6px 0; text-align:right; font-weight:800; font-variant-numeric:tabular-nums;">${formatCRC(b.granTotal)}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px 0; font-weight:800; color:#047857;">Adelanto SINPE (50%)</td><td style="padding:6px 0; text-align:right; font-weight:900; color:#047857; font-variant-numeric:tabular-nums;">${formatCRC(b.deposit50Amount)}</td></tr>
+        <tr><td style="padding:6px 0; font-weight:800; color:#be123c;">Saldo Pendiente (en sitio)</td><td style="padding:6px 0; text-align:right; font-weight:900; color:#be123c; font-variant-numeric:tabular-nums;">${formatCRC(b.remainingBalance)}</td></tr>
+      </table>
+    </div>
+    <div style="margin:6px 0 0; font-size:10px; color:#64748b; text-align:right;">
+      Ref. SINPE: <strong>${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</strong> · Destino SINPE Móvil: <strong>${SINPE_CONFIG.phone}</strong> (${SINPE_CONFIG.holder})
+    </div>
+
+    <!-- ══ 7. FOOTER COMPACTO: nota legal + política cancelación + contacto ══ -->
+    <div style="margin-top:auto; border-top:1px solid #e2e8f0; padding-top:8px; font-size:9px; color:#64748b; line-height:1.55;">
+      <div style="margin:0 0 3px; font-weight:800; color:#4c1d95; text-transform:uppercase; letter-spacing:0.5px;">Cláusulas de Contratación</div>
+      <div style="margin:0;">1. El <strong style="color:#334155;">adelanto del 50% vía SINPE Móvil no es reembolsable</strong>: ${SINPE_CONFIG.policyText}</div>
+      <div style="margin:3px 0 0;">2. La <strong style="color:#334155;">agenda queda congelada</strong> únicamente tras la verificación bancaria del adelanto del 50% y la firma digital del presente documento, conforme al Término de Congelamiento de Agenda.</div>
+      <div style="margin:3px 0 0;">3. Este documento constituye una <strong style="color:#334155;">cotización formal de validez comercial</strong> emitida por Arkik Productions; no constituye factura tributaria.</div>
+      <div style="margin:5px 0 0; color:#94a3b8;">Arkik Productions · Granadilla, San José, Costa Rica · +506 6227-4984 · arkikproduc2023@gmail.com · Documento emitido el ${today}</div>
     </div>
   </div>`;
 
@@ -3000,7 +3108,7 @@ async function saveExecutiveInvoicePDF(container, filename) {
 
   try {
     const opt = {
-      margin: 8,
+      margin: 0,
       filename: filename,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false },
@@ -3521,8 +3629,188 @@ function closeBankValidationModal() {
 }
 
 /**
+ * Reporte Ejecutivo del Propietario — plantilla corporativa off-screen A4.
+ * Construye un contenedor HTML desmontado con ancho fijo (800px), tipografía
+ * 'Inter' y paleta corporativa (slate-900 / púrpura) para rasterización 1:1
+ * por html2pdf.js o impresión nativa. NO se agrega al DOM: el ciclo de
+ * renderizado (exportOwnerReportPDF) lo monta en un wrapper oculto temporal.
+ *
+ * @param {string} periodFilter        Clave de período (hoy|semana|mes|anio|total).
+ * @param {Object} metrics             KPIs consolidados del período:
+ *   { total, deposits, pending, volume, occupancy } (importes en ₡, números).
+ * @param {Array}  bookingsList        Reservas del período (BookingStore.all()).
+ * @returns {HTMLDivElement}           Contenedor del reporte (detached).
+ */
+function buildOwnerExecutiveReportHtml(periodFilter, metrics, bookingsList) {
+  const range = periodRange(periodFilter);
+  const periodLabel = (PERIOD_FILTERS.find(f => f.key === periodFilter) || PERIOD_FILTERS[PERIOD_FILTERS.length - 1]).label;
+  const total = Number(metrics.total) || 0;
+  const deposits = Number(metrics.deposits) || 0;
+  const pending = Number(metrics.pending) || 0;
+  const volume = Number(metrics.volume) || 0;
+  const occupancy = Number(metrics.occupancy) || 0;
+  const bookings = Array.isArray(bookingsList) ? bookingsList : [];
+  const active = bookings.filter(b => b.status && b.status !== "cancelada");
+
+  // ── Timestamp real de emisión (formato es-CR con AM/PM) ──
+  const now = new Date();
+  const pad2 = n => String(n).padStart(2, "0");
+  const h24 = now.getHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const ampm = h24 >= 12 ? "PM" : "AM";
+  const timestamp = `${pad2(now.getDate())}/${pad2(now.getMonth() + 1)}/${now.getFullYear()} ${h12}:${pad2(now.getMinutes())} ${ampm}`;
+
+  // ── Sección 3: resumen operativo y logístico ──
+  const showHours = active.reduce((sum, b) => {
+    const svc = CATALOG_SERVICES.find(s => s.id === b.serviceId);
+    const mins = svc && svc.durationMinutes ? svc.durationMinutes : 120;
+    const extra = Number((b.extras && b.extras.extraHoursCount) || 0);
+    return sum + mins / 60 + extra;
+  }, 0);
+  let topFormat = "—";
+  if (active.length) {
+    const counts = {};
+    active.forEach(b => {
+      const k = String(b.serviceName || b.serviceId || "Evento");
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    topFormat = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] || "—";
+  }
+  const gamCount = active.filter(b => !isNonGamLocation(b.province, b.canton)).length;
+  const nonGamCount = active.length - gamCount;
+  const showHoursLabel = (Math.round(showHours * 10) / 10) + " h";
+
+  // ── Tabla: filas alternadas, números tabulares, separadores de miles ──
+  const statusChip = (status) => ({
+    confirmada: "background:#d1fae5;color:#065f46;",
+    cancelada: "background:#fee2e2;color:#991b1b;",
+    realizada: "background:#e0e7ff;color:#3730a3;"
+  }[status] || "background:#fef3c7;color:#92400e;");
+
+  const rowsHtml = bookings.map((b, i) => `
+    <tr style="border-bottom: 1px solid #e2e8f0;${i % 2 === 1 ? " background: #f8fafc;" : ""}">
+      <td style="padding: 6px 8px; font-family: ui-monospace, 'Cascadia Mono', monospace; font-weight: 700; color: #6d28d9; white-space: nowrap;" class="text-xs text-slate-700">${sanitizeInput(b.code)}</td>
+      <td style="padding: 6px 8px; white-space: nowrap;" class="text-xs text-slate-700">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td>
+      <td style="padding: 6px 8px;" class="text-xs text-slate-700"><strong>${sanitizeInput(b.clientName)}</strong><br><span style="font-size: 9px; color: #64748b;">${sanitizeInput(b.clientPhone || "")}</span></td>
+      <td style="padding: 6px 8px;" class="text-xs text-slate-700">${sanitizeInput(b.serviceName || "")}${b.eventType ? " · " + sanitizeInput(b.eventType) : ""}</td>
+      <td style="padding: 6px 8px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700;" class="text-xs text-slate-700">${formatCRC(b.granTotal)}</td>
+      <td style="padding: 6px 8px; text-align: right; font-variant-numeric: tabular-nums; color: #047857; font-weight: 700;" class="text-xs">${formatCRC(b.deposit50Amount)}</td>
+      <td style="padding: 6px 8px; text-align: right; font-variant-numeric: tabular-nums; color: #3730a3; font-weight: 700;" class="text-xs">${formatCRC(b.remainingBalance)}</td>
+      <td style="padding: 6px 8px; text-align: center;" class="text-xs"><span style="padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 9px; ${statusChip(b.status)}">${BOOKING_STATUSES[b.status] || sanitizeInput(b.status)}</span></td>
+    </tr>
+  `).join("");
+
+  // ── Tarjeta de KPI (clases Tailwind pedidas + inline para el fallback print) ──
+  const kpi = (label, value, extra, valueStyle) => `
+    <div class="border border-slate-200 bg-slate-50 p-4 rounded-xl"
+      style="border: 1px solid #e2e8f0; background: #f8fafc; padding: 16px; border-radius: 12px;">
+      <p style="margin: 0 0 6px 0; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b;">${label}</p>
+      <p style="margin: 0; ${valueStyle}">${value}</p>
+      ${extra ? `<p style="margin: 4px 0 0 0; font-size: 10px; color: #475569;">${extra}</p>` : ""}
+    </div>`;
+
+  const container = document.createElement("div");
+  container.className = "owner-exec-report";
+  container.style.width = "800px";
+  container.style.boxSizing = "border-box";
+  container.style.padding = "35px";
+  container.style.background = "#ffffff";
+  container.style.color = "#0f172a";
+  container.style.fontFamily = "'Inter', system-ui, sans-serif";
+  container.style.fontSize = "12px";
+  container.style.lineHeight = "1.5";
+
+  container.innerHTML = `
+    <!-- ══ HEADER CORPORATIVO ══ -->
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 2px solid #7c3aed; padding-bottom: 14px; margin-bottom: 18px;">
+      <div style="flex-shrink: 0;">
+        <img src="img/arkik_logo.jpg" alt="Arkik Productions"
+          style="height: 58px; width: auto; object-fit: contain; border-radius: 8px; border: 1px solid #e9d5ff;" />
+      </div>
+      <div style="text-align: right;">
+        <div style="margin: 0; font-size: 16px; font-weight: 900; color: #4c1d95; letter-spacing: 0.3px; line-height: 1.2;">REPORTE EJECUTIVO Y OPERATIVO DE VENTAS</div>
+        <div style="margin: 8px 0 0 0;">
+          <span style="display: inline-block; padding: 3px 12px; border-radius: 999px; background: #f3e8ff; border: 1px solid #d8b4fe; color: #6d28d9; font-size: 11px; font-weight: 800;">⏱ ${sanitizeInput(periodLabel)} · ${range.start} → ${range.end}</span>
+        </div>
+        <div style="margin: 6px 0 0 0; font-size: 10px; color: #475569;">Fecha y Hora de Emisión: <strong style="color: #1e293b;">${timestamp}</strong></div>
+        <div style="margin: 2px 0 0 0; font-size: 10px; color: #475569;">Emisor: <strong style="color: #1e293b;">Propietario: Juan José Ramírez Chaves</strong></div>
+      </div>
+    </div>
+
+    <!-- ══ SECCIÓN 1: RESUMEN EJECUTIVO DE KPIs ══ -->
+    <div style="margin-bottom: 18px;">
+      <div style="margin: 0 0 8px 0; font-size: 10px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px;">1. Resumen Ejecutivo de KPIs</div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+        ${kpi("Facturación Total Proyectada", formatCRC(total), "Suma de cotizaciones del período",
+          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 22px; font-weight: 800; color: #0f172a;")}
+        ${kpi("Adelantos Cobrados (50% SINPE)", formatCRC(deposits), "Depósitos verificados & pendientes",
+          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #047857;")}
+        ${kpi("Saldos Pendientes por Cobrar", formatCRC(pending), "A cobrar en sitio el día del evento",
+          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #3730a3;")}
+        ${kpi("Volumen de Reservas", String(volume), `Tasa de Ocupación: ${occupancy}% · Máx. ${DEFAULT_MAX_EVENTS_PER_DAY}/día`,
+          "font-size: 22px; font-weight: 900; color: #0f172a;")}
+      </div>
+    </div>
+
+    <!-- ══ SECCIÓN 2: DESGLOSE TABULAR ══ -->
+    <div style="margin-bottom: 18px;">
+      <div style="margin: 0 0 8px 0; font-size: 10px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px;">2. Desglose Tabular de Reservas y Eventos</div>
+      <table class="w-full" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <thead>
+          <tr style="background: #0f172a; color: #ffffff;">
+            <th style="padding: 8px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Código (ARK)</th>
+            <th style="padding: 8px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Fecha / Hora</th>
+            <th style="padding: 8px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Cliente</th>
+            <th style="padding: 8px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Formato / Evento</th>
+            <th style="padding: 8px; text-align: right; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Total ₡</th>
+            <th style="padding: 8px; text-align: right; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Adelanto 50%</th>
+            <th style="padding: 8px; text-align: right; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Saldo ₡</th>
+            <th style="padding: 8px; text-align: center; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml || '<tr><td colspan="8" style="padding: 14px; text-align: center; color: #94a3b8;">No hay reservas registradas en este período.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ══ SECCIÓN 3: RESUMEN OPERATIVO Y LOGÍSTICO ══ -->
+    <div style="margin-bottom: 18px;">
+      <div style="margin: 0 0 8px 0; font-size: 10px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px;">3. Resumen Operativo y Logístico</div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #f8fafc;">
+          <p style="margin: 0; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b;">⏱ Total Horas de Show</p>
+          <p style="margin: 6px 0 0 0; font-size: 20px; font-weight: 900; color: #0f172a;">${showHoursLabel}</p>
+          <p style="margin: 3px 0 0 0; font-size: 10px; color: #475569;">Incluye horas extra y DJ</p>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #f8fafc;">
+          <p style="margin: 0; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b;">🎤 Formato Más Solicitado</p>
+          <p style="margin: 6px 0 0 0; font-size: 16px; font-weight: 900; color: #0f172a;">${sanitizeInput(String(topFormat))}</p>
+          <p style="margin: 3px 0 0 0; font-size: 10px; color: #475569;">${active.length ? "Demanda del período" : ""}</p>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #f8fafc;">
+          <p style="margin: 0; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b;">📍 Distribución GAM / Fuera</p>
+          <p style="margin: 6px 0 0 0; font-size: 16px; font-weight: 900; color: #0f172a;">${gamCount} GAM · ${nonGamCount} Fuera</p>
+          <p style="margin: 3px 0 0 0; font-size: 10px; color: #475569;">${active.length ? "Fuera de GAM suma 12% de viáticos" : ""}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ FOOTER INSTITUCIONAL ══ -->
+    <div style="margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 10px; font-size: 9px; color: #64748b; line-height: 1.6;">
+      <div style="font-weight: 800; color: #4c1d95; text-transform: uppercase; letter-spacing: 0.5px;">Declaración de Confidencialidad</div>
+      <div>Este documento contiene información financiera y operativa de Arkik Productions y está destinado exclusivamente al Propietario. Prohibida su reproducción o distribución sin autorización expresa.</div>
+      <div style="margin-top: 6px; text-align: right; color: #94a3b8;">Arkik Productions © 2026 - Documento Financiero Interno</div>
+    </div>
+  `;
+
+  return container;
+}
+
+/**
  * Exporta el reporte ejecutivo integral en PDF para el Propietario (Juan José Ramírez).
- * Consciente del período seleccionado en el Portal de Staff.
+ * Flujo seguro: plantilla off-screen → pre-carga del logo → html2pdf A4 portrait
+ * con paginación restringida y limpieza prometida del DOM temporal.
  */
 function exportOwnerReportPDF() {
   const filterKey = AdminModule.periodFilter || "total";
@@ -3542,102 +3830,62 @@ function exportOwnerReportPDF() {
   const capacity = spanDays * DEFAULT_MAX_EVENTS_PER_DAY;
   const occupancy = Math.min(100, Math.round((active.length / capacity) * 100));
 
-  const container = document.createElement("div");
-  container.style.padding = "24px";
-  container.style.fontFamily = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-  container.style.color = "#111827";
-  container.style.background = "#ffffff";
-  container.style.maxWidth = "900px";
-  container.style.margin = "0 auto";
+  // 1. Construcción de la plantilla corporativa (offscreen, detached)
+  const container = buildOwnerExecutiveReportHtml(filterKey, {
+    total, deposits, pending,
+    volume: active.length,
+    occupancy
+  }, bookings);
 
-  const rowsHtml = bookings.map(b => `
-    <tr style="border-bottom: 1px solid #e5e7eb; font-size: 11px;">
-      <td style="padding: 6px; font-family: monospace; font-weight: 700;">${b.code}</td>
-      <td style="padding: 6px;"><strong>${sanitizeInput(b.clientName)}</strong><br><span style="font-size: 9px; color: #6b7280;">${sanitizeInput(b.clientPhone)}</span></td>
-      <td style="padding: 6px;">${sanitizeInput(b.serviceName)}</td>
-      <td style="padding: 6px;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + b.selectedTime : ""}</td>
-      <td style="padding: 6px;">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</td>
-      <td style="padding: 6px; text-align: right; font-weight: 700;">${formatCRC(b.granTotal)}</td>
-      <td style="padding: 6px; text-align: right; color: #059669; font-weight: 700;">${formatCRC(b.deposit50Amount)}</td>
-      <td style="padding: 6px; text-align: center;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; ${b.status === "confirmada" ? "background:#d1fae5;color:#065f46;" : (b.status === "cancelada" ? "background:#fee2e2;color:#991b1b;" : (b.status === "realizada" ? "background:#e0e7ff;color:#3730a3;" : "background:#fef3c7;color:#92400e;"))}">${BOOKING_STATUSES[b.status] || b.status}</span></td>
-    </tr>
-  `).join("");
-
-  container.innerHTML = `
-    <div style="border-bottom: 2px solid #6d28d9; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <h1 style="margin: 0; font-size: 22px; color: #4c1d95; font-weight: 800;">ARKIK PRODUCTIONS</h1>
-        <p style="margin: 2px 0 0 0; font-size: 12px; color: #6b7280;">Reporte Ejecutivo de Operaciones y Flujo Financiero</p>
-        <p style="margin: 2px 0 0 0; font-size: 11px; color: #7c3aed; font-weight: 700;">Período: ${periodLabel} · ${range.start} → ${range.end}</p>
-      </div>
-      <div style="text-align: right; font-size: 11px; color: #4b5563;">
-        <p style="margin: 0;"><strong>Propietario:</strong> Juan José Ramírez Chaves</p>
-        <p style="margin: 2px 0 0 0;">Generado: ${new Date().toLocaleString("es-CR")}</p>
-      </div>
-    </div>
-
-    <!-- KPIs -->
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px;">
-      <div style="background: #f3e8ff; border: 1px solid #d8b4fe; padding: 10px; border-radius: 8px;">
-        <span style="font-size: 10px; color: #6b21a8; font-weight: 700; text-transform: uppercase;">Eventos Activos</span>
-        <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 800; color: #581c87;">${active.length}</p>
-      </div>
-      <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 10px; border-radius: 8px;">
-        <span style="font-size: 10px; color: #065f46; font-weight: 700; text-transform: uppercase;">Total Cotizado</span>
-        <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 800; color: #064e3b;">${formatCRC(total)}</p>
-      </div>
-      <div style="background: #e0f2fe; border: 1px solid #bae6fd; padding: 10px; border-radius: 8px;">
-        <span style="font-size: 10px; color: #075985; font-weight: 700; text-transform: uppercase;">Adelantos 50%</span>
-        <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 800; color: #0c4a6e;">${formatCRC(deposits)}</p>
-      </div>
-      <div style="background: #fdf2f8; border: 1px solid #fbcfe8; padding: 10px; border-radius: 8px;">
-        <span style="font-size: 10px; color: #9d174d; font-weight: 700; text-transform: uppercase;">Saldo por Cobrar</span>
-        <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 800; color: #831843;">${formatCRC(pending)}</p>
-      </div>
-    </div>
-
-    <!-- Tabla -->
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;">
-      <thead style="background: #f3f4f6; border-bottom: 2px solid #d1d5db;">
-        <tr>
-          <th style="padding: 8px; text-align: left;">Código</th>
-          <th style="padding: 8px; text-align: left;">Cliente</th>
-          <th style="padding: 8px; text-align: left;">Formato</th>
-          <th style="padding: 8px; text-align: left;">Fecha</th>
-          <th style="padding: 8px; text-align: left;">Ubicación</th>
-          <th style="padding: 8px; text-align: right;">Gran Total</th>
-          <th style="padding: 8px; text-align: right;">Adelanto (50%)</th>
-          <th style="padding: 8px; text-align: center;">Estado</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rowsHtml || '<tr><td colspan="8" style="padding: 12px; text-align: center; color: #9ca3af;">No hay reservas registradas en este período.</td></tr>'}
-      </tbody>
-    </table>
-
-    <div style="border-top: 1px solid #e5e7eb; padding-top: 10px; font-size: 10px; color: #9ca3af; text-align: right;">
-      Ocupación del período: ${occupancy}% (máx. ${DEFAULT_MAX_EVENTS_PER_DAY} eventos/día) · Arkik Productions Costa Rica · Granadilla, San José
-    </div>
-  `;
+  // 2. Inserción Off-Screen: wrapper temporal invisible (el contenedor NUNCA
+  //    lleva offsets; html2pdf.js clona el nodo fuente conservando estilos).
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "absolute";
+  wrapper.style.left = "-9999px";
+  wrapper.style.top = "0";
+  wrapper.style.zIndex = "-1";
+  wrapper.style.margin = "0";
+  wrapper.style.padding = "0";
+  wrapper.appendChild(container);
+  document.body.appendChild(wrapper);
 
   showToast("Generando reporte ejecutivo PDF...", "info");
 
-  if (window.html2pdf) {
-    const opt = {
-      margin: 8,
-      filename: `Arkik_Reporte_Ejecutivo_${periodLabel.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
-    };
-    window.html2pdf().set(opt).from(container).save().then(() => {
+  const cleanup = () => {
+    if (wrapper && wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+  };
+
+  if (!window.html2pdf) {
+    cleanup();
+    printFallback(container.innerHTML, `Reporte_Ejecutivo_${new Date().toISOString().slice(0, 10)}`);
+    return;
+  }
+
+  // 3. Pre-carga de imágenes (logo) dentro del DOM real antes de rasterizar
+  preloadExecutiveImages(container)
+    .then(() => {
+      // 4. Configuración del motor html2pdf.js
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `Arkik_Reporte_Ejecutivo_${filterKey}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      return window.html2pdf().set(opt).from(container).save();
+    })
+    .then(() => {
+      // 5. Limpieza prometida del DOM temporal
+      cleanup();
       showToast("¡Reporte ejecutivo PDF exportado con éxito!", "success");
-    }).catch(() => {
+    })
+    .catch((err) => {
+      console.warn("PDF export fallback:", err);
+      cleanup();
+      showToast("Error al exportar PDF, abriendo vista de impresión.", "error");
       printFallback(container.innerHTML, `Reporte_Ejecutivo_${new Date().toISOString().slice(0, 10)}`);
     });
-  } else {
-    printFallback(container.innerHTML, `Reporte_Ejecutivo_${new Date().toISOString().slice(0, 10)}`);
-  }
 }
 
 function printFallback(htmlContent, title) {
@@ -3652,20 +3900,25 @@ function printFallback(htmlContent, title) {
       <head>
         <title>${title}</title>
         <style>
-          @page { size: A4 portrait; margin: 10mm; }
-          html, body { background: #ffffff !important; color: #111827 !important; }
-          body { font-family: 'Inter', 'Plus Jakarta Sans', sans-serif; margin: 0; padding: 16px; color-scheme: light; }
-          .ark-pre-invoice,
-          .ark-pre-invoice * { box-sizing: border-box; }
-          .ark-pre-invoice {
+          @page { size: A4 portrait; margin: 0; }
+          html, body { background: #ffffff !important; color: #0f172a !important; }
+          body { font-family: 'Inter', system-ui, sans-serif; margin: 0; padding: 0; color-scheme: light; }
+          .pdf-container,
+          .pdf-container * { box-sizing: border-box; }
+          .pdf-container {
+            width: 210mm;
+            min-height: 297mm;
+            max-height: 297mm;
+            padding: 12mm 15mm;
             background: #ffffff !important;
-            color: #111827 !important;
-            width: 100%;
-            max-width: 800px;
-            margin: 0 auto;
+            color: #0f172a !important;
+            font-family: 'Inter', system-ui, sans-serif;
             font-variant-numeric: tabular-nums;
+            overflow: hidden;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
-          .ark-pre-invoice img { max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .pdf-container img { max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @media print { button { display: none; } }
         </style>
       </head>
