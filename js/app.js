@@ -1659,9 +1659,9 @@ const AdminModule = {
     if (!box) return;
     box.innerHTML = PERIOD_FILTERS.map(f => {
       const active = f.key === this.periodFilter
-        ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] border border-purple-400/30"
-        : "bg-white/[0.03] text-slate-400 hover:text-white border border-white/5 hover:border-purple-500/20";
-      return `<button type="button" data-period="${f.key}" class="snap-start shrink-0 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all duration-300 whitespace-nowrap ${active}">${f.label}</button>`;
+        ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/50 font-bold scale-[1.02]"
+        : "bg-white/[0.04] text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white hover:border-purple-500/30";
+      return `<button type="button" data-period="${f.key}" class="pill-btn w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-center flex items-center justify-center min-h-[42px] select-none tracking-tight ${active}">${f.label}</button>`;
     }).join("");
   },
 

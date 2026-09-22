@@ -1816,6 +1816,24 @@ footer > .max-w-7xl {
 .pill-btn:active {
   transform: scale(0.96);
 }
+
+/* Filtros temporales del Panel de Control: grilla adaptable 2/3/5 columnas.
+   Los botones de la grilla NO son swipeables: se desactiva el scroll-snap y el
+   encogido flex que recortaban los labels en móviles pequeños (<480px). */
+#portal-period-filters .pill-btn {
+  flex-shrink: 1;
+  scroll-snap-align: none;
+  min-height: 42px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 479px) {
+  #portal-period-filters .pill-btn {
+    font-size: 11px;
+    padding: 10px 6px;
+  }
+}
 .pill-btn--active {
   color: #fff;
   font-weight: 500;

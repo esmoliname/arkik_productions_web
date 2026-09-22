@@ -19,6 +19,9 @@
         darkMode: 'class',
         theme: {
           extend: {
+            screens: {
+              xs: '480px'
+            },
             colors: {
               brand: {
                 dark: '#0b0914',
@@ -443,34 +446,34 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div class="glass-panel p-6 rounded-2xl relative">
+          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
-              class="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-500/40 text-purple-300 text-lg font-bold flex items-center justify-center mb-4">1</span>
+              class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">1</span>
             <h3 class="text-lg font-bold text-white mb-2">Selección & Extras</h3>
             <p class="text-xs text-gray-400 leading-relaxed">Elige tu formato (2h) y suma horas adicionales (50% base),
               DJ
               o subwoofers.</p>
           </div>
 
-          <div class="glass-panel p-6 rounded-2xl relative">
+          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
-              class="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-500/40 text-purple-300 text-lg font-bold flex items-center justify-center mb-4">2</span>
+              class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">2</span>
             <h3 class="text-lg font-bold text-white mb-2">Ubicación & Viáticos</h3>
             <p class="text-xs text-gray-400 leading-relaxed">Ingresa tu cantón y provincia. Si es fuera del GAM, se
               calcula un 12% automático de transporte.</p>
           </div>
 
-          <div class="glass-panel p-6 rounded-2xl relative">
+          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
-              class="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-lg font-bold flex items-center justify-center mb-4">3</span>
+              class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">3</span>
             <h3 class="text-lg font-bold text-white mb-2">SINPE 50% Adelanto</h3>
             <p class="text-xs text-gray-400 leading-relaxed">Transfiere el 50% del total al +506 6227-4984 (Juan José
               Ramírez Chaves) e ingresa la referencia.</p>
           </div>
 
-          <div class="glass-panel p-6 rounded-2xl relative">
+          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
-              class="w-10 h-10 rounded-xl bg-pink-600/30 border border-pink-500/40 text-pink-300 text-lg font-bold flex items-center justify-center mb-4">4</span>
+              class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">4</span>
             <h3 class="text-lg font-bold text-white mb-2">Voucher WhatsApp</h3>
             <p class="text-xs text-gray-400 leading-relaxed">Abre WhatsApp con el desglose completo del contrato para
               confirmar con el equipo.</p>
@@ -2054,13 +2057,13 @@
       <!-- Badge de propietario + timer de sesión (píldora esmerilada) -->
       <div class="shrink-0 px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0f0c1a]">
         <div class="flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white/[0.04] border border-purple-500/20 text-xs text-slate-300">
-          <span class="flex items-center gap-2 min-w-0">
+          <span class="flex flex-wrap items-center gap-2 min-w-0">
             <span id="admin-role-dot" class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-            <span id="admin-role-badge" class="text-white font-medium truncate">Propietario</span>
+            <span id="admin-role-badge" class="text-white font-medium">Propietario</span>
           </span>
           <span class="hidden xs:inline text-slate-400">Sesión autenticada en memoria segura</span>
           <span id="admin-session-timer" class="admin-session-timer"></span>
-          <span class="text-slate-400 font-mono text-[11px] whitespace-nowrap">ID: <span
+          <span class="text-slate-400 font-mono text-[11px]">ID: <span
               id="admin-session-id" class="text-purple-300"></span></span>
         </div>
       </div>
@@ -2076,8 +2079,8 @@
               <p class="text-[11px] text-gray-500">KPIs recalibrados dinámicamente por período seleccionado.</p>
             </div>
             <button type="button" id="btnExportPDF" onclick="exportOwnerReportPDF()"
-              class="admin-act-btn admin-act-btn--confirm flex items-center gap-1.5 text-xs py-2 px-4 shadow-lg">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all active:scale-95 my-2">
+              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                 </path>
@@ -2086,9 +2089,9 @@
             </button>
           </div>
 
-          <!-- Filtro Temporal de Analítica -->
+          <!-- Filtro Temporal de Analítica (grilla adaptable 2/3/5 columnas) -->
           <div id="portal-period-filters"
-            class="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 px-1 w-full snap-x">
+            class="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-5 gap-2 w-full my-3 p-1 bg-black/30 backdrop-blur-md rounded-2xl border border-white/10">
           </div>
 
           <!-- KPI Grid Financiero (Fintech Glass) -->
