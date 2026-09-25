@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0914">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Arkik Productions | Producción Musical y Alquiler de Sonido en Costa Rica</title>
+  <title>Arkik Productions | Producción Musical y Sonido en Costa Rica</title>
   <meta name="description"
     content="Automatización de reservas de música en vivo (Banda RT, Trío, Dúo, Solista) y alquiler de sonido profesional en Costa Rica. Cotizador dinámico y SINPE Móvil al 50%.">
 
@@ -117,9 +117,9 @@
           <div class="relative group">
             <button type="button" onclick="openAdminLoginModal()" aria-label="Staff Access (Ctrl + Shift + A)"
               title="Staff Access (Ctrl + Shift + A)"
-              class="px-3 py-1.5 sm:px-3.5 sm:py-2 min-h-[44px] rounded-xl bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-semibold text-gray-300 hover:text-white transition-all flex items-center gap-1.5 shadow-sm hover:shadow-purple-500/20 active:scale-95">
-              <svg class="w-4 h-4 flex-shrink-0 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                aria-hidden="true">
+              class="group flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white/[0.03] backdrop-blur-md border border-white/10 text-slate-300 font-semibold transition-all duration-300 hover:bg-white/[0.08] hover:border-purple-500/40 hover:text-white hover:shadow-[0_0_20px_rgba(168,85,247,0.2)] hover:-translate-y-0.5 min-h-[44px]">
+              <svg class="w-5 h-5 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
                 </path>
@@ -132,7 +132,10 @@
           </div>
 
           <button onclick="openBookingModal(1)"
-            class="py-1.5 px-3 sm:py-3 sm:px-5 min-h-[44px] rounded-xl font-bold text-xs text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-900/50 hover:shadow-purple-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all shrink-0">
+            class="group relative flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] overflow-hidden min-h-[44px] shrink-0">
+            <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
+            </svg>
             Cotizar Ahora
           </button>
         </div>
@@ -184,7 +187,8 @@
     </section>
 
     <!-- Garantías & Valor Percibido (Full-Bleed Bar) -->
-    <section id="garantias" class="w-full relative z-20 py-8 sm:py-10 bg-[#07040e]">
+    <section id="garantias"
+      class="w-full relative z-20 py-8 sm:py-10 bg-gradient-to-b from-transparent via-[#0c071a]/60 to-[#07040e]">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
@@ -262,6 +266,11 @@
 
     <!-- Nuestra Esencia / Quiénes Somos (Full-Bleed Container) -->
     <section id="esencia" class="w-full relative z-10 py-12 sm:py-16 md:py-24">
+      <!-- Top Fade Overlay: difumina la entrada del halo púrpura de la sphere-card
+           para que el fondo fluya continuo desde las tarjetas de beneficios (#garantias) -->
+      <div
+        class="absolute top-0 left-0 right-0 h-16 sm:h-20 bg-gradient-to-b from-[#07040e] to-transparent pointer-events-none"
+        aria-hidden="true"></div>
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div
           class="esencia-sphere-card relative overflow-hidden rounded-3xl p-8 md:p-12 my-4 sm:my-8 border border-purple-500/30 shadow-2xl">
@@ -278,8 +287,7 @@
               <!-- Col 1: Nuestra Esencia — copywriting premium sobre cristal ultralimpio -->
               <div
                 class="esencia-inner-card bg-[#0c0818]/95 border border-purple-500/35 rounded-3xl p-6 md:p-10 relative z-10 shadow-[0_0_35px_rgba(147,51,234,0.15)]">
-                <span
-                  class="block text-purple-400 font-extrabold text-xs tracking-widest uppercase mb-2">Nuestra
+                <span class="block text-purple-400 font-extrabold text-xs tracking-widest uppercase mb-2">Nuestra
                   Esencia</span>
                 <h2 class="text-white font-heading font-bold text-2xl md:text-3xl tracking-tight leading-snug mb-4">
                   Experiencias musicales inolvidables con sonido de alta gama
@@ -446,7 +454,8 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+          <div
+            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">1</span>
             <h3 class="text-lg font-bold text-white mb-2">Selección & Extras</h3>
@@ -455,7 +464,8 @@
               o subwoofers.</p>
           </div>
 
-          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+          <div
+            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">2</span>
             <h3 class="text-lg font-bold text-white mb-2">Ubicación & Viáticos</h3>
@@ -463,7 +473,8 @@
               calcula un 12% automático de transporte.</p>
           </div>
 
-          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+          <div
+            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">3</span>
             <h3 class="text-lg font-bold text-white mb-2">SINPE 50% Adelanto</h3>
@@ -471,7 +482,8 @@
               Ramírez Chaves) e ingresa la referencia.</p>
           </div>
 
-          <div class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+          <div
+            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">4</span>
             <h3 class="text-lg font-bold text-white mb-2">Voucher WhatsApp</h3>
@@ -2014,6 +2026,9 @@
         </div>
       </div>
 
+      <!-- Honeypot anti-bot: people never see it, bots fill it -->
+      <input type="text" id="login-website-trap" name="website_trap" tabindex="-1" autocomplete="off" aria-hidden="true" style="opacity: 0; position: absolute; top: -9999px; left: -9999px;" />
+
       <!-- Feedback & Silent Lockout Inline Chip -->
       <p id="admin-auth-error" class="hidden text-xs text-red-400 text-center mt-2.5 font-medium"></p>
       <div id="admin-lockout-box"
@@ -2035,7 +2050,8 @@
     class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
     <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
 
-      <div class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
+      <div
+        class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
         <div class="min-w-0">
           <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Sistema de Operaciones
             Ejecutivas</span>
@@ -2056,15 +2072,16 @@
 
       <!-- Badge de propietario + timer de sesión (píldora esmerilada) -->
       <div class="shrink-0 px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0f0c1a]">
-        <div class="flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white/[0.04] border border-purple-500/20 text-xs text-slate-300">
+        <div
+          class="flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white/[0.04] border border-purple-500/20 text-xs text-slate-300">
           <span class="flex flex-wrap items-center gap-2 min-w-0">
             <span id="admin-role-dot" class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
             <span id="admin-role-badge" class="text-white font-medium">Propietario</span>
           </span>
           <span class="hidden xs:inline text-slate-400">Sesión autenticada en memoria segura</span>
           <span id="admin-session-timer" class="admin-session-timer"></span>
-          <span class="text-slate-400 font-mono text-[11px]">ID: <span
-              id="admin-session-id" class="text-purple-300"></span></span>
+          <span class="text-slate-400 font-mono text-[11px]">ID: <span id="admin-session-id"
+              class="text-purple-300"></span></span>
         </div>
       </div>
 

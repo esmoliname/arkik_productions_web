@@ -685,15 +685,20 @@ const BookingStore = {
 // 5. SECURITY MODULE (PIN hasheado + Anti fuerza bruta)
 // ============================================================
 
+// Retraso anti-timing: jitter aleatorio 800-1500 ms antes de responder un error de autenticación
+function authJitterDelay() {
+  return new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 700));
+}
+
 const SecurityModule = {
   _data: null,
 
   load() {
     try {
-      this._data = safeParse(STORAGE_KEYS.admin, { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0 });
+      this._data = safeParse(STORAGE_KEYS.admin, { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 });
     } catch (e) {
       console.warn('SecurityModule.load corruption recovered:', e.message || e);
-      this._data = { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0 };
+      this._data = { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 };
     }
   },
 
@@ -717,13 +722,19 @@ const SecurityModule = {
     if (inputHash === expected) {
       this._data.attempts = 0;
       this._data.lockoutUntil = 0;
+      this._data.lockoutLevel = 0;
       this.persist();
       return { ok: true };
     }
 
     this._data.attempts = (this._data.attempts || 0) + 1;
     if (this._data.attempts >= ADMIN_CONFIG.maxAttempts) {
-      this._data.lockoutUntil = now + ADMIN_CONFIG.lockoutMs;
+      const level = this._data.lockoutLevel || 0;
+      const base = ADMIN_CONFIG.lockoutMs || 300000;
+      const max = ADMIN_CONFIG.maxLockoutMs || 3600000;
+      const wait = Math.min(base * Math.pow(2, level), max);
+      this._data.lockoutUntil = now + wait;
+      this._data.lockoutLevel = level + 1;
       this._data.attempts = 0;
     }
     this.persist();
@@ -1259,8 +1270,11 @@ const CalendarModule = {
 const ADMIN_SESSION = {
   role: "",
   token: null,
+  createdAt: 0,
+  lastActivity: 0,
   inactivityTimer: null,
-  lockoutTimer: null
+  lockoutTimer: null,
+  integrityTimer: null
 };
 
 // Filtros temporales de analítica (KPIs dinámicos)
@@ -1422,6 +1436,7 @@ const AdminModule = {
     const sid = document.getElementById("admin-session-id");
     if (sid) sid.textContent = ADMIN_SESSION.token ? ADMIN_SESSION.token.replace("ARK-", "") : "—";
     this.startInactivityTimer();
+    this.startIntegrityMonitor();
     this.renderDashboard();
   },
 
@@ -1505,6 +1520,12 @@ const AdminModule = {
   async attemptLogin() {
     const pin = document.getElementById("admin-pin");
     const value = pin ? pin.value.trim().replace(/\D/g, "") : "";
+    // Honeypot: si un bot completó el campo invisible, descartar silenciosamente (sin error, sin contador)
+    const trap = document.getElementById("login-website-trap");
+    if (trap && trap.value.trim() !== "") {
+      await new Promise((r) => setTimeout(r, 1200));
+      return;
+    }
     if (!this.role) {
       this.showAuthError("Seleccione un rol de acceso.");
       return;
@@ -1519,6 +1540,9 @@ const AdminModule = {
     if (result.ok) {
       ADMIN_SESSION.role = this.role;
       ADMIN_SESSION.token = generateBookingCode();
+      ADMIN_SESSION.createdAt = Date.now();
+      ADMIN_SESSION.lastActivity = Date.now();
+      this.persistSession();
       AuditLog.recordLogin(this.role);
       this.ownerFilter = "todas";
       this.periodFilter = "total";
@@ -1527,12 +1551,12 @@ const AdminModule = {
       return;
     }
     if (result.locked) {
+      await authJitterDelay();
       this.startLockoutCountdown(result.waitMs);
       return;
     }
-    this.showAuthError(result.remaining > 0
-      ? `PIN incorrecto. Intentos restantes: ${result.remaining}.`
-      : "PIN incorrecto.");
+    await authJitterDelay();
+    this.showAuthError("Credenciales inválidas o no autorizadas.");
     if (pin) {
       pin.value = "";
       pin.focus();
@@ -1548,7 +1572,12 @@ const AdminModule = {
     box.classList.remove("hidden");
     let remaining = Math.ceil(waitMs / 1000);
     const tick = () => {
-      if (msg) msg.textContent = `Bloqueado de seguridad: ${String(Math.max(0, remaining)).padStart(2, "0")}s`;
+      if (msg) {
+        const total = Math.max(0, remaining);
+        const mm = String(Math.floor(total / 60)).padStart(2, "0");
+        const ss = String(total % 60).padStart(2, "0");
+        msg.textContent = `Sistema bloqueado. Reintente en ${mm}:${ss}`;
+      }
       remaining -= 1;
       if (remaining < 0) {
         clearInterval(this.lockoutTimer);
@@ -1600,8 +1629,88 @@ const AdminModule = {
     if (timerEl) timerEl.textContent = "";
   },
 
+  // ---- Sesión durable: sessionStorage + verificación de integridad ----
+
+  persistSession() {
+    try {
+      if (!ADMIN_SESSION.token || !ADMIN_SESSION.role) return;
+      const data = {
+        role: ADMIN_SESSION.role,
+        token: ADMIN_SESSION.token,
+        createdAt: ADMIN_SESSION.createdAt || Date.now(),
+        lastActivity: Date.now()
+      };
+      data.sig = fnv1aHex(`${data.role}|${data.token}|${data.createdAt}`);
+      sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(data));
+    } catch (err) { /* storage no disponible */ }
+  },
+
+  clearSession() {
+    try { sessionStorage.removeItem(STORAGE_KEYS.session); } catch (err) { /* noop */ }
+  },
+
+  touchActivity() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEYS.session);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") return;
+      data.lastActivity = Date.now();
+      sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(data));
+    } catch (err) { /* noop */ }
+  },
+
+  verifySessionIntegrity() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEYS.session);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || !data.role || !data.token || !data.createdAt) return false;
+      const expected = fnv1aHex(`${data.role}|${data.token}|${data.createdAt}`);
+      if (data.sig !== expected) return false;
+      const idle = Date.now() - (data.lastActivity || data.createdAt);
+      if (idle > (ADMIN_CONFIG.sessionTimeoutMs || 900000)) return false;
+      return true;
+    } catch (err) { return false; }
+  },
+
+  restoreSession() {
+    if (!this.verifySessionIntegrity()) return;
+    try {
+      const data = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.session));
+      ADMIN_SESSION.role = data.role;
+      ADMIN_SESSION.token = data.token;
+      ADMIN_SESSION.createdAt = data.createdAt;
+      ADMIN_SESSION.lastActivity = data.lastActivity;
+      this.role = data.role;
+      this.openPortal();
+    } catch (err) { /* noop */ }
+  },
+
+  startIntegrityMonitor() {
+    this.clearIntegrityMonitor();
+    this.integrityTimer = setInterval(() => {
+      if (!this.verifySessionIntegrity()) {
+        this.clearIntegrityMonitor();
+        showToast("Sesión inválida o expirada. Vuelva a autenticarse.", "info");
+        this.terminateSession();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        if (window.location.hash) window.location.hash = "";
+      }
+    }, 60000);
+  },
+
+  clearIntegrityMonitor() {
+    if (this.integrityTimer) {
+      clearInterval(this.integrityTimer);
+      this.integrityTimer = null;
+    }
+  },
+
   terminateSession() {
     this.clearInactivityTimer();
+    this.clearIntegrityMonitor();
+    this.clearSession();
     this.resetLockoutState();
     ADMIN_SESSION.role = "";
     ADMIN_SESSION.token = null;
@@ -4121,6 +4230,7 @@ function initApp() {
   initHeroStringsEffect();
   window.addEventListener("hashchange", handleHashRoute);
   handleHashRoute();
+  AdminModule.restoreSession();
 }
 
 // ============================================================
@@ -4786,8 +4896,8 @@ function setupEventListeners() {
     portalModal.addEventListener("click", (e) => {
       if (e.target === portalModal) AdminModule.closePortal();
     });
-    portalModal.addEventListener("pointerdown", () => AdminModule.startInactivityTimer());
-    portalModal.addEventListener("keydown", () => AdminModule.startInactivityTimer());
+    portalModal.addEventListener("pointerdown", () => { AdminModule.startInactivityTimer(); AdminModule.touchActivity(); });
+    portalModal.addEventListener("keydown", () => { AdminModule.startInactivityTimer(); AdminModule.touchActivity(); });
   }
   const logoutBtn = document.getElementById("admin-logout");
   if (logoutBtn) logoutBtn.addEventListener("click", () => AdminModule.logout());

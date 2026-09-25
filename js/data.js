@@ -398,7 +398,8 @@ const ADMIN_CONFIG = {
     }
   },
   maxAttempts: 3,
-  lockoutMs: 30000,
+  lockoutMs: 300000,
+  maxLockoutMs: 3600000,
   sessionTimeoutMs: 900000,
   storageKey: "arkik_admin_auth_v1"
 };
@@ -417,6 +418,7 @@ const STORAGE_KEYS = {
   gallery: "arkik_media_v1",
   customConfig: "arkik_custom_config_v1",
   admin: ADMIN_CONFIG.storageKey,
+  session: "arkik_admin_session_v1",
   audit: "arkik_audit_v1"
 };
 
