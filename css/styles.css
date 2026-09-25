@@ -1351,32 +1351,47 @@ footer > .max-w-7xl {
 }
 
 /* ============================================================
-   SEGMENTED CONTROL TÁCTIL (Login del Staff) — iOS/macOS
-   Píldora activa deslizante con vidrio obsidiana y borde violeta.
+   SEGMENTED CONTROL TÁCTIL (Consola Ejecutiva) — iOS/macOS
+   Píldora activa con vidrio obsidiana y borde violeta.
+
+   Alcance #adminLoginModal a propósito: AdminModule.setRole()
+   alterna clases utilitarias (text-white / text-gray-400 /
+   font-semibold / font-medium) que tienen la MISMA especificidad
+   que un utility de Tailwind (0,1,0), y el CDN JIT inyecta su
+   <style> en un orden no garantizado respecto a esta hoja. El id
+   eleva la especificidad a (1,1,0) y vuelve determinista el
+   estado activo/inactivo sin depender del orden de carga.
    ============================================================ */
-.role-btn {
+#adminLoginModal .role-btn {
   position: relative;
   z-index: 1;
+  border: 1px solid transparent;
+  background: transparent;
   border-radius: 0.75rem;
-  color: rgba(156, 163, 175, 0.9);
+  /* slate-400: rol inactivo */
+  color: #94a3b8;
+  font-weight: 500;
   transition: color 0.3s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   will-change: transform;
 }
 
-.role-btn:hover {
+#adminLoginModal .role-btn:hover {
+  /* slate-200 */
   color: #e2e8f0;
 }
 
-.role-btn:focus-visible {
+#adminLoginModal .role-btn:focus-visible {
   outline: none;
   color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55);
 }
 
-.role-btn--active {
-  background: #181226;
+#adminLoginModal .role-btn--active {
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff !important;
-  border: 1px solid rgba(168, 85, 247, 0.4);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), 0 0 12px rgba(168, 85, 247, 0.15);
+  border-color: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
 }
 
 /* ============================================================
@@ -1669,7 +1684,7 @@ footer > .max-w-7xl {
   animation: adminModalIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-/* Overlay del Staff Portal: geometría exacta (fix del freeze a 100% zoom).
+/* Overlay de la Consola Ejecutiva: geometría exacta (fix del freeze a 100% zoom).
    display flex solo cuando NO está .hidden: ModalController alterna .hidden/.flex. */
 #adminPortalModal {
   position: fixed;
@@ -1727,7 +1742,7 @@ footer > .max-w-7xl {
   }
 }
 
-/* Login del Staff: centrado y contenido nunca más alto que el viewport */
+/* Login de la Consola Ejecutiva: centrado y contenido nunca más alto que el viewport */
 #adminLoginModal .executive-auth-card {
   max-height: 92vh;
   max-height: 92svh;
@@ -1763,7 +1778,7 @@ footer > .max-w-7xl {
   display: none;
 }
 
-/* Safe-area bottom para el cuerpo scrolleable del Staff Portal (iOS Dynamic Island / Home Indicator) */
+/* Safe-area bottom para el cuerpo scrolleable de la Consola Ejecutiva (iOS Dynamic Island / Home Indicator) */
 .admin-scroll-body {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }
@@ -2255,7 +2270,7 @@ footer > .max-w-7xl {
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
-/* ---- Staff Portal: Login Ejecutivo FinTech ---- */
+/* ---- Consola Ejecutiva: Login Ejecutivo FinTech ---- */
 
 #adminLoginModal,
 #adminPortalModal {
@@ -2269,6 +2284,28 @@ footer > .max-w-7xl {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   will-change: transform;
+}
+
+/* PIN: el autofill amarillo/claro por defecto de Chrome y Safari rompe la
+   superficie oscura premium. Se pinta el relleno con el mismo #07040f del
+   input y se retrasa la transición para que el parpadeo no se vea. */
+#adminLoginModal #admin-pin:-webkit-autofill,
+#adminLoginModal #admin-pin:-webkit-autofill:hover,
+#adminLoginModal #admin-pin:-webkit-autofill:focus,
+#adminLoginModal #admin-pin:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #ffffff;
+  -webkit-box-shadow: 0 0 0 1000px #07040f inset;
+  box-shadow: 0 0 0 1000px #07040f inset;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* El botón del ojo se posiciona con inset-y-0 + centrado flex: así el ícono
+   queda óptico-centrado en el eje Y del input sin depender del alto de la
+   línea de texto ni del line-height. */
+#adminLoginModal #admin-pin-toggle {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 /* Crest metálico oficial */
@@ -3003,7 +3040,7 @@ select.ark-input:active {
   animation: fadeIn 0.35s ease-out;
 }
 
-/* Miniatura del comprobante en el Dashboard del Staff */
+/* Miniatura del comprobante en el Dashboard Ejecutivo */
 .voucher-preview-thumb {
   display: block;
   max-height: 56px;
