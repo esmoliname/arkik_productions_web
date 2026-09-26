@@ -1,4 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Syne:wght@700;800&display=swap');
+/* Plus Jakarta Sans se pide como VARIABLE (wght 300..800 + itálico) para que
+   el eje opsz esté disponible en el titular del hero. Syne se eliminó de esta
+   petición: ya no tiene consumidores tras migrar el h1 y cada familia en el
+   @import es un download extra en el critical path del LCP. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap');
 
 /* ============================================================
    ARKIK PALETTE — LIQUID GLASS PÚRPURA (variables globales)
@@ -8,6 +12,17 @@
    ============================================================ */
 :root {
   --bg-dark: #07040e;
+  /* Escala tipográfica fluida del sistema.
+     Estas variables se PERDIERON en un refactor previo: .fluid-h1/.fluid-h2/
+     .fluid-body usaban var(--fluid-*) sin declaración, lo que por spec CSS es
+     *invalid at computed-value time* → font-size computaba a `inherit` y esos
+     encabezados se renderizaban al tamaño del body (16px) en vez del display
+     size previsto. Sin fallback, la regla h1 del UA no vuelve a entrar en la
+     cascada: la declaración del autor ya había ganado.
+     Piso compuesto (36/28/15.2px) para jerarquía corporativa en móvil. */
+  --fluid-h1: clamp(2.25rem, 4.5vw + 1rem, 3.75rem);
+  --fluid-h2: clamp(1.75rem, 3vw + 0.5rem, 2.5rem);
+  --fluid-body: clamp(0.95rem, 0.8vw + 0.5rem, 1.05rem);
   --ark-bg-card: rgba(255, 255, 255, 0.04);
   --ark-bg-card-deep: rgba(255, 255, 255, 0.06);
   --ark-bg-input: rgba(255, 255, 255, 0.06);
@@ -270,6 +285,54 @@ body {
   position: relative;
   display: inline-block;
   width: 100%;
+}
+
+/* ============================================================
+   HERO TITLE — LUXURY EDITORIAL TYPOGRAPHY (Retiro de Syne)
+   ------------------------------------------------------------
+   El título usaba `font-syne`: una display geométrica de trazo
+   muy ancho. A 60px sus minúsculas se leen "extendidas" y el
+   conjunto pierde ladensity de un titular corporativo. Se retira
+   del hero y se fuerza Plus Jakarta Sans (variable, opsz activa).
+   Este selector es (0,1,1) a propósito: gana por especificidad a
+   CUALQUIER utilidad Tailwind de clase (0,1,0) sin recurrir a
+   !important, así el ajuste tipográfico es autoritativo.
+   ============================================================ */
+.hero-title-wrapper h1 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-weight: 800;
+  /* -0.03em: condenser lo justo para que los glifos encajen sin
+     que las curvas cerradas (a, e, o) se toquen entre sí.
+     tracking-tight de Tailwind es -0.025em: 0.005em insuficiente. */
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  /* Cajas altas de display necesitan kerning y ligaduras explícitos:
+     la métrica por defecto deja "$" y pares como "Ta" desalineados. */
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  /* opsz sube automáticamente con el tamaño de la caja: afina trazos y
+     apertures en 60px. No-op si el served font no trae el eje opsz. */
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  /* Balancea las líneas del titular en vez de dejarlas al azar: evita
+     huérfanas del tipo "y sonido" / "profesional". Degradado. */
+  text-wrap: balance;
+}
+
+/* Acento degradado del titular.
+   `filter` es UNA sola declaración, así que la clase arbitraria
+   drop-shadow-[...] de Tailwind y este filter no pueden convivir:
+   el último que gana en cascada borra al otro. Este selector (0,2,1)
+   gana sobre la clase (0,1,0), así que aquí se apilan las DOS
+   intensidades de resplandor pedidas — halo púrpura de 20px más un
+   levante fucsia amplio — y la utilidad de Tailwind queda como
+   respaldo si css/styles.css llegara a fallar al cargar.
+   El glow va en el glifo, no en la caja: por eso se usa filter y
+   no box-shadow, y por eso respeta la forma real de cada letra. */
+.hero-title-wrapper h1 .hero-title-accent {
+  filter:
+    drop-shadow(0 0 20px rgba(192, 132, 252, 0.3))
+    drop-shadow(0 0 45px rgba(217, 70, 239, 0.22));
 }
 
 /* Elegant Executive Hero Background */
@@ -1959,20 +2022,102 @@ footer > .max-w-7xl {
   color: #94a3b8;
 }
 
-/* Cuenta regresiva visible de sesión (mm:ss) en la barra de rol */
+/* ---- Encabezado de la Consola Ejecutiva: barra de sesión Obsidian Glass ----
+   La caja (.admin-timer-pill) la aporta Tailwind; aquí solo se define la
+   tipografía del dato y los estados que las utilidades no cubren.
+   OJO: styles.css se carga DESPUÉS del <style> inyectado por el CDN de
+   Tailwind, por lo que estas reglas ganan en empate de especificidad.
+   No redefinir aquí fondo/borde/padding de la píldora o se double-pinte. */
+
 .admin-session-timer {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  color: #fcd34d;
-  font-size: 11px;
-  font-weight: 700;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: inherit;
+}
+
+/* Punto de pulso en vivo: el halo hereda currentColor del contenedor, así
+   #admin-role-dot sigue siendo la única fuente de color por rol (esmeralda
+   para Propietario, índigo para Ingeniero TI) y ambos círculos van a juego. */
+.admin-live-dot > span:last-child {
+  box-shadow: 0 0 6px 0 currentColor;
+}
+
+/* Al expirar, el pulso se apaga y el badge pierde el halo verde. */
+.admin-live-dot.is-stale {
+  animation: none;
+  opacity: 0.45;
+}
+
+/* Píldora del temporizador: el reloj late y la luz ámbar sube al expirar. */
+.admin-timer-pulse {
+  transform-origin: center;
+}
+
+.admin-timer-pill {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.admin-timer-pill:hover {
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.28);
+}
+
+/* Botón de cierre: cristal con foco visible y objetivo táctil de 36px
+   (se conserva el área de 44px en el header vía padding del contenedor). */
+.admin-glass-close {
+  min-width: 36px;
+  min-height: 36px;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.admin-glass-close:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.admin-glass-close:focus-visible {
+  outline: 2px solid rgba(192, 132, 252, 0.8);
+  outline-offset: 2px;
+}
+
+/* Botón de cierre de sesión: el tono de alerta sube en hover sin perder
+   el contraste del texto (#fca5a5 sobre fondo translúcido). */
+.admin-logout-btn {
+  white-space: nowrap;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.admin-logout-btn:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.8);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  /* El pulso/ping son decoración: se apagan, el estado sigue siendo legible
+     por el color sólido del punto. */
+  .admin-live-dot .animate-ping,
+  .admin-timer-pulse,
+  .admin-live-dot {
+    animation: none !important;
+  }
+}
+
+/* Viewports bajos (móvil en horizontal, netbooks): la tarjeta del portal es un
+   flexbox de altura fija (90vh) con scroll interno, así que el cromo del
+   encabezado se comprime para que el cuerpo no quede con un alto inútil.
+   El sello de "memoria segura" es el primero en caer: es informativo, no crítico. */
+@media (max-height: 560px) {
+  #adminSessionInfo {
+    padding: 10px 14px;
+  }
+
+  #adminSessionInfo #admin-role-dot,
+  #adminSessionInfo #admin-role-badge,
+  #adminSessionInfo #admin-user-name {
+    margin-bottom: 2px;
+  }
 }
 
 /* Montos y KPIs con cifras de ancho fijo (sin saltos al cambiar dígitos) */
@@ -4960,9 +5105,13 @@ select.ark-input:active {
    ============================================= */
 
 /* Typography utilities */
-.font-syne {
-  font-family: 'Syne', sans-serif;
-}
+/* RETIRADO — .font-syne (2026-09).
+   Syne era la display geométrica de anchura extrema que causaba el aspecto
+   "extendido" del titular. Su único consumidor era el <h1> del hero, ya
+   migrado a Plus Jakarta Sans, así que la utilidad queda sin referencias.
+   Si alguna vez hace falta una display de titular, el lugar correcto es
+   .font-display CON opsz control, no reintroducir Syne: su rol era
+   precisamente el que se quiso eliminar (letras abiertas y sin densidad). */
 .font-jakarta {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
