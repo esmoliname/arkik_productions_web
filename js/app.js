@@ -41,7 +41,8 @@ function sanitizeUrl(url) {
   return "#";
 }
 
-// Hash FNV-1a de respaldo (en caso de que crypto.subtle no esté disponible)
+// Hash FNV-1a (32 bit) — SOLO para firmas de sesión, NUNCA para PINs:
+// un digest de 8 hex no es comparable con un SHA-256 de 64 hex.
 function fnv1aHex(text) {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
@@ -51,17 +52,139 @@ function fnv1aHex(text) {
   return ("00000000" + (h >>> 0).toString(16)).slice(-8);
 }
 
-// SHA-256 con WebCrypto (contexto seguro con fallback)
+// ---- SHA-256 en JavaScript puro (respaldo cuando no hay WebCrypto) ----
+// `crypto.subtle` SOLO existe en un contexto seguro. Servir el sitio por
+// http:// sobre una IP de red local deja `subtle` en undefined; si el hash cae a
+// otro algoritmo, el digest del PIN nunca puede igualar al SHA-256 configurado
+// y CADA intento válido se contabiliza como fallo -> bloqueo permanente de la
+// consola. Este respaldo produce el MISMO digest SHA-256 de 64 hex, así el
+// resultado es idéntico con y sin WebCrypto.
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+]);
+
+// Codificación UTF-8 (TextEncoder cuando existe; manual para navegadores viejos)
+function utf8Bytes(text) {
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(text);
+  const str = String(text);
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let code = str.charCodeAt(i);
+    if (code < 0x80) { out.push(code); continue; }
+    if (code < 0x800) { out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f)); continue; }
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+      const low = str.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+        i++;
+        out.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+        continue;
+      }
+    }
+    out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+  }
+  return new Uint8Array(out);
+}
+
+function bytesToHex(bytes) {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let hex = "";
+  for (let i = 0; i < view.length; i++) hex += view[i].toString(16).padStart(2, "0");
+  return hex;
+}
+
+// SHA-256 sin dependencias: mismo digest que WebCrypto para toda entrada UTF-8.
+// (Límite de longitud: 2^29 - 1 bytes, muy por encima de cualquier uso real aquí.)
+function sha256HexSync(text) {
+  const bytes = utf8Bytes(String(text == null ? "" : text));
+  const bitLen = bytes.length * 8;
+  const padded = (((bytes.length + 8) >> 6) + 1) << 6;
+  const buf = new Uint8Array(padded);
+  buf.set(bytes);
+  buf[bytes.length] = 0x80;
+  const high = Math.floor(bitLen / 0x20000000);
+  const low = bitLen >>> 0;
+  buf[padded - 8] = (high >>> 24) & 0xff;
+  buf[padded - 7] = (high >>> 16) & 0xff;
+  buf[padded - 6] = (high >>> 8) & 0xff;
+  buf[padded - 5] = high & 0xff;
+  buf[padded - 4] = (low >>> 24) & 0xff;
+  buf[padded - 3] = (low >>> 16) & 0xff;
+  buf[padded - 2] = (low >>> 8) & 0xff;
+  buf[padded - 1] = low & 0xff;
+
+  const H = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+  ]);
+  const w = new Uint32Array(64);
+
+  for (let offset = 0; offset < padded; offset += 64) {
+    for (let i = 0; i < 16; i++) {
+      const j = offset + i * 4;
+      w[i] = ((buf[j] << 24) | (buf[j + 1] << 16) | (buf[j + 2] << 8) | buf[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 64; i++) {
+      const x = w[i - 15];
+      const y = w[i - 2];
+      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+
+    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e;
+      e = (d + t1) >>> 0;
+      d = c; c = b; b = a;
+      a = (t1 + t2) >>> 0;
+    }
+
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+
+  let hex = "";
+  for (let i = 0; i < 8; i++) hex += H[i].toString(16).padStart(8, "0");
+  return hex;
+}
+
+// SHA-256 con WebCrypto cuando está disponible; respaldo puro si no lo está.
+// Ambos caminos devuelven EXACTAMENTE el mismo digest de 64 hex en minúsculas.
 async function sha256Hex(text) {
+  const value = String(text == null ? "" : text);
   try {
     if (window.crypto && window.crypto.subtle) {
-      const buf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const buf = await window.crypto.subtle.digest("SHA-256", utf8Bytes(value));
+      return bytesToHex(new Uint8Array(buf));
     }
   } catch (err) {
-    /* fallback a fnv1a */
+    /* contexto no seguro o API ausente: respaldo determinista */
   }
-  return fnv1aHex(text);
+  return sha256HexSync(value);
+}
+
+// Comparación de digests en tiempo constante (no filtra el prefijo correcto
+// por temporización). La longitud se compara aparte porque siempre es fija (64).
+function digestsEqual(a, b) {
+  const x = String(a == null ? "" : a);
+  const y = String(b == null ? "" : b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
 }
 
 function safeParse(key, fallback) {
@@ -693,37 +816,93 @@ function authJitterDelay() {
 const SecurityModule = {
   _data: null,
 
+  emptyState() {
+    return { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 };
+  },
+
+  // Un hash persistido solo es válido si es un digest SHA-256 (64 hex minúsculas).
+  // Cualquier otra forma (build legacy, corrupción, FNV-1a de 8 hex) se descarta:
+  // conservarla haría que el PIN válido no coincida nunca y quemaría el rate limit.
+  sanitizeHash(value) {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim().toLowerCase();
+    return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
+  },
+
+  sanitizeCounter(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  },
+
   load() {
+    let raw = null;
     try {
-      this._data = safeParse(STORAGE_KEYS.admin, { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 });
+      raw = safeParse(STORAGE_KEYS.admin, null);
     } catch (e) {
       console.warn('SecurityModule.load corruption recovered:', e.message || e);
-      this._data = { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 };
+      raw = null;
     }
+    const data = raw && typeof raw === "object" ? raw : {};
+    this._data = {
+      ownerHash: this.sanitizeHash(data.ownerHash),
+      itHash: this.sanitizeHash(data.itHash),
+      attempts: this.sanitizeCounter(data.attempts),
+      lockoutUntil: this.sanitizeCounter(data.lockoutUntil),
+      lockoutLevel: this.sanitizeCounter(data.lockoutLevel)
+    };
   },
 
   persist() {
     safeSet(STORAGE_KEYS.admin, this._data);
   },
 
+  // Estado de bloqueo vivo (diagnóstico desde la consola del navegador)
+  status() {
+    this.load();
+    const waitMs = Math.max(0, this._data.lockoutUntil - Date.now());
+    return {
+      storageKey: STORAGE_KEYS.admin,
+      attempts: this._data.attempts,
+      locked: waitMs > 0,
+      waitMs: waitMs,
+      lockoutLevel: this._data.lockoutLevel
+    };
+  },
+
+  // Purga del estado de bloqueo (éxito, expiración, cierre de sesión o reset manual)
+  clearLockState(options) {
+    const persist = !options || options.persist !== false;
+    if (!this._data) this._data = this.emptyState();
+    this._data.attempts = 0;
+    this._data.lockoutUntil = 0;
+    this._data.lockoutLevel = 0;
+    if (persist) this.persist();
+    return this._data;
+  },
+
   async verifyPin(roleId, pin) {
     this.load();
     const now = Date.now();
-    if (this._data.lockoutUntil && now < this._data.lockoutUntil) {
-      return { ok: false, locked: true, waitMs: this._data.lockoutUntil - now };
+
+    // Bloqueo expirado: se purga de inmediato para que un PIN válido no herede
+    // intentos ni nivel de una sesión anterior.
+    if (this._data.lockoutUntil) {
+      if (now < this._data.lockoutUntil) {
+        return { ok: false, locked: true, waitMs: this._data.lockoutUntil - now };
+      }
+      this.clearLockState();
     }
 
     const role = ADMIN_CONFIG.roles[roleId];
     if (!role) return { ok: false, locked: false, remaining: ADMIN_CONFIG.maxAttempts };
 
-    const inputHash = await sha256Hex(String(pin).trim());
+    // Comparación estricta tras .trim(): el PIN se normaliza antes de hashear,
+    // de modo que " 2580 " y "2580" son la misma credencial y solo una coincide.
+    const inputHash = await sha256Hex(String(pin == null ? "" : pin).trim());
     const expected = this._data[role.hashKey] || role.defaultHash;
 
-    if (inputHash === expected) {
-      this._data.attempts = 0;
-      this._data.lockoutUntil = 0;
-      this._data.lockoutLevel = 0;
-      this.persist();
+    if (digestsEqual(inputHash, expected)) {
+      this.clearLockState();
       return { ok: true };
     }
 
@@ -736,6 +915,10 @@ const SecurityModule = {
       this._data.lockoutUntil = now + wait;
       this._data.lockoutLevel = level + 1;
       this._data.attempts = 0;
+      this.persist();
+      // El bloqueo se reporta en el mismo intento que lo dispara: la UI muestra
+      // la cuenta regresiva de inmediato, sin un envío extra "a ciegas".
+      return { ok: false, locked: true, waitMs: wait, remaining: 0 };
     }
     this.persist();
     return { ok: false, locked: false, remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - this._data.attempts) };
@@ -1381,6 +1564,48 @@ const AuditLog = {
   }
 };
 
+// ---- Honeypot del login (#login-website-trap) ----
+// El campo es invisible para una persona, pero los gestores de contraseñas y el
+// auto-relleno del navegador SÍ pueden escribir en él (el nombre "website_trap"
+// contiene "website", un heurístico muy común). Antes, cualquier valor no vacío
+// abortaba el login en silencio y se traducía en un "no autentica" inexplicable.
+// Regla: un valor no vacío solo cuenta como actividad de bot si además hay
+// evidencia de interacción real (teclado/arrastre) o una escritura sintética
+// no confiable. El valor que aparece sin interacción es auto-relleno del
+// navegador → se ignora. El honeypot es un filtro económico de bots, NO una
+// frontera de seguridad: la autenticación real siempre exige el digest del PIN.
+const LOGIN_TRAP_STATE = { interacted: false, synthetic: false, bound: false };
+
+function resetLoginTrap() {
+  const trap = document.getElementById("login-website-trap");
+  if (trap) trap.value = "";
+  LOGIN_TRAP_STATE.interacted = false;
+  LOGIN_TRAP_STATE.synthetic = false;
+  return trap;
+}
+
+function bindLoginTrap() {
+  const trap = document.getElementById("login-website-trap");
+  if (!trap || LOGIN_TRAP_STATE.bound) return;
+  LOGIN_TRAP_STATE.bound = true;
+  // Una persona nunca alcanza este input (tabindex="-1", aria-hidden, fuera de
+  // pantalla): si recibe teclado o arrastre, es automatización.
+  ["keydown", "keypress", "paste", "drop"].forEach((evt) => {
+    trap.addEventListener(evt, () => { LOGIN_TRAP_STATE.interacted = true; }, true);
+  });
+  trap.addEventListener("input", (e) => {
+    // isTrusted === false => escritura programática (script), no auto-relleno.
+    if (e && e.isTrusted === false) LOGIN_TRAP_STATE.synthetic = true;
+  }, true);
+}
+
+function isLoginTrapTriggered() {
+  const trap = document.getElementById("login-website-trap");
+  if (!trap) return false;
+  if (String(trap.value || "").trim() === "") return false; // vacío -> nunca sospechoso
+  return LOGIN_TRAP_STATE.interacted || LOGIN_TRAP_STATE.synthetic;
+}
+
 const AdminModule = {
   role: "",
   ownerFilter: "todas",
@@ -1398,6 +1623,11 @@ const AdminModule = {
     if (!modal) return;
     trackModal(true);
     this.resetLockoutState();
+    // El modal se abre siempre desbloqueado a nivel de interfaz. El bloqueo
+    // acumulado en localStorage se conserva a propósito (cerrar y reabrir no
+    // puede ser un bypass del rate limit); se libera con el PIN correcto, al
+    // expirar la cuenta regresiva o con resetAdminLock() desde la consola.
+    resetLoginTrap();
     this.setRole("owner");
     this.clearAuthError();
     // Instant modal launch via deterministic ModalController
@@ -1490,6 +1720,48 @@ const AdminModule = {
     this.clearAuthError();
   },
 
+  /**
+   * Bypass manual del bloqueo (consola del navegador / desarrollo).
+   * Elimina el estado de bloqueo acumulado del almacenamiento local, vacía el
+   * estado en memoria y desbloquea la interfaz del modal al instante.
+   * ⚠ Como cualquier persona con acceso al navegador puede invocarlo, es una
+   * ayuda de mantenimiento, no una garantía: en producción sirve para
+   * desbloquear a un operador legítimo, nunca para sustituir la autenticación.
+   */
+  resetAdminLock() {
+    if (this.lockoutTimer) {
+      clearInterval(this.lockoutTimer);
+      this.lockoutTimer = null;
+    }
+    const keys = [
+      STORAGE_KEYS.admin,          // clave real: "arkik_admin_auth_v1" (intentos + lockoutUntil)
+      "admin_login_attempts",     // nombres heredados: se purgan por compatibilidad
+      "admin_lockout_until"
+    ];
+    const removedKeys = [];
+    keys.forEach((key) => {
+      if (!key) return;
+      try {
+        if (localStorage.getItem(key) !== null) {
+          localStorage.removeItem(key);
+          removedKeys.push(key);
+        }
+      } catch (e) { /* almacenamiento no disponible */ }
+    });
+    // Estado en memoria sin persistir: la clave de arriba ya fue eliminada.
+    SecurityModule.clearLockState({ persist: false });
+    resetLoginTrap();
+    const box = document.getElementById("admin-lockout-box");
+    if (box) box.classList.add("hidden");
+    this.enablePinUI(true);
+    this.clearAuthError();
+    const modal = document.getElementById("adminLoginModal");
+    const pin = document.getElementById("admin-pin");
+    if (pin) pin.value = "";
+    if (pin && modal && !modal.classList.contains("hidden")) pin.focus();
+    return { cleared: true, removedKeys: removedKeys, storageKey: STORAGE_KEYS.admin };
+  },
+
   enablePinUI(enabled) {
     const pin = document.getElementById("admin-pin");
     if (pin) pin.disabled = !enabled;
@@ -1520,9 +1792,10 @@ const AdminModule = {
   async attemptLogin() {
     const pin = document.getElementById("admin-pin");
     const value = pin ? pin.value.trim().replace(/\D/g, "") : "";
-    // Honeypot: si un bot completó el campo invisible, descartar silenciosamente (sin error, sin contador)
-    const trap = document.getElementById("login-website-trap");
-    if (trap && trap.value.trim() !== "") {
+    // Honeypot: valor no vacío + evidencia de interacción/automatización.
+    // Un valor proveniente del auto-relleno del navegador NO bloquea el login.
+    if (isLoginTrapTriggered()) {
+      resetLoginTrap();
       await new Promise((r) => setTimeout(r, 1200));
       return;
     }
@@ -1583,6 +1856,9 @@ const AdminModule = {
         clearInterval(this.lockoutTimer);
         this.lockoutTimer = null;
         box.classList.add("hidden");
+        // El tiempo terminó: purga inmediata de intentos y nivel de bloqueo
+        // en localStorage, no solo del contador visual.
+        SecurityModule.clearLockState();
         this.enablePinUI(true);
         const pin = document.getElementById("admin-pin");
         if (pin) pin.focus();
@@ -1712,6 +1988,10 @@ const AdminModule = {
     this.clearIntegrityMonitor();
     this.clearSession();
     this.resetLockoutState();
+    // Cierre de sesión (logout, expiración o sello de integridad roto): el
+    // estado de bloqueo se purga porque la sesión ya terminó de forma legítima.
+    SecurityModule.clearLockState();
+    resetLoginTrap();
     ADMIN_SESSION.role = "";
     ADMIN_SESSION.token = null;
     this.role = "";
@@ -1741,9 +2021,16 @@ const AdminModule = {
   renderDashboard() {
     const role = ADMIN_CONFIG.roles[ADMIN_SESSION.role] || ADMIN_CONFIG.roles.owner;
     const badge = document.getElementById("admin-role-badge");
-    if (badge) badge.textContent = `${role.label} · ${role.name}`;
+    if (badge) badge.textContent = role.shortLabel || role.label;
+    const userName = document.getElementById("admin-user-name");
+    if (userName) userName.textContent = role.name;
+    // #admin-role-dot es el contenedor del punto de pulso: solo cambia su
+    // currentColor según el rol, nunca su estructura interna (ping + punto).
     const dot = document.getElementById("admin-role-dot");
-    if (dot) dot.className = `h-2 w-2 rounded-full animate-pulse shrink-0 ${ADMIN_SESSION.role === "owner" ? "bg-emerald-400" : "bg-indigo-400"}`;
+    if (dot) {
+      dot.classList.remove("text-emerald-500", "text-indigo-400");
+      dot.classList.add(ADMIN_SESSION.role === "owner" ? "text-emerald-500" : "text-indigo-400");
+    }
     const ownerView = document.getElementById("admin-owner-view");
     const itView = document.getElementById("admin-it-view");
     if (ownerView) ownerView.classList.toggle("hidden", ADMIN_SESSION.role !== "owner");
@@ -2248,8 +2535,10 @@ const AdminModule = {
     if (!box) return;
     const secureCtx = typeof window !== "undefined" && window.isSecureContext;
     const cryptoOk = typeof window !== "undefined" && window.crypto && !!window.crypto.subtle;
-    const cryptoClass = cryptoOk ? "it-status-chip--ok" : "it-status-chip--warn";
-    const cryptoLabel = cryptoOk ? "SHA-256 SECURED" : "FNV-1a FALLBACK";
+    // Sin WebCrypto el digest se calcula en software, pero sigue siendo SHA-256:
+    // el respaldo produce el mismo hash, así que no degrada la autenticación.
+    const cryptoClass = "it-status-chip--ok";
+    const cryptoLabel = cryptoOk ? "SHA-256 (WebCrypto)" : "SHA-256 (software)";
     const tlsClass = secureCtx ? "it-status-chip--ok" : "it-status-chip--warn";
     const tlsLabel = secureCtx ? "TLS 1.3 ENCRYPTED" : "HTTP PLANO";
     const engine = sanitizeInput(String(ENGINE_VERSION || "arkik-engine"));
@@ -4196,6 +4485,11 @@ window.openAdminLoginModal = () => AdminModule.open();
 window.closeAdminLoginModal = () => AdminModule.close();
 window.attemptAdminLogin = () => AdminModule.attemptLogin();
 window.closeAdminPortalModal = () => AdminModule.closePortal();
+// Bypass de mantenimiento del bloqueo de la consola ejecutiva.
+// En la consola del navegador: resetAdminLock()   -> limpia intentos/lockout y desbloquea el modal
+// Diagnóstico del estado actual:                     SecurityModule.status()
+window.resetAdminLock = () => AdminModule.resetAdminLock();
+window.adminAuthStatus = () => SecurityModule.status();
 window.copyEmailToClipboard = copyEmailToClipboard;
 window.openMediaLightbox = openMediaLightbox;
 window.closeMediaLightbox = closeMediaLightbox;
@@ -4854,6 +5148,7 @@ function setupEventListeners() {
   }
 
   // --- Admin: Autenticación (Login Ejecutivo FinTech) ---
+  bindLoginTrap();
   const roleOwner = document.getElementById("admin-role-owner");
   if (roleOwner) roleOwner.addEventListener("click", () => AdminModule.setRole("owner"));
   const roleIt = document.getElementById("admin-role-it");

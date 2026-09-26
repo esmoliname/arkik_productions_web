@@ -385,6 +385,7 @@ const ADMIN_CONFIG = {
     owner: {
       id: "owner",
       label: "Propietario",
+      shortLabel: "Propietario",
       name: "Juan José Ramírez",
       hashKey: "ownerHash",
       defaultHash: "ed946f65d2c785d90e827c5ffd879ce3b49c68d4c88013074176a7e73bc58bcf"
@@ -392,6 +393,7 @@ const ADMIN_CONFIG = {
     it: {
       id: "it",
       label: "Ingeniero de TI",
+      shortLabel: "Ingeniero TI",
       name: "Esteban Molina",
       hashKey: "itHash",
       defaultHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
