@@ -8589,9 +8589,12 @@ function ragActionNotifyBatch() {
 /** Renderiza la proyección semanal de ingresos contratados. */
 function ragActionWeekly() {
   const weeks = ArkikRAGEngine.weeklyProjection();
-  const out = document.getElementById("rag-action-output");
+  // El bloque de salida se movió al Studio (#rag-studio-output) cuando la
+  // consola pasó a pantalla completa. Leer el id viejo devolvía null y la
+  // proyección se descartaba en silencio: el Propietario pulsaba el botón
+  // y no veía nada, sin ningún error en consola.
+  const out = document.getElementById("rag-studio-output");
   if (!out) {
-    ragOutput("Proyección generada.");
     return;
   }
   if (!weeks.length) {

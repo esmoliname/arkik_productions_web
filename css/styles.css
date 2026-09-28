@@ -5599,21 +5599,20 @@ select.ark-input:active {
 }
 
 /* ============================================================
-   RAG DATA INTELLIGENCE — Consola de Indice Operacional
-   Tarjetas con borde superior bioluminiscente + superficies
-   glassmorphism coherentes con el panel ejecutivo.
+   BUSINESS INTELLIGENCE ENGINE — Consola de Entrada Analítica
+   Tarjeta obsidian glassmorphism con estética BI premium.
    ============================================================ */
 
 .rag-console {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1.25rem;
+  padding: 1.5rem;
   margin-bottom: 1.5rem;
   border-radius: 1.25rem;
-  background: linear-gradient(160deg, rgba(15, 10, 30, .92), rgba(8, 5, 18, .96));
-  border: 1px solid rgba(139, 92, 246, .28);
-  box-shadow: 0 18px 48px -24px rgba(76, 29, 149, .8), inset 0 1px 0 rgba(255, 255, 255, .05);
+  background: rgba(10, 6, 20, 0.9);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.8);
 }
 
 .rag-head {
@@ -5626,8 +5625,9 @@ select.ark-input:active {
 
 .rag-title {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
   letter-spacing: -.01em;
   color: #fff;
 }
@@ -5636,23 +5636,64 @@ select.ark-input:active {
   margin: .2rem 0 0;
   font-size: 11px;
   color: #8b86a3;
+  line-height: 1.5;
 }
 
 .rag-badge {
   display: inline-flex;
   align-items: center;
   gap: .35rem;
-  padding: .3rem .7rem;
-  border-radius: 999px;
+  padding: .25rem .625rem;
+  border-radius: 9999px;
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: .06em;
+  letter-spacing: .1em;
   text-transform: uppercase;
   color: #6ee7b7;
-  background: rgba(16, 185, 129, .12);
-  border: 1px solid rgba(16, 185, 129, .35);
-  box-shadow: 0 0 18px -6px rgba(16, 185, 129, .7);
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   white-space: nowrap;
+}
+
+.rag-terminal {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* --- Botones de acción interactivos (micro-estados táctiles) --- */
+.rag-action,
+.btn-analytics-launch,
+.admin-logout-btn,
+#btn-open-rag-studio,
+#btnExportPDF {
+  transition: all 0.2s ease-out;
+}
+
+.rag-action:active,
+.btn-analytics-launch:active,
+.admin-logout-btn:active,
+#btn-open-rag-studio:active,
+#btnExportPDF:active {
+  transform: scale(0.95);
+}
+
+.rag-action:hover,
+.btn-analytics-launch:hover,
+.admin-logout-btn:hover,
+#btn-open-rag-studio:hover,
+#btnExportPDF:hover {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
+}
+
+.rag-action--primary:hover {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.35);
 }
 
 /* --- Consola de busqueda (glassmorphism de alto contraste) --- */
@@ -6221,10 +6262,7 @@ select.ark-input:active {
   font-weight: 800;
   letter-spacing: .14em;
   text-transform: uppercase;
-  background: linear-gradient(96deg, #f0abfc, #a78bfa 45%, #67e8f9);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #fff;
 }
 
 .rag-studio-badge {
@@ -6233,13 +6271,13 @@ select.ark-input:active {
   gap: .375rem;
   font-size: .6875rem;
   font-weight: 700;
-  letter-spacing: .06em;
+  letter-spacing: .1em;
+  text-transform: uppercase;
   color: #6ee7b7;
   padding: .25rem .625rem;
-  border-radius: 999px;
-  border: 1px solid rgba(16, 185, 129, .35);
-  background: rgba(16, 185, 129, .1);
-  box-shadow: 0 0 18px -6px rgba(16, 185, 129, .55);
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, .3);
+  background: rgba(16, 185, 129, .2);
   white-space: nowrap;
 }
 
@@ -6595,18 +6633,34 @@ select.ark-input:active {
 
 .rag-launch {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem 1.25rem;
-  margin-top: .875rem;
-  padding-top: .875rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
   border-top: 1px solid rgba(168, 85, 247, .16);
 }
 
 .rag-action--primary {
-  border-color: rgba(217, 70, 239, .4);
-  background: linear-gradient(96deg, rgba(217, 70, 239, .2), rgba(109, 40, 217, .24));
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.rag-action--primary:hover {
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.08), transparent);
 }
 
 /* ---------- Responsivo: iPad / laptop / móvil ---------- */
