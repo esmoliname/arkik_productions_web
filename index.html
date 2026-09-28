@@ -2129,6 +2129,41 @@
 
         <!-- Rol Propietario: Analítica Financiera & Operativa -->
         <div id="admin-owner-view" class="hidden">
+
+          <!-- ============================================================
+               RAG DATA INTELLIGENCE — Consola de Índice Operacional
+               Motor determinista: ArkikRAGEngine (js/app.js). Sin
+               embeddings ni modelo de lenguaje: los agregados de abajo
+               son cálculos sobre BookingStore, no generaciones.
+               ============================================================ -->
+          <section id="rag-console" class="rag-console" aria-labelledby="rag-console-title">
+            <div class="rag-head">
+              <div class="rag-head-text">
+                <h4 id="rag-console-title" class="rag-title">🧠 RAG Data Intelligence</h4>
+                <p class="rag-sub">Índice operacional sobre reservas, cotizaciones y pagos SINPE.</p>
+              </div>
+              <span id="rag-index-badge" class="rag-badge">🟢 RAG Active Index</span>
+            </div>
+
+            <!-- Consola de búsqueda -->
+            <div id="rag-command-bar" class="rag-command-bar">
+              <input type="search" id="rag-search-input" autocomplete="off" spellcheck="false"
+                placeholder="ARK-XXXXXXXX · nombre · +506 · [Pendientes SINPE] · tasa de conversión…"
+                aria-label="Consultar el índice de datos" class="rag-input">
+              <div id="rag-filter-pills" class="rag-pills" role="group" aria-label="Filtros rápidos"></div>
+            </div>
+
+            <!-- Diagnóstico + Centro de acción -->
+            <div id="rag-insights-container" class="rag-grid"></div>
+
+            <!-- Resultados estructurados -->
+            <div class="rag-results-head">
+              <h4 class="rag-col-title">Resultados</h4>
+              <span id="rag-results-head" class="rag-results-count"></span>
+            </div>
+            <div id="rag-results-list" class="rag-results"></div>
+          </section>
+
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h4 class="text-sm font-bold text-white">Analítica Ejecutiva &amp; Flujo Financiero</h4>

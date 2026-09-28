@@ -2048,6 +2048,9 @@ const AdminModule = {
     this.renderOwnerCalendar();
     this.renderOwnerFilters();
     this.renderOwnerBookings();
+    // Consola RAG: reindexa desde BookingStore y repinta sus tres zonas.
+    // Se refresca aquí para que el índice siga a las reservas del período.
+    if (typeof RAGConsole !== "undefined" && RAGConsole.init) RAGConsole.init();
   },
 
   renderOwnerPeriodFilters() {
@@ -7429,4 +7432,1063 @@ function initHeroStringsEffect() {
   AnimationRegistry.register("hero-strings", handle);
   return handle;
 }
+
+// ============================================================
+// 20. ARKIK RAG ENGINE (Índice Operational + Parser de Consultas)
+// ------------------------------------------------------------
+// NATURALEZA DE ESTE MÓDULO — LÉASE ANTES DE EXTENDERLO:
+//
+// NO es un sistema RAG (Retrieval-Augmented Generation) clásico.
+// No hay embeddings, ni base vectorial, ni modelo de lenguaje ni
+// llamada de red. El proyecto es un sitio estático (HTML + Tailwind
+// CDN + VanillaJS) sin backend y sin paso de build, de modo que un
+// pipeline RAG verdadero (embed → recuperar → generar) es imposible
+// aquí sin incorporar un servicio externo.
+//
+// Lo que SÍ hace es un motor determinista de tres piezas:
+//   1. ÍNDICE   : snapshot normalizado de BookingStore en memoria.
+//   2. PARSER   : lenguaje de consulta → predicados (texto + tags).
+//   3. INSIGHTS : reglas agregadas sobre el índice → texto derivado.
+//
+// Consecuencia de diseño que importa: los "insights sintéticos" son
+// CÁLCULOS, nodziones de un modelo. Cada texto de este módulo es
+// trazable a una agregación concreta sobre datos persistidos. Si un
+// número no se puede derivar de los datos, este módulo no lo inventa:
+// lo reporta como no disponible (ver aggregate()).
+// ============================================================
+
+const ArkikRAGEngine = {
+  _index: [],
+  _builtAt: null,
+  _source: null,
+  _revision: 0,
+
+  // Etiquetas rápidas soportadas por el parser.
+  // `pill` describe el control de la UI. La UI itera SIEMPRE sobre esta
+  // lista en vez de redeclarar claves: si el texto de un tag y el de su
+  // pill se desvían, el conteo del pill quedaría en 0 en silencio.
+  TAGS: [
+    {
+      key: "pendientes-sinpe",
+      label: "Pendientes SINPE",
+      test: r => r.status === "pendiente",
+      pill: { key: "pendientes-sinpe", label: "Pendiente SINPE" }
+    },
+    {
+      // "Confirmada" = depósito bancario verificado. `realizada` se incluye
+      // porque el resto del motor (p. ej. bookingVerificationState) ya
+      // agrupa confirmada+realizada como "agenda congelada / cobrada".
+      key: "confirmadas",
+      label: "Confirmadas",
+      test: r => r.status === "confirmada" || r.status === "realizada"
+    },
+    {
+      key: "fuera-gam",
+      label: "Fuera de GAM",
+      test: r => r.isNonGam === true,
+      pill: { key: "fuera-gam", label: "Fuera GAM" }
+    },
+    {
+      key: "banda-rt",
+      label: "Banda RT",
+      test: r => r.isBandaRT === true
+    },
+    {
+      key: "alto-valor",
+      label: "Proyectos > ₡400.000",
+      test: r => r.granTotal > 400000,
+      pill: { key: "alto-valor", label: "Alto Valor" }
+    }
+  ],
+
+  // Etiquetas que exponen un pill en la UI, derivadas de TAGS.
+  get PILL_TAGS() {
+    return this.TAGS.filter(t => t.pill).map(t => t.pill);
+  },
+
+  // Intenciones de agregación para consulta en lenguaje natural.
+  INTENTS: [
+    {
+      key: "conversion",
+      test: /conversi[oó]n|tasa\s+de\s+conversi/i,
+      label: "Tasa de conversión"
+    },
+    {
+      key: "balance",
+      test: /balance|saldo|cobrad|financier|cartera/i,
+      label: "Balance financiero"
+    },
+    {
+      key: "demanda",
+      test: /demanda|formato|distribuci[óo]n|geogr|cobertura/i,
+      label: "Demanda por formato y geografía"
+    }
+  ],
+
+  /**
+   * Conecta la fuente de verdad (BookingStore) sin acoplarse a ella.
+   * La fuente sólo debe exponer all() -> Array<Booking>.
+   */
+  attach(source) {
+    this._source = source || null;
+    return this.reindex();
+  },
+
+  /**
+   * Reconstruye el índice desde la fuente. Devuelve el conteo indexado.
+   * Es idempotente: llamar de más sólo refresca el snapshot.
+   */
+  reindex() {
+    const src = this._source;
+    const raw = src && typeof src.all === "function" ? src.all() : [];
+    const list = Array.isArray(raw) ? raw : [];
+    this._index = list
+      .filter(b => b && typeof b === "object")
+      .map(b => this._normalize(b))
+      .filter(Boolean);
+    this._builtAt = new Date().toISOString();
+    this._revision += 1;
+    return this._index.length;
+  },
+
+  /** Snapshot actual (copia superficial del arreglo interno). */
+  records() {
+    return this._index.slice();
+  },
+
+  /** Metadatos del índice para el badge de estado de la UI. */
+  stats() {
+    return {
+      count: this._index.length,
+      builtAt: this._builtAt,
+      revision: this._revision,
+      source: this._source ? "BookingStore" : "sin fuente"
+    };
+  },
+
+  // ------------------------------------------------------------
+  // NORMALIZACIÓN
+  // ------------------------------------------------------------
+
+  /**
+   * Proyecta un registro de BookingStore al esquema del índice.
+   * Tolera campos ausentes: un registro legacy sin `granTotal` sigue
+   * siendo indexable (queda en 0) en lugar de romper el índice entero.
+   */
+  _normalize(b) {
+    const num = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const str = v => String(v ?? "").trim();
+
+    const province = str(b.province);
+    const canton = str(b.canton);
+
+    // Reutiliza la MISMA regla de cobertura que usa el carrito y el
+    // reporte ejecutivo. No se duplica la tabla GAM aquí a propósito:
+    // una segunda copia de NON_GAM_EXCEPTIONS divergiría en silencio.
+    const nonGam = isNonGamLocation(province, canton);
+
+    // FORMATO = tipo de evento; SERVICE = servicio contratado (p. ej. "Banda RT").
+    const eventType = str(b.eventType) || "Sin clasificar";
+    const serviceName = str(b.serviceName);
+
+    const haystack = `${eventType} ${serviceName} ${str(b.extras && b.extras.format)}`.toLowerCase();
+
+    return {
+      code: str(b.code) || "SIN-CODIGO",
+      status: str(b.status).toLowerCase() || "pendiente",
+      clientName: str(b.clientName) || "Cliente sin nombre",
+      clientPhone: str(b.clientPhone),
+      clientEmail: str(b.clientEmail),
+      eventType,
+      serviceName,
+      selectedDate: str(b.selectedDate),
+      selectedTime: str(b.selectedTime),
+      province,
+      canton,
+      address: str(b.address),
+      setupDisplay: str(b.setupDisplay),
+      teardownDisplay: str(b.teardownDisplay),
+      sinpeRef: str(b.sinpeRef),
+      createdAt: str(b.createdAt),
+
+      subtotal: num(b.subtotal),
+      travelSurcharge: num(b.travelSurcharge),
+      granTotal: num(b.granTotal),
+      deposit50Amount: num(b.deposit50Amount),
+      remainingBalance: num(b.remainingBalance),
+
+      isNonGam: nonGam,
+      isBandaRT: /banda\s*rt/.test(haystack),
+
+      // Eldepósito se considera cobrado cuando el estado ya fue
+      // verificado bancariamente. `remainingBalance` es el campo que
+      // el carrito calculó con la regla 50/50 y es la fuente de verdad
+      // para el saldo, no un recálculo aquí.
+      depositSettled: b.status === "confirmada" || b.status === "realizada"
+    };
+  },
+
+  // ------------------------------------------------------------
+  // PARSER DE CONSULTAS
+  // ------------------------------------------------------------
+
+  /**
+   * Convierte texto libre en una consulta estructurada.
+   * @returns {{text:string[], tags:string[], intent:string|null, budget:number|null, normalized:string}}
+   */
+  parseQuery(searchString) {
+    const raw = String(searchString || "").trim();
+    if (!raw) return { text: [], tags: [], intent: null, budget: null, normalized: "" };
+
+    // 1. Etiquetas explícitas: [Pendientes SINPE], [Proyectos > 400,000]
+    const tags = [];
+    let remainder = raw;
+    const tagRe = /\[([^\]]+)\]/g;
+    let m;
+    while ((m = tagRe.exec(raw)) !== null) {
+      const inner = m[1];
+      const key = ArkikRAGEngine._matchTag(inner);
+      if (key) tags.push(key);
+      remainder = remainder.replace(m[0], " ");
+    }
+
+    // 2. Umbral monetario explícito: "> 400000" / "mayor a 400000".
+    let budget = null;
+    const budgetRe = /(?:>|mayor\s+a|sobre|arriba\s+de)\s*₡?\s*([\d][\d.\s]*)/i;
+    const bm = remainder.match(budgetRe);
+    if (bm) {
+      const digits = bm[1].replace(/[^\d]/g, "");
+      if (digits) {
+        budget = Number(digits);
+        remainder = remainder.replace(bm[0], " ");
+      }
+    }
+
+    // 3. Intención de agregación (sólo sobre el resto del texto).
+    let intent = null;
+    for (const spec of ArkikRAGEngine.INTENTS) {
+      if (spec.test.test(remainder)) {
+        intent = spec.key;
+        break;
+      }
+    }
+
+    // 4. Términos de texto libre restantes.
+    const normalized = remainder
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    const text = normalized
+      .split(/[^a-z0-9@+]+/i)
+      .map(t => t.trim())
+      .filter(t => t.length >= 2);
+
+    // Modo pregunta: si se reconoce una intención de agregación, las
+    // palabras de la pregunta NUNCA actúan como filtros. Nadie busca
+    // clientes llamados "tasa" o "conversión": lo que se pidió es el
+    // agregado, y debe responder sobre el alcance completo. Las
+    // etiquetas entre corchetes y el umbral monetario SÍ acotan el
+    // alcance; sólo el texto de la pregunta se ignora como filtro.
+    const questionMode = Boolean(intent);
+
+    return { text, tags, intent, budget, normalized, questionMode };
+  },
+
+  /**
+   * Resuelve el texto interno de una etiqueta a su token canónico.
+   * Compara sobre forma alfanumérica, de modo que "[Proyectos > ₡400,000]",
+   * "[Proyectos > 400.000]" y "[alto-valor]" resuelven al mismo tag sin
+   * depender de comas, puntos, moneda ni acentos.
+   */
+  _matchTag(inner) {
+    const canon = v => String(v || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+    const s = canon(inner);
+    if (!s) return null;
+    for (const tag of ArkikRAGEngine.TAGS) {
+      const key = canon(tag.key);
+      const label = canon(tag.label);
+      // Se compara también sin dígitos para que un umbral monetario
+      // escrito con cualquier separador ("400,000" / "400.000") mapee.
+      const labelNoDigits = label.replace(/[0-9]+/g, "");
+      const sNoDigits = s.replace(/[0-9]+/g, "");
+      if (s === key || s === label) return tag.key;
+      if (labelNoDigits && sNoDigits === labelNoDigits) return tag.key;
+    }
+    return null;
+  },
+
+  /**
+   * Ejecuta la consulta contra el índice.
+   * @returns {{records:Array, query:Object, scope:Array, matched:boolean}}
+   */
+  query(searchString) {
+    const parsed = this.parseQuery(searchString);
+
+    // Sin consulta, el alcance es el índice completo.
+    let scope = this._index.slice();
+    const tagOnly = parsed.text.length === 0 && parsed.budget === null;
+
+    // Filtros por etiqueta.
+    for (const key of parsed.tags) {
+      const tag = this.TAGS.find(t => t.key === key);
+      if (tag) scope = scope.filter(tag.test);
+    }
+
+    // Filtro por umbral monetario.
+    if (parsed.budget !== null) {
+      scope = scope.filter(r => r.granTotal > parsed.budget);
+    }
+
+    // Filtro de texto libre: TODOS los términos deben coincidir
+    // (AND), sobre los campos de contacto e identidad. Se omite en
+    // modo pregunta (ver parseQuery).
+    if (parsed.text.length && !parsed.questionMode) {
+      scope = scope.filter(r => {
+        const hay = r._haystack || (r._haystack = ArkikRAGEngine._haystack(r));
+        return parsed.text.every(term => hay.includes(term));
+      });
+    }
+
+    // Una intención de agregación NO filtra: responde sobre todo el
+    // conjunto, salvo que el usuario además haya pedido tags/texto.
+    const intentKey = parsed.intent && !tagOnly ? parsed.intent : null;
+
+    return {
+      records: scope,
+      query: parsed,
+      scope: scope,
+      matched: scope.length > 0,
+      intent: intentKey
+    };
+  },
+
+  /** Texto buscable normalizado de un registro (nombre, código, contacto, lugar). */
+  _haystack(r) {
+    return [
+      r.code,
+      r.clientName,
+      r.clientPhone,
+      r.clientEmail,
+      r.province,
+      r.canton,
+      r.address,
+      r.eventType,
+      r.serviceName,
+      r.selectedDate,
+      r.status
+    ]
+      .join(" ")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  },
+
+  // ------------------------------------------------------------
+  // AGREGACIONES (todas derivables de datos persistidos)
+  // ------------------------------------------------------------
+
+  /**
+   * Agrega el conjunto dado (por defecto: índice completo).
+   * @param {Array} [list] conjunto a agregar; por defecto, todo el índice
+   */
+  aggregate(list) {
+    // `indexed` cuenta los registros de ESTE agregado, no los del índice
+    // global. Si se reportara el tamaño global, un filtro que empareja
+    // cero registros se saltaría la salida "sin datos" y emitiría un
+    // falso "todo en orden" con métricas en cero.
+    const src = Array.isArray(list) ? list : this._index;
+    const active = src.filter(r => r.status !== "cancelada");
+    const confirmed = active.filter(r => r.depositSettled);
+    const pending = active.filter(r => r.status === "pendiente");
+
+    const sum = (arr, key) => arr.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+
+    // 1) CONVERSIÓN.
+    // Definición explícita y deliberada: en este sistema NO existe una
+    // entidad "cotización" separada. Cada registro de BookingStore nace
+    // como cotización formal con status "pendiente" (el PDF lo declara:
+    // "constituye una cotización formal de validez comercial") y sólo
+    // pasa a reserva confirmada cuando el depósito SINPE es verificado.
+    // Por tanto el denominador es "cotizaciones emitidas" = todo
+    // registro no cancelado, y el numerador es "reservas confirmadas".
+    // NO es un embudo de leads de marketing; no se debe leer como tal.
+    const emitted = active.length;
+    const conversionRate = emitted > 0 ? (confirmed.length / emitted) * 100 : null;
+
+    // 2) BALANCE FINANCIERO. Lo cobrado es el depósito ya verificado;
+    // lo pendiente es el 50% restante de las reservas no liquidadas.
+    const collected = sum(confirmed, "deposit50Amount");
+    const pendingBalance = sum(
+      active.filter(r => !r.depositSettled),
+      "remainingBalance"
+    );
+    const contracted = sum(active, "granTotal");
+
+    // 3) DEMANDA POR FORMATO Y DISTRIBUCIÓN GEOGRÁFICA.
+    const byFormat = {};
+    for (const r of active) {
+      byFormat[r.eventType] = (byFormat[r.eventType] || 0) + 1;
+    }
+    const formats = Object.keys(byFormat)
+      .map(name => ({ name, count: byFormat[name] }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    const gamCount = active.filter(r => !r.isNonGam).length;
+    const nonGamCount = active.filter(r => r.isNonGam).length;
+
+    // 4) COBERTURA OPERATIVA.
+    const upcoming = active
+      .filter(r => r.selectedDate && r.selectedDate >= ArkikRAGEngine.todayISO())
+      .sort((a, b) => a.selectedDate.localeCompare(b.selectedDate));
+
+    const weekendCutoff = ArkikRAGEngine.nextWeekendISO();
+    const weekendNonGam = upcoming.filter(
+      r => r.isNonGam && r.selectedDate <= weekendCutoff
+    );
+
+    return {
+      computedAt: new Date().toISOString(),
+      totals: {
+        indexed: src.length,
+        active: active.length,
+        cancelled: src.length - active.length,
+        confirmed: confirmed.length,
+        pendingSinpe: pending.length
+      },
+      conversion: {
+        // Definición expuesta para que la tarjeta NO pueda malinterpretarse.
+        definition: "Confirmadas ÷ cotizaciones emitidas (registros no cancelados)",
+        emitted,
+        confirmed: confirmed.length,
+        rate: conversionRate
+      },
+      balance: {
+        definition: "Cobrado = depósitos SINPE verificados · Pendiente = saldo 50% restante",
+        collected,
+        pendingBalance,
+        contracted,
+        atRisk: sum(pending, "granTotal")
+      },
+      demand: {
+        formats,
+        topFormat: formats.length ? formats[0] : null,
+        gamCount,
+        nonGamCount,
+        gamShare: active.length ? (gamCount / active.length) * 100 : null
+      },
+      coverage: {
+        upcomingCount: upcoming.length,
+        weekendCutoff,
+        weekendNonGamCount: weekendNonGam.length,
+        weekendNonGam
+      }
+    };
+  },
+
+  // ------------------------------------------------------------
+  // HELPERS DE FECHA (deterministas, sin zona horaria implícita)
+  // ------------------------------------------------------------
+
+  todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  },
+
+  /**
+   * Próximo sábado (inclusive) como ISO, para acotar "este fin de semana".
+   * Si hoy ya es sábado, devuelve hoy.
+   */
+  nextWeekendISO() {
+    const d = new Date();
+    const dow = d.getDay(); // 0 dom .. 6 sáb
+    const delta = dow === 6 ? 0 : (6 - dow + 7) % 7;
+    d.setDate(d.getDate() + delta);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  },
+
+  /**
+   * Proyección semanal de ingresos CONTRACTADOS (no es pronóstico):
+   * agrupa por semana ISO las reservas vigentes y separa lo ya cobrado
+   * del 50% restante por facturar.
+   */
+  weeklyProjection(weeksAhead = 8) {
+    const today = this.todayISO();
+    const active = this._index.filter(r => r.status !== "cancelada" && r.selectedDate >= today);
+    const buckets = new Map();
+
+    for (const r of active) {
+      const key = ArkikRAGEngine._isoWeekKey(r.selectedDate);
+      if (!key) continue;
+      if (!buckets.has(key)) {
+        buckets.set(key, { week: key, total: 0, collected: 0, pending: 0, events: 0 });
+      }
+      const b = buckets.get(key);
+      b.total += r.granTotal;
+      b.events += 1;
+      if (r.depositSettled) b.collected += r.deposit50Amount;
+      else b.pending += r.remainingBalance;
+    }
+
+    return Array.from(buckets.values())
+      .sort((a, b) => a.week.localeCompare(b.week))
+      .slice(0, Math.max(1, weeksAhead));
+  },
+
+  /** Clave "AAAA-Www" a partir de una fecha ISO; null si no es parseable. */
+  _isoWeekKey(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return null;
+    const d = parseISO(iso);
+    if (!d) return null;
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    // Jueves de la semana ISO define el año-semana.
+    const dayNum = (target.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNum + 3);
+    const firstThursday = new Date(target.getFullYear(), 0, 4);
+    const fDayNum = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - fDayNum + 3);
+    const week = 1 + Math.round((target - firstThursday) / (7 * 86400000));
+    return `${target.getFullYear()}-W${String(week).padStart(2, "0")}`;
+  },
+
+  // ------------------------------------------------------------
+  // GENERADOR DE INSIGHTS
+  // ------------------------------------------------------------
+
+  /**
+   * Insights DERIVADOS: cada línea se corresponde con una agregación
+   * concreta. Sin datos, no hay frase; con un conjunto vacío, el
+   * motor informa "sin registros" en vez de inventar porcentajes.
+   * @returns {{lines:Array<{tone:string,text:string}>, aggregate:Object}}
+   */
+  generateDiagnosticSummary(list) {
+    const scope = Array.isArray(list) ? list : this._index;
+    const agg = this.aggregate(scope);
+    const lines = [];
+
+    if (agg.totals.indexed === 0) {
+      return {
+        lines: [{ tone: "muted", text: "Sin registros en el índice. No hay datos suficientes para emitir diagnóstico." }],
+        aggregate: agg
+      };
+    }
+
+    // 1) CARTERA EN RIESGO — insight más accionable, va primero.
+    if (agg.totals.pendingSinpe > 0) {
+      const n = agg.totals.pendingSinpe;
+      const money = formatCRC(agg.balance.pendingBalance);
+      lines.push({
+        tone: "warn",
+        text: `📌 ${n} ${n === 1 ? "reserva sigue" : "reservas siguen"} pendiente${n === 1 ? "" : "s"} de verificación SINPE: ${money} por cobrar en saldo 50% antes de que la agenda pueda darse por congelada.`
+      });
+    } else {
+      lines.push({
+        tone: "ok",
+        text: `✅ Sin reservas pendientes de verificación SINPE. Las ${agg.totals.confirmed} confirmadas tienen agenda congelada.`
+      });
+    }
+
+    // 2) VIÁTICOS FUERA DE GAM — el caso que pide la especificación.
+    const wkn = agg.coverage.weekendNonGam;
+    if (wkn.length > 0) {
+      const n = wkn.length;
+      const fechas = wkn
+        .slice(0, 3)
+        .map(r => `${r.selectedDate} (${r.canton || r.province})`)
+        .join(", ");
+      lines.push({
+        tone: "alert",
+        text: `📌 ${n} ${n === 1 ? "evento requiere" : "eventos requieren"} confirmación de viáticos fuera del GAM${n <= 3 ? `: ${fechas}` : ""}. Fuera de GAM aplica recargo del ${Math.round(ArkikRAGEngine.travelRate() * 100)}%.`
+      });
+    } else if (agg.coverage.upcomingCount > 0) {
+      lines.push({
+        tone: "ok",
+        text: `📍 Los ${agg.coverage.upcomingCount} eventos próximos están dentro del GAM: sin recargo de viáticos.`
+      });
+    }
+
+    // 3) CONVERSIÓN — sólo si hay denominador real.
+    if (agg.conversion.emitted > 0) {
+      const pct = agg.conversion.rate.toFixed(1);
+      lines.push({
+        tone: "info",
+        text: `🎯 Tasa de conversión ${pct}%: ${agg.conversion.confirmed} de ${agg.conversion.emitted} cotizaciones emitidas derivaron en reserva confirmada (depósito verificado).`
+      });
+    }
+
+    // 4) CONCENTRACIÓN DE DEMANDA.
+    if (agg.demand.topFormat) {
+      const { name, count } = agg.demand.topFormat;
+      const share = agg.demand.gamShare === null ? null : agg.demand.gamShare.toFixed(0);
+      lines.push({
+        tone: "info",
+        text: `🏷️ Formato con mayor demanda: ${name} (${count} ${count === 1 ? "evento" : "eventos"}). Cobertura ${agg.demand.gamCount} GAM / ${agg.demand.nonGamCount} fuera de GAM${share ? ` (${share}% en GAM)` : ""}.`
+      });
+    }
+
+    // 5) EXPOSICIÓN DE ALTO VALOR.
+    const highValue = scope.filter(r => r.status !== "cancelada" && r.granTotal > 400000);
+    if (highValue.length > 0) {
+      const sum = highValue.reduce((a, r) => a + r.granTotal, 0);
+      lines.push({
+        tone: "accent",
+        text: `💎 ${highValue.length} ${highValue.length === 1 ? "proyecto supera" : "proyectos superan"} ₡400.000 por ${formatCRC(sum)} contratados. Es el tramo con mayor exposición a riesgo de impago.`
+      });
+    }
+
+    // 6) CARTERA TOTAL.
+    lines.push({
+      tone: "muted",
+      text: `💰 Cartera contratada ${formatCRC(agg.balance.contracted)} · Cobrado ${formatCRC(agg.balance.collected)} · Por cobrar ${formatCRC(agg.balance.pendingBalance)}.`
+    });
+
+    return { lines, aggregate: agg };
+  },
+
+  /** Tasa de viáticos vigente, respetando la config que edita el rol IT. */
+  travelRate() {
+    if (typeof StorageEngine !== "undefined" && StorageEngine.getConfig) {
+      return StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE);
+    }
+    return NON_GAM_SURCHARGE_RATE;
+  },
+
+  // ------------------------------------------------------------
+  // ACCIONES (composición de mensajes; sin efectos de red)
+  // ------------------------------------------------------------
+
+  /** Cuerpo del recordatorio SINPE para una reserva pendiente. */
+  sinpeReminderMessage(r) {
+    const firstName = String(r.clientName || "Cliente").split(" ")[0];
+    return [
+      `Hola ${firstName}, es Juan José Ramírez de Arkik Productions.`,
+      "",
+      `Te escribo por tu reserva ${r.code} del ${r.selectedDate || "por confirmar"} (${r.eventType}).`,
+      "",
+      `• Total: ${formatCRC(r.granTotal)}`,
+      `• Adelanto 50% (${SINPE_CONFIG.depositPercentage * 100}%): ${formatCRC(r.deposit50Amount)}`,
+      `• Saldo pendiente: ${formatCRC(r.remainingBalance)}`,
+      `• Referencia SINPE: ${r.sinpeRef || "por asignar"}`,
+      "",
+      `SINPE Móvil: ${SINPE_CONFIG.phone} a nombre de ${SINPE_CONFIG.holder}.`,
+      `Envíame el comprobante por este mismo chat para confirmar tu reserva.`,
+      "",
+      `ℹ️ ${SINPE_CONFIG.policyText}`
+    ].join("\n");
+  },
+
+  /** Sólo reservas pendientes: es el conjunto al que tiene sentido escribir. */
+  pendingTargets() {
+    return this._index.filter(r => r.status === "pendiente");
+  },
+
+  /** Reporte ejecutivo en texto plano (base del export .txt). */
+  executiveReport() {
+    const agg = this.aggregate();
+    const insights = this.generateDiagnosticSummary();
+    const fmt = n => n === null ? "n/d" : formatCRC(n);
+    const lines = [
+      "ARKIK PRODUCTIONS — REPORTE EJECUTIVO",
+      "=======================================",
+      `Generado: ${new Date().toLocaleString("es-CR")}`,
+      `Índice: ${agg.totals.indexed} registros (${agg.totals.active} vigentes, ${agg.totals.cancelled} cancelados)`,
+      "",
+      "1. CARTERA",
+      `   Contratado:        ${fmt(agg.balance.contracted)}`,
+      `   Cobrado (dep.):    ${fmt(agg.balance.collected)}`,
+      `   Saldo por cobrar:  ${fmt(agg.balance.pendingBalance)}`,
+      `   En riesgo (pend.): ${fmt(agg.balance.atRisk)}`,
+      "",
+      "2. CONVERSIÓN",
+      `   ${agg.conversion.definition}`,
+      `   ${agg.conversion.confirmed} / ${agg.conversion.emitted} = ${agg.conversion.rate === null ? "n/d" : agg.conversion.rate.toFixed(1) + "%"}`,
+      "",
+      "3. DEMANDA POR FORMATO",
+      ...(agg.demand.formats.length
+        ? agg.demand.formats.map(f => `   - ${f.name}: ${f.count}`)
+        : ["   (sin datos)"]),
+      "",
+      `4. GEOGRAFÍA: ${agg.demand.gamCount} GAM / ${agg.demand.nonGamCount} fuera de GAM`,
+      "",
+      "5. DIAGNÓSTICO"
+    ];
+    for (const l of insights.lines) lines.push(`   ${l.text}`);
+    return lines.join("\n");
+  }
+};
+
+// ============================================================
+// 21. RAG CONSOLE (Capa de Presentación del Índice)
+// ------------------------------------------------------------
+// Contrato con el núcleo: la consola NO recalcula nada. Pide
+// agregados a ArkikRAGEngine y los pinta. Toda regla de negocio
+// vive en el núcleo, que es la parte testeable en Node.
+// ============================================================
+
+const RAGConsole = {
+  query: "",
+  pill: "todas",
+  _bound: false,
+
+  /**
+   * Monta la consola (idempotente) y sincroniza el índice.
+   */
+  init() {
+    this._bind();
+    this.render();
+  },
+
+  _bind() {
+    if (this._bound) return;
+    const input = document.getElementById("rag-search-input");
+    if (input) {
+      input.addEventListener("input", () => {
+        this.query = input.value;
+        this.render();
+      });
+    }
+    const bar = document.getElementById("rag-filter-pills");
+    if (bar) {
+      bar.addEventListener("click", e => {
+        const btn = e.target.closest("[data-rag-pill]");
+        if (!btn) return;
+        this.pill = btn.getAttribute("data-rag-pill");
+        this.render();
+      });
+    }
+    const results = document.getElementById("rag-results-list");
+    if (results) {
+      results.addEventListener("click", e => {
+        const wa = e.target.closest("[data-rag-wa]");
+        if (wa) {
+          e.preventDefault();
+          window.open(wa.getAttribute("href"), "_blank", "noopener");
+        }
+      });
+    }
+    this._bound = true;
+  },
+
+  /** Traduce la selección actual (pills + texto) a una consulta del núcleo. */
+  effectiveQuery() {
+    // Se traduce el pill a la etiqueta de texto que el parser entiende,
+    // en vez de filtrar a mano: la UI no reimplementa reglas de negocio.
+    const tagText = this.pill === "todas" ? "" : `[${this.pill}]`;
+    const free = String(this.query || "").trim();
+    return [tagText, free].filter(Boolean).join(" ");
+  },
+
+  /**
+   * Reindexa y repinta las tres zonas.
+   * Reindexa en cada render a propósito: el costo es lineal sobre un
+   * registro por reserva y garantiza que ninguna vista pueda pintar un
+   * índice desactualizado tras una reserva nueva o un cambio de estado.
+   */
+  render() {
+    ArkikRAGEngine.attach(BookingStore);
+    this._renderBadge();
+    this._renderPills();
+    this._renderInsights();
+    this._renderResults();
+  },
+
+  _renderBadge() {
+    const el = document.getElementById("rag-index-badge");
+    if (!el) return;
+    const s = ArkikRAGEngine.stats();
+    el.textContent = `🟢 RAG Active Index · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+  },
+
+  _renderPills() {
+    const box = document.getElementById("rag-filter-pills");
+    if (!box) return;
+    const idx = ArkikRAGEngine.records();
+    // Los pills se derivan de TAGS: la clave del pill ES la clave del
+    // tag, así que un conteo no puede desincronizarse del filtro.
+    const countFor = key => {
+      const tag = ArkikRAGEngine.TAGS.find(t => t.key === key);
+      return tag ? idx.filter(r => tag.test(r)).length : 0;
+    };
+    const pills = [{ key: "todas", label: "Todas" }].concat(ArkikRAGEngine.PILL_TAGS);
+    box.innerHTML = pills
+      .map(p => {
+        const active = this.pill === p.key ? "rag-pill--active" : "";
+        const n = p.key === "todas" ? idx.length : countFor(p.key);
+        return `<button type="button" data-rag-pill="${p.key}" class="rag-pill ${active}">${p.label} <span class="rag-pill-count">${n}</span></button>`;
+      })
+      .join("");
+  },
+
+  _renderInsights() {
+    const box = document.getElementById("rag-insights-container");
+    if (!box) return;
+
+    // Si el usuario escribió una consulta, los diagnósticos pasan a
+    // describir SU conjunto; si no, describen el índice completo.
+    const q = this.effectiveQuery().trim();
+    const scoped = q ? ArkikRAGEngine.query(q).records : ArkikRAGEngine.records();
+    const insights = ArkikRAGEngine.generateDiagnosticSummary(scoped);
+    const agg = insights.aggregate;
+
+    const pct = v => (v === null || v === undefined ? "n/d" : v.toFixed(1) + "%");
+
+    // Tarjetas de diagnóstico. Cada valor viene de aggregate().
+    const cards = [
+      {
+        tone: "emerald",
+        icon: "💰",
+        title: "Balance financiero",
+        metric: formatCRC(agg.balance.collected),
+        caption: "Cobrado (depósitos verificados)",
+        detail: `Por cobrar ${formatCRC(agg.balance.pendingBalance)} · Cartera ${formatCRC(agg.balance.contracted)}`
+      },
+      {
+        tone: "fuchsia",
+        icon: "⏳",
+        title: "Saldo pendiente en escena",
+        metric: formatCRC(agg.balance.pendingBalance),
+        caption: `${agg.totals.pendingSinpe} reserva(s) sin verificar`,
+        detail: agg.totals.pendingSinpe > 0 ? `Exposición sin confirmar: ${formatCRC(agg.balance.atRisk)}` : "Sin reservas en riesgo."
+      },
+      {
+        tone: "cyan",
+        icon: "🎯",
+        title: "Tasa de conversión",
+        metric: pct(agg.conversion.rate),
+        caption: `${agg.conversion.confirmed} de ${agg.conversion.emitted} emitidas`,
+        detail: agg.conversion.definition
+      },
+      {
+        tone: "purple",
+        icon: "🏷️",
+        title: "Formato y geografía",
+        metric: agg.demand.topFormat ? agg.demand.topFormat.name : "n/d",
+        caption: agg.demand.topFormat ? `${agg.demand.topFormat.count} evento(s)` : "sin datos",
+        detail: `${agg.demand.gamCount} GAM · ${agg.demand.nonGamCount} fuera de GAM`
+      }
+    ];
+
+    const cardHtml = cards
+      .map(
+        c => `<article class="rag-card rag-card--${c.tone}">
+        <header class="rag-card-head">
+          <span class="rag-card-icon" aria-hidden="true">${c.icon}</span>
+          <h5>${sanitizeInput(c.title)}</h5>
+        </header>
+        <p class="rag-card-metric">${sanitizeInput(c.metric)}</p>
+        <p class="rag-card-caption">${sanitizeInput(c.caption)}</p>
+        <p class="rag-card-detail">${sanitizeInput(c.detail)}</p>
+      </article>`
+      )
+      .join("");
+
+    // Insights derivados (texto determinista del núcleo).
+    const insightHtml = insights.lines
+      .map(
+        l => `<li class="rag-insight rag-insight--${sanitizeInput(l.tone)}">${sanitizeInput(l.text)}</li>`
+      )
+      .join("");
+
+    // Centro de acción: 1 clic.
+    const pending = agg.totals.pendingSinpe;
+    const actions = [
+      {
+        id: "export",
+        icon: "📄",
+        label: "Exportar Reporte Ejecutivo",
+        action: "ragActionExport()",
+        disabled: agg.totals.active === 0
+      },
+      {
+        id: "whatsapp",
+        icon: "📱",
+        label: "Notificar Lote por WhatsApp",
+        action: "ragActionNotifyBatch()",
+        disabled: pending === 0
+      },
+      {
+        id: "projection",
+        icon: "📊",
+        label: "Proyección de Ingresos Semanales",
+        action: "ragActionWeekly()",
+        disabled: agg.coverage.upcomingCount === 0
+      }
+    ];
+
+    const actionHtml = actions
+      .map(
+        a => `<button type="button" onclick="${a.action}" ${a.disabled ? "disabled" : ""}
+        class="rag-action ${a.disabled ? "rag-action--off" : ""}">
+        <span class="rag-action-icon" aria-hidden="true">${a.icon}</span>
+        <span>${sanitizeInput(a.label)}</span>
+      </button>`
+      )
+      .join("");
+
+    box.innerHTML = `
+      <div class="rag-col rag-col--left">
+        <h4 class="rag-col-title">Diagnóstico en vivo</h4>
+        <div class="rag-cards">${cardHtml}</div>
+        <h4 class="rag-col-title">Lectura del índice</h4>
+        <ul class="rag-insights">${insightHtml}</ul>
+      </div>
+      <div class="rag-col rag-col--right">
+        <h4 class="rag-col-title">Centro de acción</h4>
+        <div class="rag-actions">${actionHtml}</div>
+        <p class="rag-note">Acciones de 1 clic. La notificación abre WhatsApp en la primera reserva pendiente; el resto queda listado para enviar uno a uno.</p>
+        <div id="rag-action-output" class="rag-output" role="status" aria-live="polite"></div>
+      </div>`;
+  },
+
+  _renderResults() {
+    const box = document.getElementById("rag-results-list");
+    if (!box) return;
+    const q = this.effectiveQuery().trim();
+    const res = ArkikRAGEngine.query(q);
+    const records = res.records;
+
+    const head = document.getElementById("rag-results-head");
+    if (head) {
+      head.textContent = q
+        ? `${records.length} de ${ArkikRAGEngine.records().length} registros · consulta: "${q}"`
+        : `${records.length} registro(s) en el índice`;
+    }
+
+    if (!records.length) {
+      box.innerHTML = `<div class="rag-empty">
+        <p>Sin coincidencias para esta consulta.</p>
+        <p class="rag-empty-hint">Prueba con un código ARK, un teléfono, o una etiqueta como <code>[Pendientes SINPE]</code>.</p>
+      </div>`;
+      return;
+    }
+
+    box.innerHTML = records.map(r => this._resultCard(r)).join("");
+  },
+
+  _resultCard(r) {
+    const waMsg = ArkikRAGEngine.sinpeReminderMessage(r);
+    const waHref = `https://wa.me/${normalizeWaPhone(r.clientPhone)}?text=${encodeURIComponent(waMsg)}`;
+    const chip = r.depositSettled
+      ? '<span class="rag-chip rag-chip--paid">Depósito verificado</span>'
+      : r.status === "pendiente"
+        ? '<span class="rag-chip rag-chip--pending">SINPE pendiente</span>'
+        : '<span class="rag-chip rag-chip--cancelled">Cancelada</span>';
+    const geo = r.isNonGam
+      ? '<span class="rag-chip rag-chip--nongam">Fuera de GAM</span>'
+      : '<span class="rag-chip rag-chip--gam">GAM</span>';
+
+    return `<article class="rag-result">
+      <div class="rag-result-main">
+        <div class="rag-result-top">
+          <span class="rag-code">${sanitizeInput(r.code)}</span>
+          ${chip}
+          ${geo}
+          ${r.isBandaRT ? '<span class="rag-chip rag-chip--rt">Banda RT</span>' : ""}
+        </div>
+        <h6 class="rag-client">${sanitizeInput(r.clientName)}</h6>
+        <p class="rag-contact">${sanitizeInput(r.clientPhone || "sin teléfono")}${r.clientEmail ? " · " + sanitizeInput(r.clientEmail) : ""}</p>
+        <p class="rag-when">📅 ${sanitizeInput(r.selectedDate || "sin fecha")} ${sanitizeInput(r.selectedTime || "")} · ${sanitizeInput(r.eventType)}</p>
+        <p class="rag-where">📍 ${sanitizeInput([r.canton, r.province].filter(Boolean).join(", ") || "sin ubicación")}</p>
+      </div>
+      <div class="rag-result-side">
+        <p class="rag-total">${formatCRC(r.granTotal)}</p>
+        <p class="rag-breakdown">Adelanto ${formatCRC(r.deposit50Amount)} · Saldo ${formatCRC(r.remainingBalance)}</p>
+        <a class="rag-wa" href="${sanitizeInput(waHref)}" data-rag-wa="1" target="_blank" rel="noopener noreferrer">📱 WhatsApp</a>
+      </div>
+    </article>`;
+  }
+};
+
+// ---- Acciones de 1 clic (ventana global: onclick inline del HTML) ----
+
+/**
+ * Exporta el reporte ejecutivo. DELega en el exportador PDF ya
+ * existente (exportOwnerReportPDF) en lugar de duplicarlo: mismo
+ * documento, una sola implementación.
+ */
+function ragActionExport() {
+  if (typeof exportOwnerReportPDF === "function") {
+    exportOwnerReportPDF();
+    return;
+  }
+  ragOutput("El exportador PDF no está disponible en este contexto.");
+}
+
+/**
+ * Notifica por WhatsApp el lote de reservas pendientes de SINPE.
+ * Los navegadores bloquean múltiples ventanas emergentes, así que
+ * se abre la primera y el resto se lista como enlaces de 1 clic.
+ */
+function ragActionNotifyBatch() {
+  const targets = ArkikRAGEngine.pendingTargets();
+  if (!targets.length) {
+    ragOutput("No hay reservas pendientes de SINPE: nada que notificar.");
+    return;
+  }
+  const first = targets[0];
+  const firstUrl = `https://wa.me/${normalizeWaPhone(first.clientPhone)}?text=${encodeURIComponent(ArkikRAGEngine.sinpeReminderMessage(first))}`;
+  window.open(firstUrl, "_blank", "noopener");
+
+  const rest = targets.slice(1);
+  const links = rest
+    .map(
+      r => `<a class="rag-out-link" href="${sanitizeInput(
+        `https://wa.me/${normalizeWaPhone(r.clientPhone)}?text=${encodeURIComponent(ArkikRAGEngine.sinpeReminderMessage(r))}`
+      )}" target="_blank" rel="noopener noreferrer">${sanitizeInput(r.code)} · ${sanitizeInput(r.clientName)}</a>`
+    )
+    .join("");
+
+  ragOutput(
+    `<strong>Notificación por lote</strong>` +
+    `<p>Se abrió WhatsApp para <strong>${sanitizeInput(first.code)}</strong> (${targets.length} pendientes en total).</p>` +
+    (rest.length
+      ? `<p>Envía uno a uno (${rest.length}):</p><div class="rag-out-links">${links}</div>`
+      : `<p>Era el único pendiente: lote completo.</p>`)
+  );
+}
+
+/** Renderiza la proyección semanal de ingresos contratados. */
+function ragActionWeekly() {
+  const weeks = ArkikRAGEngine.weeklyProjection();
+  const out = document.getElementById("rag-action-output");
+  if (!out) {
+    ragOutput("Proyección generada.");
+    return;
+  }
+  if (!weeks.length) {
+    out.innerHTML = `<p>No hay reservas futuras con fecha para proyectar.</p>`;
+    return;
+  }
+  const rows = weeks
+    .map(
+      w => `<tr><td>${sanitizeInput(w.week)}</td><td>${w.events}</td>
+      <td>${formatCRC(w.total)}</td><td>${formatCRC(w.collected)}</td><td>${formatCRC(w.pending)}</td></tr>`
+    )
+    .join("");
+  out.innerHTML = `
+    <p class="rag-out-title">📊 Ingresos contratados por semana</p>
+    <p class="rag-note">Proyección de montos ya comprometidos, no pronóstico de ventas.</p>
+    <div class="rag-out-table-wrap"><table class="rag-out-table">
+      <thead><tr><th>Semana</th><th>Eventos</th><th>Total</th><th>Cobrado</th><th>Por facturar</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/** Escribe un bloque de estado en el área de salida de la consola. */
+function ragOutput(html) {
+  const out = document.getElementById("rag-action-output");
+  if (out) out.innerHTML = html;
+}
+
+// Reexportado para pruebas y para el panel de IT.
+window.ArkikRAGEngine = ArkikRAGEngine;
+window.RAGConsole = RAGConsole;
+
 
