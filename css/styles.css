@@ -6161,3 +6161,482 @@ select.ark-input:active {
     transform: none;
   }
 }
+
+/* ==================================================================
+   RAG INTELLIGENCE STUDIO  (#ragStudioView)
+   Superficie dedicada a pantalla completa. Obsidian glass: fondo
+   translucido + blur, borde violeta sutil, y un acento por KPI
+   inyectado vía la custom property --rag-accent.
+   ================================================================== */
+
+#ragStudioView {
+  background:
+    radial-gradient(1100px 620px at 12% -8%, rgba(217, 70, 239, .16), transparent 62%),
+    radial-gradient(900px 520px at 88% 4%, rgba(99, 102, 241, .16), transparent 60%),
+    radial-gradient(760px 620px at 50% 108%, rgba(6, 182, 212, .12), transparent 62%),
+    #07040f;
+  font-family: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color: #e2e8f0;
+}
+
+/* Los montos y códigos son datos: monoespaciada para que las columnas
+   de ₡ alineen y el escaneo de una cifra sea vertical. */
+#ragStudioView .rag-studio-input,
+#ragStudioView .rag-code,
+#ragStudioView .rag-fin-value,
+#ragStudioView .rag-kpi-metric,
+#ragStudioView .rag-studio-count,
+#ragStudioView .rag-studio-badge {
+  font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Barra superior ---------- */
+
+.rag-studio-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem 1rem;
+  padding: .875rem 1.25rem;
+  border-bottom: 1px solid rgba(168, 85, 247, .22);
+  background: rgba(13, 8, 31, .82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 10px 40px -22px rgba(0, 0, 0, .9);
+}
+
+.rag-studio-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .875rem;
+  min-width: 0;
+}
+
+.rag-studio-brand-name {
+  font-size: clamp(.7rem, 1.5vw, .875rem);
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  background: linear-gradient(96deg, #f0abfc, #a78bfa 45%, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.rag-studio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .375rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #6ee7b7;
+  padding: .25rem .625rem;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, .35);
+  background: rgba(16, 185, 129, .1);
+  box-shadow: 0 0 18px -6px rgba(16, 185, 129, .55);
+  white-space: nowrap;
+}
+
+.rag-studio-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.rag-studio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4375rem;
+  padding: .5rem .875rem;
+  font-size: .6875rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #e9d5ff;
+  border-radius: .75rem;
+  border: 1px solid rgba(192, 132, 252, .32);
+  background: rgba(147, 51, 234, .16);
+  transition: transform .16s ease, background-color .16s ease, border-color .16s ease;
+}
+
+.rag-studio-btn:hover {
+  background: rgba(147, 51, 234, .3);
+  border-color: rgba(192, 132, 252, .5);
+}
+
+.rag-studio-btn:active { transform: scale(.96); }
+
+.rag-studio-btn--danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, .35);
+  background: rgba(239, 68, 68, .14);
+}
+
+.rag-studio-btn--danger:hover { background: rgba(239, 68, 68, .26); }
+
+/* ---------- Layout de secciones ---------- */
+
+#ragStudioView {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.rag-studio-section {
+  flex: 0 0 auto;
+  padding: 1.125rem 1.25rem 0;
+}
+
+.rag-studio-section--grow { flex: 1 1 auto; padding-bottom: 1.5rem; }
+
+.rag-studio-label {
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: .625rem;
+}
+
+.rag-studio-sublabel {
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #a78bfa;
+  margin-bottom: .5rem;
+}
+
+/* ---------- SECTION A: command bar ---------- */
+
+.rag-studio-command {
+  padding: .25rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(168, 85, 247, .28);
+  background: rgba(12, 7, 27, .9);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 18px 50px -30px rgba(0, 0, 0, .95);
+}
+
+.rag-studio-input {
+  width: 100%;
+  padding: .875rem 1.125rem;
+  font-size: .9375rem;
+  font-weight: 600;
+  color: #f8fafc;
+  background: transparent;
+  border: 0;
+  border-radius: .875rem;
+  outline: none;
+}
+
+.rag-studio-input::placeholder { color: #64748b; }
+
+.rag-studio-input:focus-visible {
+  box-shadow: 0 0 0 2px rgba(217, 70, 239, .5);
+}
+
+.rag-studio-pills {
+  display: flex;
+  gap: .5rem;
+  margin-top: .75rem;
+  padding-bottom: .25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rag-studio-pills .rag-pill { flex: 0 0 auto; white-space: nowrap; }
+
+/* ---------- SECTION B: KPI ---------- */
+
+.rag-studio-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .875rem;
+}
+
+.rag-kpi {
+  position: relative;
+  padding: 1.125rem 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(168, 85, 247, .2);
+  background: linear-gradient(160deg, rgba(13, 8, 31, .85), rgba(9, 6, 22, .92));
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 18px 44px -28px rgba(0, 0, 0, .95);
+  overflow: hidden;
+}
+
+/* El acento se lee como bioluminiscencia desde el borde inferior, no
+   como un borde de color plano sobre toda la caja. */
+.rag-kpi::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: var(--rag-accent, #a78bfa);
+  box-shadow: 0 0 22px -2px var(--rag-accent, #a78bfa);
+  opacity: .85;
+}
+
+.rag-kpi-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: .625rem;
+}
+
+.rag-kpi-icon { font-size: 1rem; line-height: 1; }
+
+.rag-kpi-head h3 {
+  margin: 0;
+  font-size: .6875rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--rag-accent, #a78bfa);
+}
+
+.rag-kpi-metric {
+  margin: 0;
+  font-size: clamp(1.25rem, 2.6vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: #f8fafc;
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.rag-kpi-caption {
+  margin: .375rem 0 0;
+  font-size: .75rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.rag-kpi-detail {
+  margin: .25rem 0 0;
+  font-size: .6875rem;
+  color: #94a3b8;
+}
+
+/* ---------- SECTION C: diagnósticos ---------- */
+
+.rag-studio-diagnostics {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: .875rem;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(217, 70, 239, .3);
+  background: rgba(12, 7, 27, .9);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 18px 50px -30px rgba(0, 0, 0, .95);
+}
+
+.rag-studio-insights {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rag-studio-insights .rag-insight { font-size: .8125rem; line-height: 1.5; }
+
+.rag-studio-actions {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+/* El bloque de salida no debe reservar espacio hasta que haya un
+   resultado: se oculta mientras esté vacío. */
+.rag-studio-output:empty { display: none; }
+
+.rag-studio-output {
+  margin-top: .625rem;
+  padding: .75rem;
+  border-radius: .75rem;
+  border: 1px solid rgba(168, 85, 247, .22);
+  background: rgba(12, 7, 27, .7);
+  font-size: .75rem;
+  color: #cbd5e1;
+}
+
+/* ---------- SECTION D: grid de reservas ---------- */
+
+.rag-studio-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+  margin-bottom: .625rem;
+}
+
+.rag-studio-count {
+  font-size: .75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.rag-studio-results {
+  display: grid;
+  gap: .625rem;
+  align-content: start;
+}
+
+.rag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) auto;
+  gap: 1rem 1.25rem;
+  align-items: center;
+  padding: .875rem 1.125rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(168, 85, 247, .18);
+  background: rgba(13, 8, 31, .78);
+  transition: border-color .16s ease, transform .16s ease;
+}
+
+.rag-row:hover {
+  border-color: rgba(217, 70, 239, .38);
+  transform: translateY(-1px);
+}
+
+.rag-row-ident { min-width: 0; }
+
+/* El JS emite <span>电话 / <span>✉️ dentro de .rag-contact, así que
+   hace falta el layout en flex. Se acota al Studio para no alterar la
+   tarjeta compacta del panel, que usa .rag-contact como texto simple. */
+#ragStudioView .rag-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .875rem;
+}
+
+.rag-fin-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.rag-fin {
+  padding: .5rem .625rem;
+  border-radius: .625rem;
+  background: rgba(5, 3, 12, .6);
+  border: 1px solid rgba(148, 163, 184, .14);
+  text-align: center;
+}
+
+.rag-fin-label {
+  display: block;
+  font-size: .5625rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: .1875rem;
+}
+
+.rag-fin-value {
+  display: block;
+  font-size: .8125rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.rag-fin--paid { border-color: rgba(16, 185, 129, .35); }
+.rag-fin--paid .rag-fin-value { color: #6ee7b7; }
+
+.rag-fin--pending { border-color: rgba(245, 158, 11, .38); }
+.rag-fin--pending .rag-fin-value { color: #fcd34d; }
+
+.rag-fin--total .rag-fin-value { color: #f8fafc; }
+
+.rag-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: .375rem;
+}
+
+.rag-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .375rem;
+  padding: .4375rem .75rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #e9d5ff;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: .625rem;
+  border: 1px solid rgba(192, 132, 252, .28);
+  background: rgba(147, 51, 234, .12);
+  transition: background-color .16s ease, transform .16s ease;
+}
+
+.rag-row-btn:hover { background: rgba(147, 51, 234, .26); }
+.rag-row-btn:active { transform: scale(.97); }
+
+/* ---------- Tarjeta lanzadora del panel embebido ---------- */
+
+.rag-launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem 1.25rem;
+  margin-top: .875rem;
+  padding-top: .875rem;
+  border-top: 1px solid rgba(168, 85, 247, .16);
+}
+
+.rag-action--primary {
+  border-color: rgba(217, 70, 239, .4);
+  background: linear-gradient(96deg, rgba(217, 70, 239, .2), rgba(109, 40, 217, .24));
+}
+
+/* ---------- Responsivo: iPad / laptop / móvil ---------- */
+
+@media (max-width: 1180px) {
+  .rag-studio-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rag-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .rag-row-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 860px) {
+  .rag-studio-diagnostics { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .rag-studio-bar { padding: .75rem 1rem; }
+  .rag-studio-section { padding: 1rem 1rem 0; }
+  .rag-studio-brand-name { letter-spacing: .1em; }
+  .rag-studio-kpis { grid-template-columns: minmax(0, 1fr); }
+  .rag-row { grid-template-columns: minmax(0, 1fr); }
+  .rag-fin-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rag-row-actions { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rag-row:hover { transform: none; }
+  .rag-studio-btn:active,
+  .rag-row-btn:active { transform: none; }
+}

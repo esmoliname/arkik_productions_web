@@ -2063,7 +2063,17 @@
             class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Panel de Control
             de Arkik Productions</h3>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex flex-wrap items-center gap-2 flex-shrink-0 justify-end">
+          <button type="button" id="btn-open-rag-studio" onclick="openRagStudio()"
+            aria-label="Abrir RAG Intelligence Studio a pantalla completa"
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-700 hover:from-fuchsia-500 hover:to-purple-600 text-white font-bold text-xs tracking-wider uppercase shadow-lg shadow-purple-950/50 flex items-center gap-2 border border-fuchsia-400/30 transition-all active:scale-95">
+            <span>🧠 RAG Intelligence Studio</span>
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+            </svg>
+          </button>
           <button type="button" onclick="adminLogout()" aria-label="Cerrar sesión"
             class="admin-logout-btn px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-red-950/30 active:scale-95">
             <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -2131,10 +2141,11 @@
         <div id="admin-owner-view" class="hidden">
 
           <!-- ============================================================
-               RAG DATA INTELLIGENCE — Consola de Índice Operacional
-               Motor determinista: ArkikRAGEngine (js/app.js). Sin
-               embeddings ni modelo de lenguaje: los agregados de abajo
-               son cálculos sobre BookingStore, no generaciones.
+               RAG DATA INTELLIGENCE — Lanzador
+               La consola completa vive en #ragStudioView (pantalla
+               completa, hermano de este modal). Acá sólo queda la
+               tarjeta de entrada que mantiene discoverable el motor
+               sin competir por el espacio del panel.
                ============================================================ -->
           <section id="rag-console" class="rag-console" aria-labelledby="rag-console-title">
             <div class="rag-head">
@@ -2144,24 +2155,18 @@
               </div>
               <span id="rag-index-badge" class="rag-badge">🟢 RAG Active Index</span>
             </div>
-
-            <!-- Consola de búsqueda -->
-            <div id="rag-command-bar" class="rag-command-bar">
-              <input type="search" id="rag-search-input" autocomplete="off" spellcheck="false"
-                placeholder="ARK-XXXXXXXX · nombre · +506 · [Pendientes SINPE] · tasa de conversión…"
-                aria-label="Consultar el índice de datos" class="rag-input">
-              <div id="rag-filter-pills" class="rag-pills" role="group" aria-label="Filtros rápidos"></div>
+            <div class="rag-launch">
+              <p class="rag-note">
+                El motor indexa <span id="rag-launch-count">0</span> registro(s) de BookingStore y los
+                interpola por reglas deterministas. Sin embeddings ni modelo de lenguaje: cada
+                agregado es un cálculo, no una generación.
+              </p>
+              <button type="button" onclick="openRagStudio()"
+                class="rag-action rag-action--primary">
+                <span class="rag-action-icon" aria-hidden="true">🧠</span>
+                <span>Abrir RAG Intelligence Studio</span>
+              </button>
             </div>
-
-            <!-- Diagnóstico + Centro de acción -->
-            <div id="rag-insights-container" class="rag-grid"></div>
-
-            <!-- Resultados estructurados -->
-            <div class="rag-results-head">
-              <h4 class="rag-col-title">Resultados</h4>
-              <span id="rag-results-head" class="rag-results-count"></span>
-            </div>
-            <div id="rag-results-list" class="rag-results"></div>
           </section>
 
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -2541,6 +2546,77 @@
       <p id="invoice-preview-title" class="text-center text-[11px] text-gray-400 pt-3">
         Vista previa vectorial — imprima o guarde con el diálogo nativo del navegador para un PDF fiel a A4.
       </p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- RAG INTELLIGENCE STUDIO (#ragStudioView)                    -->
+  <!-- Contenedor dedicado a pantalla completa. Es hermano de los -->
+  <!-- modales, NO un hijo de #adminPortalModal: el Studio         -->
+  <!-- reemplaza visualmente el panel para que nada más compita    -->
+  <!-- por la atención. Motor determinista ArkikRAGEngine          -->
+  <!-- (js/app.js). Sin embeddings ni modelo de lenguaje: los      -->
+  <!-- agregados son cálculos sobre BookingStore, no generaciones. -->
+  <!-- ============================================================ -->
+  <div id="ragStudioView" role="dialog" aria-modal="true" aria-labelledby="rag-studio-brand"
+    class="fixed inset-0 z-[95] hidden flex-col bg-[#07040f] opacity-0 pointer-events-none invisible">
+
+    <!-- Barra de navegación superior -->
+    <header class="rag-studio-bar">
+      <div class="rag-studio-brand">
+        <span class="rag-studio-brand-name" id="rag-studio-brand">ARKIK OPERATIONAL INTELLIGENCE // RAG STUDIO v2.0</span>
+        <span id="rag-studio-badge" class="rag-studio-badge">🟢 Index Active: Live Sync</span>
+      </div>
+      <div class="rag-studio-nav">
+        <button type="button" id="btn-rag-studio-back" onclick="closeRagStudio()"
+          class="rag-studio-btn">
+          <span aria-hidden="true">⬅</span> <span>Volver al Panel Admin</span>
+        </button>
+        <button type="button" id="btn-rag-studio-logout" onclick="ragStudioLogout()"
+          class="rag-studio-btn rag-studio-btn--danger">
+          <span aria-hidden="true">🚪</span> <span>Cerrar Sesión</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- SECTION A: Command bar + pills -->
+    <div class="rag-studio-section" id="rag-studio-command">
+      <label for="rag-studio-search" class="rag-studio-label">Barra de comandos</label>
+      <div class="rag-studio-command">
+        <input type="search" id="rag-studio-search" autocomplete="off" spellcheck="false"
+          placeholder="Buscar por cliente, teléfono (+506), hash ARK-XXXXXXXX, provincia o 'Sin abonar'..."
+          aria-label="Consultar el índice operacional" class="rag-studio-input">
+      </div>
+      <div id="rag-studio-pills" class="rag-studio-pills" role="group"
+        aria-label="Filtros rápidos del índice"></div>
+    </div>
+
+    <!-- SECTION B: KPI dashboard -->
+    <div class="rag-studio-section">
+      <h2 class="rag-studio-label">Dashboard ejecutivo</h2>
+      <div id="rag-studio-kpis" class="rag-studio-kpis"></div>
+    </div>
+
+    <!-- SECTION C: Diagnósticos -->
+    <div class="rag-studio-section">
+      <h2 class="rag-studio-label">Diagnóstico sintético en vivo</h2>
+      <div class="rag-studio-diagnostics">
+        <div id="rag-studio-insights" class="rag-studio-insights"></div>
+        <div class="rag-studio-actions-col">
+          <h3 class="rag-studio-sublabel">Centro de acción</h3>
+          <div id="rag-studio-actions" class="rag-studio-actions"></div>
+          <div id="rag-studio-output" class="rag-studio-output" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION D: Grid de reservas -->
+    <div class="rag-studio-section rag-studio-section--grow">
+      <div class="rag-studio-results-head">
+        <h2 class="rag-studio-label">Reservas y clientes</h2>
+        <span id="rag-studio-results-head" class="rag-studio-count"></span>
+      </div>
+      <div id="rag-studio-results" class="rag-studio-results"></div>
     </div>
   </div>
 

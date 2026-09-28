@@ -7581,6 +7581,11 @@ const ArkikRAGEngine = {
       return Number.isFinite(n) ? n : 0;
     };
     const str = v => String(v ?? "").trim();
+    // Normaliza UNA vez y se reutiliza en todo el registro. Antes se
+    // comparaba `b.status` (crudo) contra "confirmada"/"realizada" para
+    // marcar el depósito como cobrado: un estado en MAYÚSCULAS o con
+    // espacios pasaba por pendiente aunque el banco lo hubiera validado.
+    const status = str(b.status).toLowerCase() || "pendiente";
 
     const province = str(b.province);
     const canton = str(b.canton);
@@ -7598,7 +7603,7 @@ const ArkikRAGEngine = {
 
     return {
       code: str(b.code) || "SIN-CODIGO",
-      status: str(b.status).toLowerCase() || "pendiente",
+      status: status,
       clientName: str(b.clientName) || "Cliente sin nombre",
       clientPhone: str(b.clientPhone),
       clientEmail: str(b.clientEmail),
@@ -7627,7 +7632,7 @@ const ArkikRAGEngine = {
       // verificado bancariamente. `remainingBalance` es el campo que
       // el carrito calculó con la regla 50/50 y es la fuente de verdad
       // para el saldo, no un recálculo aquí.
-      depositSettled: b.status === "confirmada" || b.status === "realizada"
+      depositSettled: status === "confirmada" || status === "realizada"
     };
   },
 
@@ -8147,23 +8152,27 @@ const RAGConsole = {
 
   _bind() {
     if (this._bound) return;
-    const input = document.getElementById("rag-search-input");
+    // Un solo par de delegates en #ragStudioView cubre búsqueda, pills
+    // y acciones de fila. Se registran una sola vez sobre el contenedor
+    // raíz, no sobre los hijos: los hijos se repintan en cada render y
+    // un listener por elemento se acumularía sin parar.
+    const input = document.getElementById("rag-studio-search");
     if (input) {
       input.addEventListener("input", () => {
         this.query = input.value;
         this.render();
       });
     }
-    const bar = document.getElementById("rag-filter-pills");
-    if (bar) {
-      bar.addEventListener("click", e => {
+    const pills = document.getElementById("rag-studio-pills");
+    if (pills) {
+      pills.addEventListener("click", e => {
         const btn = e.target.closest("[data-rag-pill]");
         if (!btn) return;
         this.pill = btn.getAttribute("data-rag-pill");
         this.render();
       });
     }
-    const results = document.getElementById("rag-results-list");
+    const results = document.getElementById("rag-studio-results");
     if (results) {
       results.addEventListener("click", e => {
         const wa = e.target.closest("[data-rag-wa]");
@@ -8186,7 +8195,7 @@ const RAGConsole = {
   },
 
   /**
-   * Reindexa y repinta las tres zonas.
+   * Reindexa y repinta el Studio.
    * Reindexa en cada render a propósito: el costo es lineal sobre un
    * registro por reserva y garantiza que ninguna vista pueda pintar un
    * índice desactualizado tras una reserva nueva o un cambio de estado.
@@ -8200,14 +8209,21 @@ const RAGConsole = {
   },
 
   _renderBadge() {
-    const el = document.getElementById("rag-index-badge");
-    if (!el) return;
     const s = ArkikRAGEngine.stats();
-    el.textContent = `🟢 RAG Active Index · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+    const studio = document.getElementById("rag-studio-badge");
+    if (studio) {
+      studio.textContent = `🟢 Index Active: Live Sync · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+    }
+    // El panel embebido solo muestra el pulso; el conteo vive en el
+    // cuerpo de la tarjeta lanzadora.
+    const pulse = document.getElementById("rag-index-badge");
+    if (pulse) pulse.textContent = "🟢 RAG Active Index";
+    const launch = document.getElementById("rag-launch-count");
+    if (launch) launch.textContent = String(s.count);
   },
 
   _renderPills() {
-    const box = document.getElementById("rag-filter-pills");
+    const box = document.getElementById("rag-studio-pills");
     if (!box) return;
     const idx = ArkikRAGEngine.records();
     // Los pills se derivan de TAGS: la clave del pill ES la clave del
@@ -8216,7 +8232,14 @@ const RAGConsole = {
       const tag = ArkikRAGEngine.TAGS.find(t => t.key === key);
       return tag ? idx.filter(r => tag.test(r)).length : 0;
     };
-    const pills = [{ key: "todas", label: "Todas" }].concat(ArkikRAGEngine.PILL_TAGS);
+    // "+12%" no es texto fijo: la tasa de viáticos es configurable desde
+    // el panel (StorageEngine), así que un 12% hardcodeado mentía apenas
+    // el dueño ajustara la tasa.
+    const travelPct = Math.round(ArkikRAGEngine.travelRate() * 100);
+    const pills = [{ key: "todas", label: "Todas" }].concat(ArkikRAGEngine.PILL_TAGS).map(p => {
+      if (p.key !== "fuera-gam") return p;
+      return { key: p.key, label: `Fuera GAM (+${travelPct}%)` };
+    });
     box.innerHTML = pills
       .map(p => {
         const active = this.pill === p.key ? "rag-pill--active" : "";
@@ -8227,7 +8250,7 @@ const RAGConsole = {
   },
 
   _renderInsights() {
-    const box = document.getElementById("rag-insights-container");
+    const box = document.getElementById("rag-studio-insights");
     if (!box) return;
 
     // Si el usuario escribió una consulta, los diagnósticos pasan a
@@ -8239,58 +8262,65 @@ const RAGConsole = {
 
     const pct = v => (v === null || v === undefined ? "n/d" : v.toFixed(1) + "%");
 
-    // Tarjetas de diagnóstico. Cada valor viene de aggregate().
-    const cards = [
-      {
-        tone: "emerald",
-        icon: "💰",
-        title: "Balance financiero",
-        metric: formatCRC(agg.balance.collected),
-        caption: "Cobrado (depósitos verificados)",
-        detail: `Por cobrar ${formatCRC(agg.balance.pendingBalance)} · Cartera ${formatCRC(agg.balance.contracted)}`
-      },
-      {
-        tone: "fuchsia",
-        icon: "⏳",
-        title: "Saldo pendiente en escena",
-        metric: formatCRC(agg.balance.pendingBalance),
-        caption: `${agg.totals.pendingSinpe} reserva(s) sin verificar`,
-        detail: agg.totals.pendingSinpe > 0 ? `Exposición sin confirmar: ${formatCRC(agg.balance.atRisk)}` : "Sin reservas en riesgo."
-      },
-      {
-        tone: "cyan",
-        icon: "🎯",
-        title: "Tasa de conversión",
-        metric: pct(agg.conversion.rate),
-        caption: `${agg.conversion.confirmed} de ${agg.conversion.emitted} emitidas`,
-        detail: agg.conversion.definition
-      },
-      {
-        tone: "purple",
-        icon: "🏷️",
-        title: "Formato y geografía",
-        metric: agg.demand.topFormat ? agg.demand.topFormat.name : "n/d",
-        caption: agg.demand.topFormat ? `${agg.demand.topFormat.count} evento(s)` : "sin datos",
-        detail: `${agg.demand.gamCount} GAM · ${agg.demand.nonGamCount} fuera de GAM`
-      }
-    ];
-
-    const cardHtml = cards
-      .map(
-        c => `<article class="rag-card rag-card--${c.tone}">
-        <header class="rag-card-head">
-          <span class="rag-card-icon" aria-hidden="true">${c.icon}</span>
-          <h5>${sanitizeInput(c.title)}</h5>
+    // SECTION B: los 4 KPI del dashboard ejecutivo. Cada valor viene
+    // de aggregate(); los colores son los acentos del brief.
+    const kpiBox = document.getElementById("rag-studio-kpis");
+    if (kpiBox) {
+      const kpis = [
+        {
+          tone: "emerald",
+          accent: "#10b981",
+          icon: "💰",
+          title: "Total Recaudado",
+          metric: formatCRC(agg.balance.collected),
+          caption: "Depósitos SINPE verificados",
+          detail: `Cartera contratada ${formatCRC(agg.balance.contracted)}`
+        },
+        {
+          tone: "fuchsia",
+          accent: "#d946ef",
+          icon: "⏳",
+          title: "Saldos Pendientes en Escena",
+          metric: formatCRC(agg.balance.pendingBalance),
+          caption: `${agg.totals.pendingSinpe} reserva(s) sin verificar`,
+          detail: agg.balance.atRisk > 0 ? `Exposición sin confirmar ${formatCRC(agg.balance.atRisk)}` : "Sin reservas en riesgo."
+        },
+        {
+          tone: "cyan",
+          accent: "#06b6d4",
+          icon: "🎯",
+          title: "Tasa de Conversión",
+          metric: pct(agg.conversion.rate),
+          caption: `${agg.conversion.confirmed} de ${agg.conversion.emitted} emitidas`,
+          detail: agg.conversion.definition
+        },
+        {
+          tone: "amber",
+          accent: "#f59e0b",
+          icon: "✅",
+          title: "Confirmadas vs. Cotizaciones",
+          metric: `${agg.conversion.confirmed}/${agg.conversion.emitted}`,
+          caption: "Reservas confirmadas sobre cotizaciones emitidas",
+          detail: `${agg.totals.active} vigente(s) · ${agg.totals.cancelled} cancelada(s)`
+        }
+      ];
+      kpiBox.innerHTML = kpis
+        .map(
+          k => `<article class="rag-kpi" style="--rag-accent:${k.accent}">
+        <header class="rag-kpi-head">
+          <span class="rag-kpi-icon" aria-hidden="true">${k.icon}</span>
+          <h3>${sanitizeInput(k.title)}</h3>
         </header>
-        <p class="rag-card-metric">${sanitizeInput(c.metric)}</p>
-        <p class="rag-card-caption">${sanitizeInput(c.caption)}</p>
-        <p class="rag-card-detail">${sanitizeInput(c.detail)}</p>
+        <p class="rag-kpi-metric">${sanitizeInput(k.metric)}</p>
+        <p class="rag-kpi-caption">${sanitizeInput(k.caption)}</p>
+        <p class="rag-kpi-detail">${sanitizeInput(k.detail)}</p>
       </article>`
-      )
-      .join("");
+        )
+        .join("");
+    }
 
-    // Insights derivados (texto determinista del núcleo).
-    const insightHtml = insights.lines
+    // SECTION C: insights deterministas del núcleo.
+    box.innerHTML = insights.lines
       .map(
         l => `<li class="rag-insight rag-insight--${sanitizeInput(l.tone)}">${sanitizeInput(l.text)}</li>`
       )
@@ -8322,39 +8352,28 @@ const RAGConsole = {
       }
     ];
 
-    const actionHtml = actions
-      .map(
-        a => `<button type="button" onclick="${a.action}" ${a.disabled ? "disabled" : ""}
+    const actionBox = document.getElementById("rag-studio-actions");
+    if (actionBox) {
+      actionBox.innerHTML = actions
+        .map(
+          a => `<button type="button" onclick="${a.action}" ${a.disabled ? "disabled" : ""}
         class="rag-action ${a.disabled ? "rag-action--off" : ""}">
         <span class="rag-action-icon" aria-hidden="true">${a.icon}</span>
         <span>${sanitizeInput(a.label)}</span>
       </button>`
-      )
-      .join("");
-
-    box.innerHTML = `
-      <div class="rag-col rag-col--left">
-        <h4 class="rag-col-title">Diagnóstico en vivo</h4>
-        <div class="rag-cards">${cardHtml}</div>
-        <h4 class="rag-col-title">Lectura del índice</h4>
-        <ul class="rag-insights">${insightHtml}</ul>
-      </div>
-      <div class="rag-col rag-col--right">
-        <h4 class="rag-col-title">Centro de acción</h4>
-        <div class="rag-actions">${actionHtml}</div>
-        <p class="rag-note">Acciones de 1 clic. La notificación abre WhatsApp en la primera reserva pendiente; el resto queda listado para enviar uno a uno.</p>
-        <div id="rag-action-output" class="rag-output" role="status" aria-live="polite"></div>
-      </div>`;
+        )
+        .join("");
+    }
   },
 
   _renderResults() {
-    const box = document.getElementById("rag-results-list");
+    const box = document.getElementById("rag-studio-results");
     if (!box) return;
     const q = this.effectiveQuery().trim();
     const res = ArkikRAGEngine.query(q);
     const records = res.records;
 
-    const head = document.getElementById("rag-results-head");
+    const head = document.getElementById("rag-studio-results-head");
     if (head) {
       head.textContent = q
         ? `${records.length} de ${ArkikRAGEngine.records().length} registros · consulta: "${q}"`
@@ -8384,8 +8403,28 @@ const RAGConsole = {
       ? '<span class="rag-chip rag-chip--nongam">Fuera de GAM</span>'
       : '<span class="rag-chip rag-chip--gam">GAM</span>';
 
-    return `<article class="rag-result">
-      <div class="rag-result-main">
+    // Matriz financiera: total, depósito 50% y saldo restante. Los
+    // montos salen del registro ya normalizado (no se recalculan) para
+    // no duplicar la regla 50/50 del carrito.
+    const finance = [
+      { label: "Total", value: formatCRC(r.granTotal), tone: "total" },
+      {
+        label: "Adelanto 50%",
+        value: formatCRC(r.deposit50Amount),
+        tone: r.depositSettled ? "paid" : "pending"
+      },
+      { label: "Saldo", value: formatCRC(r.remainingBalance), tone: "balance" }
+    ]
+      .map(
+        f => `<div class="rag-fin rag-fin--${f.tone}">
+      <span class="rag-fin-label">${f.label}</span>
+      <span class="rag-fin-value">${sanitizeInput(f.value)}</span>
+    </div>`
+      )
+      .join("");
+
+    return `<article class="rag-row" data-rag-code="${sanitizeInput(r.code)}">
+      <div class="rag-row-ident">
         <div class="rag-result-top">
           <span class="rag-code">${sanitizeInput(r.code)}</span>
           ${chip}
@@ -8393,18 +8432,111 @@ const RAGConsole = {
           ${r.isBandaRT ? '<span class="rag-chip rag-chip--rt">Banda RT</span>' : ""}
         </div>
         <h6 class="rag-client">${sanitizeInput(r.clientName)}</h6>
-        <p class="rag-contact">${sanitizeInput(r.clientPhone || "sin teléfono")}${r.clientEmail ? " · " + sanitizeInput(r.clientEmail) : ""}</p>
+        <p class="rag-contact">
+          <span>📱 ${sanitizeInput(r.clientPhone || "sin teléfono")}</span>
+          ${r.clientEmail ? `<span>✉️ ${sanitizeInput(r.clientEmail)}</span>` : ""}
+        </p>
         <p class="rag-when">📅 ${sanitizeInput(r.selectedDate || "sin fecha")} ${sanitizeInput(r.selectedTime || "")} · ${sanitizeInput(r.eventType)}</p>
         <p class="rag-where">📍 ${sanitizeInput([r.canton, r.province].filter(Boolean).join(", ") || "sin ubicación")}</p>
       </div>
-      <div class="rag-result-side">
-        <p class="rag-total">${formatCRC(r.granTotal)}</p>
-        <p class="rag-breakdown">Adelanto ${formatCRC(r.deposit50Amount)} · Saldo ${formatCRC(r.remainingBalance)}</p>
-        <a class="rag-wa" href="${sanitizeInput(waHref)}" data-rag-wa="1" target="_blank" rel="noopener noreferrer">📱 WhatsApp</a>
+      <div class="rag-row-fin">
+        <div class="rag-fin-matrix">${finance}</div>
+      </div>
+      <div class="rag-row-actions">
+        <button type="button" class="rag-row-btn" data-rag-doc="${sanitizeInput(r.code)}">📄 Generar DOCX / PDF</button>
+        <a class="rag-row-btn" href="${sanitizeInput(waHref)}" data-rag-wa="1" target="_blank" rel="noopener noreferrer">📱 WhatsApp Directo</a>
+        <button type="button" class="rag-row-btn" data-rag-edit="${sanitizeInput(r.code)}">✏️ Editar</button>
       </div>
     </article>`;
   }
 };
+
+/**
+ * RAG INTELLIGENCE STUDIO — navegación de pantalla completa.
+ * El Studio es un HERMANO de #adminPortalModal, no un hijo: al abrirlo
+ * se oculta el panel para que nada más compita por la atención. Ocultar
+ * el panel (en vez de mantenerlo montado detrás) también garantiza que
+ * el scroll del body quede bloqueado durante el Studio.
+ */
+const RAGStudio = {
+  _bound: false,
+  _returnFocus: null,
+
+  isOpen() {
+    const el = document.getElementById("ragStudioView");
+    return Boolean(el) && !el.classList.contains("hidden");
+  },
+
+  open() {
+    const el = document.getElementById("ragStudioView");
+    if (!el) return;
+    this._returnFocus = document.activeElement;
+    const panel = document.getElementById("adminPortalModal");
+    if (panel) {
+      panel.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+      panel.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+    }
+    el.classList.remove("hidden", "opacity-0", "pointer-events-none", "invisible");
+    el.classList.add("flex", "opacity-100", "pointer-events-auto", "visible");
+    document.body.style.overflow = "hidden";
+    RAGConsole.init();
+    this._bind();
+    const search = document.getElementById("rag-studio-search");
+    if (search) search.focus();
+  },
+
+  close() {
+    const el = document.getElementById("ragStudioView");
+    if (!el) return;
+    el.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+    el.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+    // Se restaura el panel, no el scroll: el Studio vive dentro de la
+    // sesión del Propietario, así que cerrar el Studio NO cierra sesión.
+    if (typeof ModalController !== "undefined") ModalController.open("adminPortalModal");
+    if (this._returnFocus && typeof this._returnFocus.focus === "function") {
+      this._returnFocus.focus();
+      this._returnFocus = null;
+    }
+  },
+
+  _bind() {
+    if (this._bound) return;
+    // Un solo delegate cubre la barra de acciones por fila. Los botones
+    // se regeneran en cada render, así que un listener por botón
+    // acumularía duplicados.
+    const results = document.getElementById("rag-studio-results");
+    if (results) {
+      results.addEventListener("click", e => {
+        const doc = e.target.closest("[data-rag-doc]");
+        if (doc) {
+          ragActionRecordDocument(doc.getAttribute("data-rag-doc"));
+          return;
+        }
+        const edit = e.target.closest("[data-rag-edit]");
+        if (edit) ragActionRecordEdit(edit.getAttribute("data-rag-edit"));
+      });
+    }
+    this._bound = true;
+  }
+};
+
+function openRagStudio() {
+  RAGStudio.open();
+}
+
+function closeRagStudio() {
+  RAGStudio.close();
+}
+
+/**
+ * Cerrar sesión desde el Studio: hay que cerrar AMBAS superficies, no
+ * solo el Studio, o el panel del Propietario quedaría visible detrás
+ * de la pantalla de login.
+ */
+function ragStudioLogout() {
+  if (typeof RAGStudio !== "undefined") RAGStudio.close();
+  adminLogout();
+}
 
 // ---- Acciones de 1 clic (ventana global: onclick inline del HTML) ----
 
@@ -8481,14 +8613,83 @@ function ragActionWeekly() {
     </table></div>`;
 }
 
-/** Escribe un bloque de estado en el área de salida de la consola. */
+/** Escribe un bloque de estado en el área de salida del Studio. */
 function ragOutput(html) {
-  const out = document.getElementById("rag-action-output");
+  const out = document.getElementById("rag-studio-output");
   if (out) out.innerHTML = html;
+}
+
+// ---- Acciones por fila (SECTION D) ----
+
+/**
+ * "Generar DOCX / PDF" de una reserva concreta.
+ *
+ * DELIBERADO: no existe generador DOCX en el proyecto y no se agrega uno
+ * sin dependencia. Este botón reutiliza el visor vectorial y el diálogo
+ * de impresión del navegador (#invoicePreviewModal), que es la única vía
+ * de PDF real ya implementada. Inventar un .docx con Text/HTML
+ * sobrevendería una capacidad que el código no tiene.
+ */
+function ragActionRecordDocument(code) {
+  const b = BookingStore.get(code);
+  if (!b) {
+    ragOutput(`No se encontró la reserva <code>${sanitizeInput(String(code))}</code>.`);
+    return;
+  }
+  // Reutiliza el MISMO constructor de documento que la pre-factura
+  // (#invoicePreviewModal), en vez de inventar un exportador paralelo:
+  // una sola implementación del documento, sin divergencia de formato.
+  // No se llama openInvoicePreview() porque esa función solo lee
+  // `cart.createdBooking` y no acepta una reserva arbitraria.
+  const docHtml = buildExecutiveInvoiceHtml(b);
+  if (!docHtml) {
+    ragOutput(`No se pudo generar el documento de <strong>${sanitizeInput(b.clientName || code)}</strong>.`);
+    return;
+  }
+  if (typeof RAGStudio !== "undefined" && RAGStudio.close) RAGStudio.close();
+  const content = document.getElementById("invoicePreviewContent");
+  if (!content) {
+    ragOutput("El visor de documentos no está disponible en esta vista.");
+    return;
+  }
+  content.innerHTML = docHtml;
+  if (typeof ModalController !== "undefined") ModalController.open("invoicePreviewModal");
+}
+
+/**
+ * "Editar" de una reserva.
+ *
+ * DELIBERADO: BookingStore solo expone updateDate y updateStatus; no hay
+ * un editor de reservas completo en el proyecto, y no se inventa un
+ * formulario que no puede persistir. El botón cierra el Studio y lleva
+ * al Propietario a la tabla de reservas, que es el punto de entrada real
+ * de edición (reprogramar fecha, confirmar, cancelar).
+ */
+function ragActionRecordEdit(code) {
+  const b = BookingStore.get(code);
+  if (!b) {
+    ragOutput(`No se encontró la reserva <code>${sanitizeInput(String(code))}</code>.`);
+    return;
+  }
+  if (typeof RAGStudio !== "undefined" && RAGStudio.close) RAGStudio.close();
+  if (typeof AdminModule !== "undefined" && typeof AdminModule.renderOwnerBookings === "function") {
+    AdminModule.renderOwnerBookings();
+  }
+  const rows = document.getElementById("owner-bookings-list");
+  if (rows && typeof rows.scrollIntoView === "function") {
+    rows.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  if (typeof showToast === "function") {
+    showToast(
+      `Reserva ${String(b.code)} (${String(b.status || "pendiente")}): edítala en la tabla de reservas.`,
+      "info"
+    );
+  }
 }
 
 // Reexportado para pruebas y para el panel de IT.
 window.ArkikRAGEngine = ArkikRAGEngine;
 window.RAGConsole = RAGConsole;
+window.RAGStudio = RAGStudio;
 
 
