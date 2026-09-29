@@ -2,7 +2,15 @@
    el eje opsz esté disponible en el titular del hero. Syne se eliminó de esta
    petición: ya no tiene consumidores tras migrar el h1 y cada familia en el
    @import es un download extra en el critical path del LCP. */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+html, body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .rag-studio-count, .rag-studio-badge, .monetary, [data-monetary] {
+  font-family: 'JetBrains Mono', monospace;
+}
 
 /* ============================================================
    ARKIK PALETTE — LIQUID GLASS PÚRPURA (variables globales)
@@ -5696,6 +5704,153 @@ select.ark-input:active {
   box-shadow: 0 0 20px rgba(168, 85, 247, 0.35);
 }
 
+/* ============================================================
+   RACK DATA PREVIEW DRAWER (#rackPreviewModal)
+   ============================================================ */
+#rackPreviewModal {
+  transition: opacity 300ms ease-out, visibility 300ms ease-out;
+}
+
+#rackPreviewModal:not(.hidden) {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+#rackPreviewModal .animate-slide-in-right {
+  animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+body.rack-preview-open {
+  overflow: hidden;
+}
+
+/* Rack Data Card - Glassmorphic container */
+.rack-data-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rack-data-card:hover {
+  border-color: rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.15);
+}
+
+.rack-preview-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.rack-preview-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(168, 85, 247, 0.3);
+  color: white;
+}
+
+/* Conversion Rate Widget */
+.exec-kpi--conversion {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(236, 72, 153, 0.1));
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.exec-kpi--conversion::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.5), rgba(236, 72, 153, 0.3));
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.exec-kpi--conversion:hover::before {
+  opacity: 1;
+}
+
+.conversion-progress {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.conversion-fill {
+  border-radius: 3px;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+/* Enhanced Action Center Buttons */
+.rag-action {
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rag-action .rag-action-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.rag-action--primary {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+  transition: all 0.2s ease-out;
+}
+
+.rag-action--primary:hover {
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.5), 0 4px 15px rgba(168, 85, 247, 0.3);
+  transform: translateY(-1px);
+}
+
+.rag-action--primary:active {
+  transform: scale(0.97);
+}
+
+.rag-action[onclick*="ragActionExport"] {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+}
+
+.rag-action[onclick*="ragActionExport"]:hover {
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.rag-action[onclick*="ragActionNotify"] {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+}
+
+.rag-action[onclick*="ragActionNotify"]:hover {
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.rag-action[onclick*="ragActionProjection"] {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+}
+
+.rag-action[onclick*="ragActionProjection"]:hover {
+  box-shadow: 0 0 25px rgba(6, 182, 212, 0.5), 0 4px 15px rgba(6, 182, 212, 0.3);
+}
+
 /* --- Consola de busqueda (glassmorphism de alto contraste) --- */
 .rag-command-bar {
   display: flex;
@@ -5923,24 +6078,57 @@ select.ark-input:active {
 .rag-action {
   display: flex;
   align-items: center;
-  gap: .55rem;
+  gap: .65rem;
   width: 100%;
-  padding: .7rem .85rem;
+  padding: .75rem .95rem;
   border-radius: .75rem;
   text-align: left;
   font-size: 12px;
   font-weight: 700;
-  color: #ede9fe;
-  background: rgba(139, 92, 246, .1);
-  border: 1px solid rgba(139, 92, 246, .3);
   cursor: pointer;
-  transition: all .18s;
+  transition: all .15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.rag-action:hover:not(:disabled) {
-  color: #fff;
-  background: rgba(139, 92, 246, .22);
-  border-color: rgba(167, 139, 250, .6);
+.rag-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.rag-action--export {
+  background: rgba(88, 28, 135, 0.3);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #e9d5ff;
+}
+
+.rag-action--export:hover:not(:disabled) {
+  border-color: #c084fc;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  transform: translateY(-1px);
+}
+
+.rag-action--whatsapp {
+  background: rgba(6, 78, 59, 0.3);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #a7f3d0;
+}
+
+.rag-action--whatsapp:hover:not(:disabled) {
+  border-color: #34d399;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  transform: translateY(-1px);
+}
+
+.rag-action--projection {
+  background: rgba(22, 78, 99, 0.3);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: #a5f3fc;
+}
+
+.rag-action--projection:hover:not(:disabled) {
+  border-color: #22d3ee;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
   transform: translateY(-1px);
 }
 
@@ -6628,6 +6816,115 @@ select.ark-input:active {
 
 .rag-row-btn:hover { background: rgba(147, 51, 234, .26); }
 .rag-row-btn:active { transform: scale(.97); }
+
+/* --- Refined Glass Trigger Pills for Reservation Cards --- */
+.rag-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  padding: .42rem .8rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all .15s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.rag-pill-btn:active {
+  transform: scale(0.95);
+}
+
+.rag-pill-btn--preview {
+  color: #e9d5ff;
+  background: rgba(147, 51, 234, 0.18);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+.rag-pill-btn--preview:hover {
+  background: rgba(147, 51, 234, 0.35);
+  border-color: rgba(216, 180, 254, 0.6);
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.3);
+  color: #ffffff;
+}
+
+.rag-pill-btn--pdf {
+  color: #ddd6fe;
+  background: rgba(109, 40, 217, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.rag-pill-btn--pdf:hover {
+  background: rgba(109, 40, 217, 0.35);
+  border-color: rgba(167, 139, 250, 0.6);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.3);
+  color: #ffffff;
+}
+
+.rag-pill-btn--wa {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.rag-pill-btn--wa:hover {
+  background: rgba(16, 185, 129, 0.32);
+  border-color: rgba(52, 211, 153, 0.6);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.3);
+  color: #ffffff;
+}
+
+.rag-pill-btn--edit {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.rag-pill-btn--edit:hover {
+  background: rgba(148, 163, 184, 0.25);
+  border-color: rgba(203, 213, 225, 0.5);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+/* ============================================================
+   PRE-INVOICE MODAL & PRINT STYLING (#preInvoicePreviewModal)
+   ============================================================ */
+#preInvoicePreviewModal {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+#preInvoicePreviewCard {
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.6), 0 0 40px rgba(168, 85, 247, 0.2);
+}
+
+@media print {
+  body.pre-invoice-print-active > *:not(#preInvoicePreviewModal) {
+    display: none !important;
+  }
+  #preInvoicePreviewModal {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #preInvoicePreviewModal .w-full.flex.flex-wrap.items-center,
+  #preInvoicePreviewModal button {
+    display: none !important;
+  }
+  #preInvoicePreviewCard {
+    box-shadow: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}
 
 /* ---------- Tarjeta lanzadora del panel embebido ---------- */
 

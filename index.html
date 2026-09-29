@@ -32,7 +32,9 @@
               }
             },
             fontFamily: {
-              heading: ['Plus Jakarta Sans', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+              sans: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              heading: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
             }
           }
         }
@@ -44,7 +46,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
 
   <!-- Custom Styles -->
@@ -55,6 +57,9 @@
 
   <!-- EmailJS for Booking Voucher Email Dispatch -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+
+  <!-- docx UMD for Native Word (.docx) Report Generation -->
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 
   <!-- Favicon / Isotipo Oficial -->
   <link rel="icon" type="image/jpeg" href="img/arkik_logo.jpg">
@@ -1804,7 +1809,7 @@
                 </a>
 
                 <!-- Executive Pre-Invoice Preview (Secondary · Purple/Indigo Glass) -->
-                <button type="button" id="btn-preview-invoice" onclick="openInvoicePreview()"
+                <button type="button" id="btn-preview-invoice" onclick="openPreInvoicePreview()"
                   class="btn-exec btn-exec-secondary">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2491,6 +2496,61 @@
   </div>
 
   <!-- ============================================================ -->
+  <!-- PRE-INVOICE & VOUCHER PREVIEW MODAL (#preInvoicePreviewModal)  -->
+  <!-- Real print A4 bounded canvas (794px) with Base64 & PDF engine  -->
+  <!-- ============================================================ -->
+  <div id="preInvoicePreviewModal" role="dialog" aria-modal="true" aria-labelledby="pre-invoice-modal-title"
+    onclick="if (event.target === this) closePreInvoicePreview()"
+    class="fixed inset-0 z-[120] hidden items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible transition-all duration-200">
+    <div class="relative m-auto w-full max-w-[850px] my-auto flex flex-col items-center">
+
+      <!-- Action Controls Bar -->
+      <div class="w-full flex flex-wrap items-center justify-between gap-3 pb-3 px-1 sm:px-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+          <div>
+            <h3 id="pre-invoice-modal-title" class="text-sm font-bold text-white tracking-wide">Prefactura y Comprobante de Reserva</h3>
+            <p class="text-[11px] text-purple-300/70 font-mono">Vista Previa A4 (794px max-width)</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <button type="button" id="btn-preinvoice-pdf" onclick="triggerPreInvoicePDFDownload()"
+            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-purple-600 hover:bg-purple-500 hover:shadow-[0_0_20px_rgba(168,85,247,0.5)] active:scale-95 transition-all duration-150">
+            <span>📥 Descargar PDF Oficial</span>
+          </button>
+          <button type="button" id="btn-preinvoice-docx" onclick="triggerPreInvoiceDOCXDownload()"
+            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-purple-200 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 hover:border-purple-400 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] active:scale-95 transition-all duration-150">
+            <span>📄 Descargar Word (.docx)</span>
+          </button>
+          <button type="button" onclick="closePreInvoicePreview()" aria-label="Cerrar Previsualización"
+            class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-xs sm:text-sm font-medium text-gray-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 active:scale-95 transition-all duration-150">
+            <span>✕ Cerrar Previsualización</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview Paper Stage & Card (Bounded 794px max-width white canvas) -->
+      <div id="preInvoicePaperStage" class="w-full flex justify-center overflow-x-auto p-1 sm:p-3 rounded-2xl bg-black/40 border border-white/10 shadow-2xl backdrop-blur-sm">
+        <div id="preInvoicePreviewCard"
+          style="width: 100%; max-width: 794px; min-height: 520px; padding: 28px; box-sizing: border-box; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', Arial, sans-serif;"
+          class="rounded shadow-2xl transition-all">
+          <!-- Injected dynamically by openPreInvoicePreview() -->
+        </div>
+      </div>
+
+      <div class="w-full flex justify-end pt-2 px-2">
+        <button type="button" onclick="closePreInvoicePreview()" class="text-xs text-gray-400 hover:text-white transition-colors">
+          ✕ Cerrar Previsualización
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- EXECUTIVE PRE-INVOICE PREVIEW VIEWER (#invoicePreviewModal) -->
   <!-- On-screen vector document viewer: replaces blank background PDF. -->
   <!-- ============================================================ -->
@@ -2532,6 +2592,61 @@
       <p id="invoice-preview-title" class="text-center text-[11px] text-gray-400 pt-3">
         Vista previa vectorial — imprima o guarde con el diálogo nativo del navegador para un PDF fiel a A4.
       </p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- RACK DATA PREVIEW DRAWER (#rackPreviewModal)              -->
+  <!-- Slide-over drawer for full reservation details preview     -->
+  <!-- ============================================================ -->
+  <div id="rackPreviewModal" role="dialog" aria-modal="true" aria-labelledby="rack-preview-title"
+    onclick="if (event.target === this) closeRackPreview()"
+    class="fixed inset-0 z-[110] hidden items-center justify-end p-0 bg-black/70 backdrop-blur-md opacity-0 pointer-events-none invisible">
+    <div class="relative w-full max-w-xl h-full max-h-full flex flex-col bg-[#0b0717] border-l border-purple-500/30 shadow-[0_0_60px_rgba(168,85,247,0.25)] animate-slide-in-right"
+      style="will-change: transform;">
+      
+      <!-- Drawer Header -->
+      <div class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
+        <div class="min-w-0">
+          <span class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Previsualización de Reserva</span>
+          <h3 id="rack-preview-title" class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Datos Completos del Cliente</h3>
+        </div>
+        <button type="button" id="rack-preview-close" onclick="closeRackPreview()"
+          aria-label="Cerrar previsualización"
+          class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all active:scale-90 shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Drawer Content (scrollable) -->
+      <div id="rack-preview-content" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+        <!-- Content injected dynamically by openRackPreview() -->
+        <div class="text-center text-gray-500 py-12">Cargando detalles...</div>
+      </div>
+
+      <!-- Drawer Footer Actions -->
+      <div class="shrink-0 p-4 sm:p-6 border-t border-white/10 bg-[#0f0c1a]">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+          <button type="button" onclick="closeRackPreview()"
+            class="w-full sm:w-auto px-5 py-3 rounded-xl bg-white/5 hover:bg-white/15 border border-white/15 text-gray-300 hover:text-white font-semibold transition-all min-h-[44px]">
+            Cerrar
+          </button>
+          <button type="button" onclick="closeRackPreview(); openAdminVoucherPreviewFromRack()"
+            class="w-full sm:w-auto px-5 py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-semibold transition-all min-h-[44px] flex items-center justify-center gap-2">
+            <span>👁️</span>
+            <span>Ver Comprobante SINPE</span>
+          </button>
+          <button type="button" onclick="closeRackPreview(); openWhatsAppFromRack()"
+            class="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all min-h-[44px] flex items-center justify-center gap-2">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+            </svg>
+            <span>WhatsApp Directo</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
