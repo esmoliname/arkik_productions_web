@@ -187,9 +187,130 @@ function digestsEqual(a, b) {
   return diff === 0;
 }
 
+// ============================================================
+// 0. RESILIENT STORAGE (localStorage con respaldo en memoria)
+// ============================================================
+// iOS Safari en browsing privado, Chrome con cookies bloqueadas y webviews
+// embebidas pueden negar por completo el acceso a window.localStorage:
+// cualquier lectura o escritura lanza SecurityError. En ese caso TODA la
+// persistencia se redirige a una tienda en memoria (window.MemoryStorage)
+// para que el usuario pueda cotizar, generar vouchers y confirmar reservas
+// sin una sola excepción de JavaScript durante la sesión.
+
+const MemoryStorage = (function () {
+  const store = new Map();
+  const api = {
+    isMemoryFallback: true,
+    getItem(key) {
+      const k = String(key);
+      return store.has(k) ? store.get(k) : null;
+    },
+    setItem(key, value) {
+      store.set(String(key), String(value));
+    },
+    removeItem(key) {
+      store.delete(String(key));
+    },
+    clear() {
+      store.clear();
+    },
+    key(index) {
+      const keys = Array.from(store.keys());
+      return index >= 0 && index < keys.length ? keys[index] : null;
+    },
+    get length() {
+      return store.size;
+    },
+    snapshot() {
+      const out = {};
+      store.forEach((value, key) => { out[key] = value; });
+      return out;
+    }
+  };
+  if (typeof window !== "undefined") window.MemoryStorage = api;
+  return api;
+})();
+
+// Fachada de persistencia: intenta localStorage y degrada a memoria tanto en
+// lecturas como en escrituras. Una cuota agotada (p. ej. un voucher grande)
+// nunca propaga la excepción al flujo de reserva.
+const SafeStorage = {
+  _local: null,
+  _localOk: undefined,
+
+  get mode() {
+    return this._localOk ? "local" : "memory";
+  },
+
+  _ensure() {
+    if (this._localOk !== undefined) return this._localOk;
+    try {
+      const probe = "__ark_storage_probe__";
+      const ls = window.localStorage;
+      ls.setItem(probe, "1");
+      ls.removeItem(probe);
+      this._local = ls;
+      this._localOk = true;
+    } catch (err) {
+      this._local = null;
+      this._localOk = false;
+    }
+    return this._localOk;
+  },
+
+  getItem(key) {
+    if (this._ensure()) {
+      try {
+        const value = this._local.getItem(key);
+        if (value !== null) return value;
+      } catch (err) {
+        this._localOk = false;
+        this._local = null;
+      }
+    }
+    return MemoryStorage.getItem(key);
+  },
+
+  setItem(key, value) {
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    if (this._ensure()) {
+      try {
+        this._local.setItem(key, serialized);
+        return true;
+      } catch (err) {
+        /* cuota agotada o bloqueo puntual: degradar a memoria */
+      }
+    }
+    try {
+      MemoryStorage.setItem(key, serialized);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  },
+
+  removeItem(key) {
+    if (this._ensure()) {
+      try { this._local.removeItem(key); } catch (err) { this._localOk = false; }
+    }
+    try { MemoryStorage.removeItem(key); } catch (err) { /* noop */ }
+  },
+
+  status() {
+    this._ensure();
+    return { mode: this.mode, localOk: Boolean(this._localOk), memoryItems: MemoryStorage.length };
+  }
+};
+
+if (typeof window !== "undefined") {
+  window.SafeStorage = SafeStorage;
+  // Diagnóstico en consola: SafeStorage.status()
+  window.arkikStorageStatus = () => SafeStorage.status();
+}
+
 function safeParse(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = SafeStorage.getItem(key);
     if (!raw) return fallback;
     const data = JSON.parse(raw);
     return data === undefined || data === null ? fallback : data;
@@ -200,7 +321,7 @@ function safeParse(key, fallback) {
 
 function safeSet(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    SafeStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
     /* storage no disponible */
   }
@@ -395,18 +516,48 @@ function normalizeWaPhone(phone) {
   return digits;
 }
 
-// Códigos únicos criptográficos: ARK-XXXXXXXX (8 caracteres alfanuméricos en mayúsculas)
+// Alfabeto sin caracteres ambiguos (sin 0/O ni 1/I) para códigos legibles.
+const BOOKING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// Códigos únicos: ARK-XXXXXXXX (8 caracteres alfanuméricos en mayúsculas).
+// Un código duplicado rompe la búsqueda en el panel admin y en "mi reserva",
+// así que se garantiza unicidad contra el almacén antes de devolverlo.
 function generateBookingCode() {
-  try {
-    if (window.crypto && window.crypto.randomUUID) {
-      const raw = window.crypto.randomUUID().replace(/-/g, "").toUpperCase();
-      return `ARK-${raw.slice(0, 8)}`;
+  const A = BOOKING_CODE_ALPHABET;
+
+  const randomChars = (n) => {
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+        const buf = new Uint32Array(n);
+        window.crypto.getRandomValues(buf);
+        return Array.from(buf, (v) => A[v % A.length]).join("");
+      }
+    } catch (err) {
+      /* fallback a Math.random */
     }
-  } catch (err) {
-    /* fallback */
+    let out = "";
+    for (let i = 0; i < n; i++) out += A.charAt(Math.floor(Math.random() * A.length));
+    return out;
+  };
+
+  const isTaken = (code) => {
+    try {
+      const list = BookingStore.all();
+      return Array.isArray(list) && list.some((b) => b && b.code === code);
+    } catch (err) {
+      return false;
+    }
+  };
+
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const code = `ARK-${randomChars(8)}`;
+    if (!isTaken(code)) return code;
   }
-  const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase();
-  return `ARK-${randomHex.padEnd(8, "X")}`;
+
+  // Colisión tras 64 intentos (caso prácticamente imposible): marca temporal
+  // base36 + aleatorio para salir del bucle con un identificador válido.
+  const stamp = Date.now().toString(36).toUpperCase().slice(-5).padStart(5, "0");
+  return `ARK-${stamp}${randomChars(3)}`;
 }
 
 function formatCRC(n) {
@@ -435,6 +586,10 @@ const StorageEngine = {
   _config: null,
 
   init() {
+    // Siempre primero: si alguna clave canónica quedó ausente o corrupta
+    // (navegación privada, datos borrados, JSON truncado), se repuebla antes
+    // de que cualquier gestor lea. Nunca pisa datos válidos.
+    try { this._healSeedData(); } catch (e) { console.warn('StorageEngine._healSeedData failed:', e); }
     try { PriceManager.load(); } catch (e) { console.warn('PriceManager.load failed:', e); }
     try { AvailabilityManager.load(); } catch (e) { console.warn('AvailabilityManager.load failed:', e); }
     try { BookingStore.load(); } catch (e) { console.warn('BookingStore.load failed:', e); }
@@ -442,14 +597,47 @@ const StorageEngine = {
     try { this.loadConfig(); } catch (e) { console.warn('StorageEngine.loadConfig failed:', e); }
   },
 
+  // Auto-reparación de semillas de producción (self-healing).
+  // Solo inyecta cuando la clave está ausente, vacía, corrupta (JSON inválido)
+  // o con un tipo inesperado. Un arreglo u objeto válido —aunque vacío por
+  // decisión del operador— NUNCA se sobrescribe.
+  _healSeedData() {
+    const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+    const heals = [
+      { key: STORAGE_KEYS.bookings, make: SEED_BOOKINGS_V1, expect: Array.isArray },
+      { key: STORAGE_KEYS.prices, make: SEED_PRICES_V1, expect: isObject },
+      { key: STORAGE_KEYS.availability, make: SEED_BLOCKED_DATES_V1, expect: isObject },
+      { key: STORAGE_KEYS.customConfig, make: SEED_CONFIG_V1, expect: isObject }
+    ];
+    const healed = [];
+    heals.forEach(({ key, make, expect }) => {
+      try {
+        const raw = SafeStorage.getItem(key);
+        if (raw !== null && raw !== "") {
+          try {
+            const parsed = JSON.parse(raw);
+            if (expect(parsed)) return; // válido → no tocar
+          } catch (parseErr) {
+            /* corrupto → sembrar de nuevo */
+          }
+        }
+        if (SafeStorage.setItem(key, JSON.stringify(make()))) healed.push(key);
+      } catch (err) {
+        console.warn('Seed heal failed for', key, err);
+      }
+    });
+    if (healed.length) console.info('[Arkik] Datos restaurados:', healed.join(', '));
+    return healed;
+  },
+
   loadGallery() {
     // Migración v3.2 → v3.3: la clave canónica ahora es arkik_media_v1
     try {
-      const legacy = localStorage.getItem("arkik_gallery_v1");
-      const current = localStorage.getItem(STORAGE_KEYS.gallery);
+      const legacy = SafeStorage.getItem("arkik_gallery_v1");
+      const current = SafeStorage.getItem(STORAGE_KEYS.gallery);
       if (current === null && legacy !== null) {
-        localStorage.setItem(STORAGE_KEYS.gallery, legacy);
-        localStorage.removeItem("arkik_gallery_v1");
+        SafeStorage.setItem(STORAGE_KEYS.gallery, legacy);
+        SafeStorage.removeItem("arkik_gallery_v1");
       }
     } catch (e) { /* storage no disponible: continuar */ }
     const stored = safeParse(STORAGE_KEYS.gallery, null);
@@ -576,7 +764,7 @@ const StorageEngine = {
     const breakdown = {};
     Object.keys(STORAGE_KEYS).forEach(k => {
       const key = STORAGE_KEYS[k];
-      const val = localStorage.getItem(key) || "";
+      const val = SafeStorage.getItem(key) || "";
       const bytes = new Blob([val]).size;
       breakdown[k] = { key, bytes, kb: (bytes / 1024).toFixed(2) };
       totalBytes += bytes;
@@ -742,11 +930,11 @@ const AvailabilityManager = {
     try {
       // Migración v3.2 → v3.3: la clave canónica ahora es arkik_blocked_dates_v1
       try {
-        const legacy = localStorage.getItem("arkik_availability_v1");
-        const current = localStorage.getItem(STORAGE_KEYS.availability);
+        const legacy = SafeStorage.getItem("arkik_availability_v1");
+        const current = SafeStorage.getItem(STORAGE_KEYS.availability);
         if (current === null && legacy !== null) {
-          localStorage.setItem(STORAGE_KEYS.availability, legacy);
-          localStorage.removeItem("arkik_availability_v1");
+          SafeStorage.setItem(STORAGE_KEYS.availability, legacy);
+          SafeStorage.removeItem("arkik_availability_v1");
         }
       } catch (e) { /* storage no disponible: continuar */ }
       this._data = safeParse(STORAGE_KEYS.availability, {});
@@ -1182,7 +1370,7 @@ class CartState {
 
   clearStoredState() {
     try {
-      localStorage.removeItem(STORAGE_KEYS.cart);
+      SafeStorage.removeItem(STORAGE_KEYS.cart);
     } catch (err) {
       // ignore
     }
@@ -1249,6 +1437,53 @@ function computeBlockedTimes(iso) {
     }
   }
   return blocked;
+}
+
+/**
+ * Revalidación de disponibilidad en el instante del envío (defensa contra
+ * condiciones de carrera: otra pestaña, otro dispositivo o un doble toque).
+ * Se invoca justo antes de deshabilitar el botón y de BookingStore.add().
+ *
+ * @param {string} dateISO  "YYYY-MM-DD"
+ * @param {string} timeSlot "HH:MM"
+ * @returns {{ok:boolean, code:string|null, message:string|null}}
+ */
+function validateSlotAvailability(dateISO, timeSlot) {
+  const fail = (code, message) => ({ ok: false, code, message });
+  const pass = () => ({ ok: true, code: null, message: null });
+
+  if (typeof dateISO !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+    return fail("invalid_date", "Selecciona una fecha válida para continuar.");
+  }
+  if (typeof timeSlot !== "string" || TimeSlots.indexOf(timeSlot) === -1) {
+    return fail("invalid_time", "Selecciona un horario disponible.");
+  }
+
+  const { minISO, maxISO } = CalendarModule.getThresholds();
+  if (dateISO < minISO) {
+    return fail("notice", `Antelación mínima: este servicio se reserva con ${LOGISTICS_CONFIG.minNoticeHours} horas de anticipación.`);
+  }
+  if (dateISO > maxISO) {
+    return fail("horizon", `Horizonte máximo de reservas: ${LOGISTICS_CONFIG.maxHorizonDays} días.`);
+  }
+
+  const override = AvailabilityManager.get(dateISO);
+  if (override === "disabled") {
+    return fail("blackout", "Fecha bloqueada por mantenimiento: no disponible.");
+  }
+  if (override === "soldout") {
+    return fail("soldout", "Fecha agotada (capacidad completa de 2 eventos).");
+  }
+
+  if (BookingStore.countForDate(dateISO) >= DEFAULT_MAX_EVENTS_PER_DAY) {
+    return fail("day_full", "Este día ya no tiene cupos disponibles.");
+  }
+
+  if (computeBlockedTimes(dateISO).has(timeSlot)) {
+    return fail("slot_taken", "Horario acaba de ser reservado.");
+  }
+
+  return pass();
 }
 
 /**
@@ -1643,7 +1878,7 @@ const AuditLog = {
     const report = [];
     Object.entries(STORAGE_KEYS).forEach(([name, key]) => {
       try {
-        const raw = localStorage.getItem(key);
+        const raw = SafeStorage.getItem(key);
         if (raw === null) {
           report.push({ name, state: "vacio" });
           return;
@@ -1836,8 +2071,8 @@ const AdminModule = {
     keys.forEach((key) => {
       if (!key) return;
       try {
-        if (localStorage.getItem(key) !== null) {
-          localStorage.removeItem(key);
+        if (SafeStorage.getItem(key) !== null) {
+          SafeStorage.removeItem(key);
           removedKeys.push(key);
         }
       } catch (e) { /* almacenamiento no disponible */ }
@@ -3159,8 +3394,8 @@ const AdminModule = {
       return;
     }
     try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem("arkik_recents_v1");
+      SafeStorage.removeItem(STORAGE_KEY);
+      SafeStorage.removeItem("arkik_recents_v1");
     } catch (e) { /* almacenamiento no disponible */ }
     if (typeof resetBooking === "function") resetBooking();
     AuditLog.recordEvent("reset", "Caché local limpiada (carrito y estado transitorio).");
@@ -3176,8 +3411,16 @@ const AdminModule = {
       return;
     }
     Object.values(STORAGE_KEYS).forEach(k => {
-      try { localStorage.removeItem(k); } catch (e) { /* ignorar */ }
+      try { SafeStorage.removeItem(k); } catch (e) { /* ignorar */ }
     });
+    // Los almacenes con semilla se repueblan con su valor de fábrica VÁLIDO
+    // (no se dejan ausentes): así _healSeedData() distingue una limpieza
+    // deliberada de una pérdida involuntaria y no repone la demostración en
+    // el siguiente arranque.
+    safeSet(STORAGE_KEYS.bookings, []);
+    safeSet(STORAGE_KEYS.prices, { services: {}, extras: {} });
+    safeSet(STORAGE_KEYS.availability, {});
+    safeSet(STORAGE_KEYS.customConfig, typeof SEED_CONFIG_V1 === "function" ? SEED_CONFIG_V1() : {});
     // Recargar todos los managers desde cero (estado de fábrica)
     PriceManager.load();
     AvailabilityManager.load();
@@ -5622,6 +5865,39 @@ document.addEventListener("DOMContentLoaded", () => {
   initApp();
 });
 
+// ============================================================
+// SINCRONIZACIÓN ENTRE PESTAÑAS (evento nativo `storage`)
+// ============================================================
+// El evento `storage` solo se dispara en las OTRAS pestañas del mismo
+// navegador, no en quien escribió. Sirve para detectar en tiempo real que
+// otra pestaña ocupó el turno seleccionado y avisar antes del envío.
+function setupCrossTabSync() {
+  if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+
+  window.addEventListener("storage", (event) => {
+    if (!event) return;
+    // key === null significa storage.clear() en otra pestaña.
+    if (event.key !== null && event.key !== STORAGE_KEYS.bookings && event.key !== STORAGE_KEYS.availability) return;
+
+    try {
+      BookingStore.load();
+      AvailabilityManager.load();
+      CalendarModule.render();
+      renderTimeSelector();
+
+      if (!ModalController.isOpen("booking-modal")) return;
+      // En el paso 4 la reserva ya quedó registrada: no hay nada que avisar.
+      if (lastModalStep >= 4) return;
+      if (!cart.selectedDate || !cart.selectedTime) return;
+
+      const check = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+      if (!check.ok) showSlotConflictAlert(check.message);
+    } catch (err) {
+      console.warn("[Arkik] Cross-tab sync:", err);
+    }
+  }, { passive: true });
+}
+
 function initApp() {
   // EmailJS bootstrap: structured fallback so an unconfigured key never breaks the flow
   initEmailJS();
@@ -5635,6 +5911,7 @@ function initApp() {
   renderGalleryFilters();
   renderMediaGallery(StorageEngine.getGalleryItems(), "todos");
   setupEventListeners();
+  setupCrossTabSync();
   guardInternalPathLinks();
   populateProvinces();
   restoreBookingToUI();
@@ -6570,6 +6847,13 @@ function setupEventListeners() {
     }
 
     if (e.key === "Escape") {
+      // La alerta de turno tomado tiene prioridad sobre el resto: cierra
+      // solo ella para no descartar la reserva en curso.
+      const conflictEl = document.getElementById("slotConflictModal");
+      if (conflictEl && !conflictEl.classList.contains("hidden")) {
+        hideSlotConflictAlert();
+        return;
+      }
       const execReportModal = document.getElementById("execReportPreviewModal");
       if (execReportModal && !execReportModal.classList.contains("hidden")) {
         closeExecutiveReportPreviewModal();
@@ -6952,15 +7236,17 @@ function persistITLiveInputs() {
 }
 
 /**
- * Latencia real de lectura/escritura de localStorage (PING del sistema).
+ * Latencia real de lectura/escritura del backend de persistencia
+ * (PING del sistema). Mide el backend efectivo: localStorage o el respaldo
+ * en memoria cuando el navegador lo bloquea.
  */
 function measureStorageLatency() {
   const t0 = performance.now();
   try {
     const k = "__ark_lat_probe__";
-    localStorage.setItem(k, "1");
-    localStorage.getItem(k);
-    localStorage.removeItem(k);
+    SafeStorage.setItem(k, "1");
+    SafeStorage.getItem(k);
+    SafeStorage.removeItem(k);
   } catch (e) { /* almacenamiento no disponible */ }
   return Math.max(1, Math.round(performance.now() - t0));
 }
@@ -7095,7 +7381,7 @@ function adminLogout() {
 // explicit user interaction. Wipes any leftover visible state on
 // app boot so a rogue backdrop can never black the page out.
 const ModalController = {
-  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
+  _ids: ['booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
 
   open(modalId) {
     const modal = document.getElementById(modalId);
@@ -7112,7 +7398,7 @@ const ModalController = {
       modal.classList.remove('flex', 'opacity-100', 'pointer-events-auto', 'visible');
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
+    const anyOpen = document.querySelectorAll('#booking-modal.flex, #slotConflictModal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
     if (anyOpen.length === 0) {
       document.body.style.overflow = '';
     }
@@ -8027,6 +8313,19 @@ function submitStaticBooking() {
     return;
   }
 
+  // Revalidación de disponibilidad en el instante del envío: protege contra
+  // condiciones de carrera con otra pestaña o dispositivo que ya tomó el turno.
+  const slotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+  if (!slotCheck.ok) {
+    if (slotCheck.code === "slot_taken" || slotCheck.code === "day_full") {
+      showSlotConflictAlert(slotCheck.message);
+      return;
+    }
+    showToast(slotCheck.message, "error");
+    goToStep(2);
+    return;
+  }
+
   const btn = document.getElementById("btn-submit-booking");
   const originalLabel = btn ? btn.innerHTML : "";
   if (btn) {
@@ -8034,30 +8333,32 @@ function submitStaticBooking() {
     btn.innerHTML = "Generando voucher…";
   }
   cart.isSubmitting = true;
+  cart.createdBooking = null;
 
   setTimeout(() => {
-    cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
+      try {
+        cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
 
-    // Código único criptográfico (ARK-XXXXXXXX)
-    const bookingCode = generateBookingCode();
+        // Código único criptográfico (ARK-XXXXXXXX)
+        const bookingCode = generateBookingCode();
 
-    const extrasList = [];
-    if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
-    if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
-    if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
+        const extrasList = [];
+        if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
+        if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
+        if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
 
-    const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
+        const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
 
-    const surchargeText = cart.isNonGam
-      ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
-      : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
+        const surchargeText = cart.isNonGam
+          ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
+          : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
 
-    const service = cart.selectedService;
-    const setupDisplay = service ? service.setup_display : "2h antes";
-    const teardownDisplay = service ? service.teardown_display : "1h después";
+        const service = cart.selectedService;
+        const setupDisplay = service ? service.setup_display : "2h antes";
+        const teardownDisplay = service ? service.teardown_display : "1h después";
 
-    const rawMsg =
-      `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
+        const rawMsg =
+          `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
 ----------------------------------------
 📌 *Código:* ${bookingCode}
 👤 *Cliente / Empresa:* ${cart.clientName}
@@ -8089,83 +8390,102 @@ ${surchargeText}
 📎 *Importante:* ${SINPE_CONFIG.policyText}
 Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
 
-    const encodedMsg = encodeURIComponent(rawMsg);
-    const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
+        const encodedMsg = encodeURIComponent(rawMsg);
+        const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
 
-    // Registro persistente en almacén local
-    const record = {
-      code: bookingCode,
-      createdAt: new Date().toISOString(),
-      status: "pendiente", // Inicia siempre como Pendiente de Aprobación
-      clientName: cart.clientName,
-      clientPhone: cart.clientPhone,
-      clientEmail: cart.clientEmail,
-      eventType: cart.eventType,
-      serviceId: service.id,
-      serviceName: service.name,
-      setupDisplay: setupDisplay,
-      teardownDisplay: teardownDisplay,
-      selectedDate: cart.selectedDate,
-      selectedTime: cart.selectedTime,
-      voucherImage: cart.voucherImage,
-      province: cart.province,
-      canton: cart.canton,
-      address: cart.address,
-      extras: {
-        extraHoursCount: cart.extraHoursCount,
-        djHoursCount: cart.djHoursCount,
-        subwoofersCount: cart.subwoofersCount,
-        extraHoursTotal: cart.extraHoursTotal,
-        djTotal: cart.djTotal,
-        subwoofersTotal: cart.subwoofersTotal
-      },
-      subtotal: cart.subtotal,
-      travelSurcharge: cart.travelSurcharge,
-      granTotal: cart.granTotal,
-      deposit50Amount: cart.deposit50Amount,
-      remainingBalance: cart.remainingBalance,
-      sinpeRef: cart.sinpeRef
-    };
+        // Registro persistente en almacén local
+        const record = {
+          code: bookingCode,
+          createdAt: new Date().toISOString(),
+          status: "pendiente", // Inicia siempre como Pendiente de Aprobación
+          clientName: cart.clientName,
+          clientPhone: cart.clientPhone,
+          clientEmail: cart.clientEmail,
+          eventType: cart.eventType,
+          serviceId: service.id,
+          serviceName: service.name,
+          setupDisplay: setupDisplay,
+          teardownDisplay: teardownDisplay,
+          selectedDate: cart.selectedDate,
+          selectedTime: cart.selectedTime,
+          voucherImage: cart.voucherImage,
+          province: cart.province,
+          canton: cart.canton,
+          address: cart.address,
+          extras: {
+            extraHoursCount: cart.extraHoursCount,
+            djHoursCount: cart.djHoursCount,
+            subwoofersCount: cart.subwoofersCount,
+            extraHoursTotal: cart.extraHoursTotal,
+            djTotal: cart.djTotal,
+            subwoofersTotal: cart.subwoofersTotal
+          },
+          subtotal: cart.subtotal,
+          travelSurcharge: cart.travelSurcharge,
+          granTotal: cart.granTotal,
+          deposit50Amount: cart.deposit50Amount,
+          remainingBalance: cart.remainingBalance,
+          sinpeRef: cart.sinpeRef
+        };
 
-    BookingStore.add(record);
-    cart.createdBooking = record;
+        // Segunda barrera de concurrencia: el turno pudo haberse tomado
+        // mientras se construía el voucher (delay de 200ms).
+        const lateCheck = validateSlotAvailability(record.selectedDate, record.selectedTime);
+        if (!lateCheck.ok) {
+          showSlotConflictAlert(lateCheck.message);
+          return;
+        }
 
-    // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
-    document.getElementById("confirm-booking-code").textContent = bookingCode;
-    const badgeEl = document.getElementById("confirm-booking-badge");
-    if (badgeEl) badgeEl.textContent = bookingCode;
+        BookingStore.add(record);
+        cart.createdBooking = record;
 
-    document.getElementById("confirm-client-name").textContent = cart.clientName;
-    document.getElementById("confirm-event-type").textContent = cart.eventType;
-    document.getElementById("confirm-service-name").textContent = service.name;
+        // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
+        document.getElementById("confirm-booking-code").textContent = bookingCode;
+        const badgeEl = document.getElementById("confirm-booking-badge");
+        if (badgeEl) badgeEl.textContent = bookingCode;
 
-    const logInfoEl = document.getElementById("confirm-logistics-info");
-    if (logInfoEl) {
-      logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
-    }
+        document.getElementById("confirm-client-name").textContent = cart.clientName;
+        document.getElementById("confirm-event-type").textContent = cart.eventType;
+        document.getElementById("confirm-service-name").textContent = service.name;
 
-    document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
-    document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
-    document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
-    document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);
+        const logInfoEl = document.getElementById("confirm-logistics-info");
+        if (logInfoEl) {
+          logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
+        }
 
-    const remBalEl = document.getElementById("confirm-remaining-balance");
-    if (remBalEl) remBalEl.textContent = formatCRC(cart.remainingBalance);
+        document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
+        document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
+        document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
+        document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);
 
-    const waBtn = document.getElementById("btn-whatsapp-client");
-    if (waBtn) waBtn.href = whatsappUrl;
+        const remBalEl = document.getElementById("confirm-remaining-balance");
+        if (remBalEl) remBalEl.textContent = formatCRC(cart.remainingBalance);
 
-    cart.clearStoredState();
+        const waBtn = document.getElementById("btn-whatsapp-client");
+        if (waBtn) waBtn.href = whatsappUrl;
 
-    cart.isSubmitting = false;
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalLabel;
-    }
+        cart.clearStoredState();
 
-    goToStep(4);
-    showToast("¡Voucher y enlace de WhatsApp generados con éxito!", "success");
-  }, 200);
+        goToStep(4);
+        showToast("¡Voucher y enlace de WhatsApp generados con éxito!", "success");
+      } catch (err) {
+        console.error("Booking submission failed:", err);
+        if (cart.createdBooking) {
+          // La reserva ya quedó registrada: solo falló la pintura del voucher.
+          try { goToStep(4); } catch (err2) { /* noop */ }
+          showToast("Reserva registrada correctamente.", "success");
+        } else {
+          showToast("No se pudo generar la reserva. Revise los datos e intente nuevamente.", "error");
+        }
+      } finally {
+        // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
+        cart.isSubmitting = false;
+        if (btn) {
+          btn.innerHTML = originalLabel;
+          btn.disabled = !cart.voucherImage;
+        }
+      }
+    }, 200);
 }
 
 function finalizeVoucher() {
@@ -8212,6 +8532,62 @@ function showToast(message, type = "info") {
     toast.classList.add("toast-out");
     setTimeout(() => toast.remove(), 300);
   }, 2800);
+}
+
+// ============================================================
+// ALERTA DE CONFLICTO DE TURNO (carrera entre pestañas/dispositivos)
+// ============================================================
+
+const SLOT_CONFLICT_TEXT = "⚠️ Turno No Disponible — Este horario acaba de ser reservado. Por favor selecciona otro turno.";
+
+/**
+ * Muestra la alerta de turno tomado. Se usa cuando la revalidación en el
+ * instante del envío detecta que otro flujo ya ocupó la fecha/hora.
+ * @param {string} detail motivo concreto de la rechazo.
+ */
+function showSlotConflictAlert(detail) {
+  console.warn("[Arkik] Conflicto de turno:", detail || SLOT_CONFLICT_TEXT);
+  const modal = document.getElementById("slotConflictModal");
+  const detailEl = document.getElementById("slot-conflict-detail");
+
+  // El título ya dice "acaba de ser reservado": el detalle solo aporta
+  // información distinta (día completo, bloqueo, etc.).
+  if (detailEl) {
+    const reason = (detail || "").trim();
+    if (reason && !/acaba de ser reservado/i.test(reason)) {
+      detailEl.textContent = reason;
+      detailEl.classList.remove("hidden");
+    } else {
+      detailEl.textContent = "";
+      detailEl.classList.add("hidden");
+    }
+  }
+
+  if (!modal) {
+    showToast(SLOT_CONFLICT_TEXT, "error");
+    return;
+  }
+  ModalController.open("slotConflictModal");
+  const retry = document.getElementById("slot-conflict-retry");
+  if (retry) {
+    setTimeout(() => { try { retry.focus(); } catch (e) { /* noop */ } }, 60);
+  }
+}
+
+/**
+ * Cierra la alerta SIEMPRE volviendo al paso del calendario: si el turno se
+ * perdió, el paso de voucher es un callejón sin salida (reenviar volvería a
+ * fallar). Limpia la selección vencida y rehidrata calendario + chips.
+ */
+function hideSlotConflictAlert() {
+  ModalController.close("slotConflictModal");
+  try {
+    resetSelectedTime();
+    goToStep(2);
+    showToast("Seleccione otra fecha u horario disponible.", "info");
+  } catch (err) {
+    console.warn("hideSlotConflictAlert:", err);
+  }
 }
 
 function copySinpeData() {

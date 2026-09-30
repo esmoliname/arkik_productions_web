@@ -427,6 +427,100 @@ const STORAGE_KEYS = {
 // Capacidad diaria máxima de eventos
 const DEFAULT_MAX_EVENTS_PER_DAY = LOGISTICS_CONFIG.maxEventsPerDay; // 2 eventos máx/día
 
+// ============================================================
+// 6. SELF-HEALING SEED DATA (auto-restauración de datos de producción)
+// ============================================================
+// Estas semillas se inyectan SOLO cuando la clave canónica está ausente,
+// corrupta (JSON inválido) o con un tipo inesperado. Los datos ya
+// persistidos —aunque estén vacíos por decisión del operador— NUNCA se
+// sobrescriben. Ver StorageEngine._healSeedData() en js/app.js.
+
+// Fecha relativa "YYYY-MM-DD" (data.js se evalúa antes de app.js, así que
+// no puede reutilizar el helper isoOf() de app.js).
+function arkikSeedIso(daysAhead) {
+  const d = new Date(Date.now() + daysAhead * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Ajusta el importe al 50% de adelanto SINPE + saldo restante.
+function arkikSeedAmounts(total) {
+  const deposit = Math.round(total * SINPE_CONFIG.depositPercentage);
+  return { subtotal: total, granTotal: total, deposit50Amount: deposit, remainingBalance: total - deposit };
+}
+
+const SEED_PRICES_V1 = () => ({ services: {}, extras: {} });
+
+const SEED_CONFIG_V1 = () => ({
+  extraHourMultiplier: 0.50,
+  travelSurchargeRate: NON_GAM_SURCHARGE_RATE,
+  subwoofersUnitPrice: DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice,
+  djUnitPrice: DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice
+});
+
+// Blackouts pre-configurados: uno de mantenimiento y uno operativo.
+// Se recalculan en cada arranque para no caducar.
+const SEED_BLOCKED_DATES_V1 = () => ({
+  [arkikSeedIso(17)]: { state: "disabled", reason: "Mantenimiento técnico de equipo" },
+  [arkikSeedIso(31)]: { state: "soldout", reason: "Bloqueo operativo interno" }
+});
+
+// Muestras de reservas confirmadas: alimentan los KPIs del panel y
+// demuestran la disponibilidad de cupos (el día +24 queda con 1 cupo libre
+// y con el margen logístico de 5h ya aplicado entre 14:00 y 20:00).
+const SEED_BOOKINGS_V1 = () => {
+  const mk = (ageDays, fields) => Object.assign({
+    createdAt: new Date(Date.now() - ageDays * 86400000).toISOString(),
+    status: "confirmada",
+    clientEmail: "",
+    setupDisplay: "",
+    teardownDisplay: "",
+    voucherImage: null,
+    address: "",
+    extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0, extraHoursTotal: 0, djTotal: 0, subwoofersTotal: 0 },
+    travelSurcharge: 0,
+    sinpeRef: "S/N",
+    isSeed: true
+  }, fields, { isSeed: true });
+
+  return [
+    mk(6, Object.assign({
+      code: "ARK-SEED0001", clientName: "María Fernanda Solís Arrieta", clientPhone: "+506 8888-1111",
+      eventType: "Boda", serviceId: 1, serviceName: "Banda Completa",
+      selectedDate: arkikSeedIso(10), selectedTime: "14:00",
+      province: "San José", canton: "Escazú"
+    }, arkikSeedAmounts(650000))),
+
+    mk(9, Object.assign({
+      code: "ARK-SEED0002", clientName: "Carlos Villalobos Naranjo", clientPhone: "+506 8888-2222",
+      eventType: "Aniversario", serviceId: 2, serviceName: "Cuarteto Arkik",
+      selectedDate: arkikSeedIso(24), selectedTime: "14:00",
+      province: "Heredia", canton: "Central (Heredia)"
+    }, arkikSeedAmounts(480000))),
+
+    mk(11, Object.assign({
+      code: "ARK-SEED0003", clientName: "Empresa Tica de Logística S.A.", clientPhone: "+506 8888-3333",
+      eventType: "Corporativo", serviceId: 3, serviceName: "Trío Acústico Premium",
+      selectedDate: arkikSeedIso(24), selectedTime: "20:00",
+      province: "Heredia", canton: "Belén"
+    }, arkikSeedAmounts(380000))),
+
+    mk(14, Object.assign({
+      code: "ARK-SEED0004", clientName: "Andrea Chacón Vargas", clientPhone: "+506 8888-4444",
+      eventType: "Cumpleaños", serviceId: 4, serviceName: "Dúo Íntimo Arkik",
+      selectedDate: arkikSeedIso(38), selectedTime: "18:00",
+      province: "Cartago", canton: "Central (Cartago)"
+    }, arkikSeedAmounts(250000))),
+
+    mk(3, Object.assign({
+      code: "ARK-SEED0005", clientName: "Bodegas del Valle S.A.", clientPhone: "+506 8888-5555",
+      eventType: "Lanzamiento de Producto", serviceId: 6, serviceName: "Alquiler Sonido e Iluminación Pro",
+      selectedDate: arkikSeedIso(52), selectedTime: "12:00",
+      status: "pendiente",
+      province: "Alajuela", canton: "Central (Alajuela)"
+    }, arkikSeedAmounts(250000)))
+  ];
+};
+
 const CALENDAR_LOCALE = {
   months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
   weekdays: ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]

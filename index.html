@@ -1489,7 +1489,7 @@
                         </path>
                       </svg>
                       <input type="tel" id="client-phone" required placeholder="Ej. 8888-8888 o +506 8888-8888"
-                        inputmode="tel" autocomplete="tel" pattern="^(\+?506)?\s?[2678]\d{3}[-\s]?\d{4}$"
+                        inputmode="tel" autocomplete="tel" pattern="^(\+?506)?\s?[2678]\d{3}(?:-|\s)?\d{4}$"
                         title="Formato válido de Costa Rica: 8888-8888 o +506 8888-8888"
                         class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all">
                     </div>
@@ -1507,7 +1507,6 @@
                       </svg>
                       <input type="email" id="client-email" required placeholder="carlos@ejemplo.com"
                         autocomplete="email"
-                        pattern="[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+"
                         title="Ingrese un correo electrónico válido"
                         class="field-dark w-full py-3 pl-11 pr-4 rounded-xl text-base border shadow-sm focus:outline-none transition-all">
                     </div>
@@ -2790,6 +2789,30 @@
         <span id="rag-studio-results-head" class="rag-studio-count"></span>
       </div>
       <div id="rag-studio-results" class="rag-studio-results"></div>
+    </div>
+  </div>
+
+  <!-- Alerta de turno tomado (carrera de concurrencia entre pestañas/dispositivos) -->
+  <div id="slotConflictModal" role="alertdialog" aria-modal="true" aria-labelledby="slot-conflict-title"
+    onclick="if (event.target === this) hideSlotConflictAlert()"
+    class="fixed inset-0 z-[90] hidden items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none invisible">
+    <div
+      class="slot-conflict-card relative max-w-sm w-full mx-auto bg-[#080511]/95 backdrop-blur-3xl border border-amber-500/30 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden">
+      <div class="text-center">
+        <div
+          class="slot-conflict-icon w-12 h-12 mx-auto mb-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-2xl"
+          aria-hidden="true">⏳</div>
+        <p id="slot-conflict-title" class="font-heading font-bold text-lg leading-relaxed text-white">
+          ⚠️ Turno No Disponible — Este horario acaba de ser reservado. Por favor selecciona otro turno.
+        </p>
+        <p id="slot-conflict-detail" class="text-sm text-amber-200/80 font-medium mt-3 hidden"></p>
+      </div>
+      <div class="mt-6">
+        <button type="button" id="slot-conflict-retry" onclick="hideSlotConflictAlert()"
+          class="slot-conflict-retry w-full min-h-[44px] px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold text-sm shadow-lg hover:opacity-95 active:scale-[0.99] transition-all">
+          Elegir otro turno
+        </button>
+      </div>
     </div>
   </div>
 

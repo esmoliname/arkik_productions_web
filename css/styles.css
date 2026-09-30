@@ -77,6 +77,9 @@ code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .r
      backdrop-filter: blur(12px);
      -webkit-backdrop-filter: blur(12px);
      pointer-events: auto;
+     /* 60 FPS: capa GPU propia, evita repaints del backdrop en móvil */
+     transform: translate3d(0, 0, 0);
+     will-change: transform;
    }
 
    /* Modal Card - centered, constrained size */
@@ -92,6 +95,9 @@ code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .r
      border: 1px solid rgba(168, 85, 247, 0.2);
      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
      position: relative;
+     /* 60 FPS: promover a capa compuesta; el scroll interno sigue siendo GPU */
+     transform: translate3d(0, 0, 0);
+     will-change: transform;
    }
 
    /* Focus trap area within modal */
@@ -625,6 +631,9 @@ html {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* 60 FPS: capa de composición propia para el scroll del sheet en móvil */
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 @media (min-width: 640px) {
@@ -3127,6 +3136,57 @@ select.ark-input:active {
 @media (max-width: 768px) {
   input, select, textarea {
     font-size: 16px !important;
+  }
+
+  /* Targets táctiles: todo control de formulario alcanza 44px (Apple HIG).
+     Se excluyen controles nativos pequeños para no alterar su apariencia. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  /* El pinch-zoom por doble toque se desactiva solo en el formulario:
+     el resto de la página mantiene zoom accesible. */
+  #booking-form-step3 input,
+  #booking-form-step3 select,
+  #booking-form-step3 textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* ============================================================
+   SLOT CONFLICT ALERT — turno tomado por otra pestaña/dispositivo
+   ============================================================ */
+.slot-conflict-card {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  animation: slotConflictIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes slotConflictIn {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.slot-conflict-icon {
+  animation: slotConflictPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes slotConflictPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+}
+
+.slot-conflict-retry:focus-visible {
+  outline: 2px solid rgba(245, 158, 11, 0.9);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-conflict-card,
+  .slot-conflict-icon {
+    animation: none;
   }
 }
 
