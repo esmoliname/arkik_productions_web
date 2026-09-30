@@ -1,4 +1,4 @@
-/* Plus Jakarta Sans se pide como VARIABLE (wght 300..800 + itálico) para que
+﻿/* Plus Jakarta Sans se pide como VARIABLE (wght 300..800 + itálico) para que
    el eje opsz esté disponible en el titular del hero. Syne se eliminó de esta
    petición: ya no tiene consumidores tras migrar el h1 y cada familia en el
    @import es un download extra en el critical path del LCP. */
@@ -192,6 +192,8 @@ html, body, main {
 
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
+  /* Continuous ultra-dark purple gradient - flows from hero to footer without hard cuts. */
+  background: linear-gradient(180deg, #06020e 0%, #0a0418 35%, #080312 70%, #05020a 100%) fixed;
   background-color: var(--bg-dark);
   color: #f3f4f6;
   min-height: 100vh;
@@ -343,10 +345,11 @@ body {
     drop-shadow(0 0 45px rgba(217, 70, 239, 0.22));
 }
 
-/* Elegant Executive Hero Background */
+/* Elegant Executive Hero Background — sin bloque opaco: hereda el
+   gradiente continuo del body y sólo añade un halo radial superior. */
 #hero {
-  background: var(--bg-dark);
-  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, rgba(11, 9, 20, 1) 80%);
+  background-color: transparent;
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, transparent 80%);
 }
 
 /* Glassmorphism Panel */
@@ -1121,16 +1124,21 @@ html {
 }
 
 /* ---- Full-Bleed Section Continuity (no gaps at any zoom level) ---- */
-/* Secciones con fondo continuo + resplandor ambiental sutil que llega a 100vw */
+/* Secciones con fondo continuo + resplandor ambiental sutil que llega a 100vw.
+   SELECTOR ID OBLIGATORIO: las utilities de Tailwind (bg-[#07040e]) tienen
+   especificidad de clase, así que sólo un id las gana y deja el fondo
+   transparente para que el gradiente del body fluya sin cortes. */
 #esencia,
 #formatos,
 #proceso,
 #cobertura,
 #hero,
+#garantias,
 #biblioteca,
-footer {
-  background-color: var(--bg-dark);
-  background-image: var(--section-gap);
+#master-liquid-footer {
+  /* Transparent so body gradient flows through - no hard color bands. */
+  background-color: transparent;
+  background-image: none;
   width: 100%;
   position: relative;
 }
@@ -1143,14 +1151,14 @@ footer {
 #proceso,
 #cobertura,
 #biblioteca,
-footer {
+#master-liquid-footer {
   content-visibility: auto;
   contain-intrinsic-size: 1px 800px;
 }
 
-/* Hero background override - full bleed with gradient */
+/* Hero background override - subtle radial accent on top of body gradient */
 #hero {
-  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, rgba(11, 9, 20, 1) 80%);
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, transparent 80%);
 }
 
 /* Inner content wrapper - never wider than max-w-7xl, always centered */
@@ -5284,10 +5292,13 @@ select.ark-input:active {
    ============================================================ */
 
 /* Capa de atmósfera fija: baña toda la web con el mismo tono
-   morado oscuro uniforme (sin interactuar con el contenido). */
+   morado oscuro uniforme (sin interactuar con el contenido).
+   La 4ª capa es el "resplandor flotante" del spec: da continuidad
+   visual desde la sección principal hasta el pie de página. */
 #site-atmosphere {
   z-index: 30;
   background:
+    radial-gradient(circle, rgba(147, 51, 234, 0.12) 0%, transparent 70%),
     radial-gradient(ellipse 90% 70% at 50% -20%, rgba(88, 28, 135, 0.22) 0%, transparent 60%),
     radial-gradient(ellipse 60% 50% at 100% 100%, rgba(49, 46, 129, 0.18) 0%, transparent 65%),
     radial-gradient(ellipse 60% 50% at 0% 100%, rgba(126, 34, 206, 0.12) 0%, transparent 65%);
@@ -5602,6 +5613,70 @@ select.ark-input:active {
     width: 210mm !important;
     max-width: none !important;
     margin: 0 !important;
+    padding: 12mm 15mm !important;
+  }
+}
+
+/* ============================================================
+   REPORTE EJECUTIVO — LIENZO A4 WYSIWYG (#execReportCanvas)
+   Modal de previsualización #execReportPreviewModal.
+   El PDF se rasteriza desde ESTE nodo visible: nada off-screen,
+   nada de "display:none" → sin recorte horizontal.
+   ============================================================ */
+#execReportCanvas {
+  width: 794px;
+  min-width: 794px;
+  max-width: 794px;
+  box-sizing: border-box;
+  padding: 32px;
+  background: #ffffff;
+  color: #0f172a;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Tabla de desglose financiero: ancho estricto, sin desbordes */
+#execReportCanvas table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  word-break: break-word;
+}
+#execReportCanvas th,
+#execReportCanvas td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#execReportCanvas tr {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+/* Tarjetas de KPI: grid estricto de 4 columnas, sin salto de fila */
+.exec-report-kpis {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+}
+.exec-report-kpis > * {
+  width: calc(25% - 6px);
+  box-sizing: border-box;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+@media print {
+  #execReportCanvas {
+    width: 210mm !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
     padding: 12mm 15mm !important;
   }
 }

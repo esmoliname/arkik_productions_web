@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Static site for Arkik Productions",
   "scripts": {
-    "dev": "serve -s ."
+    "dev": "serve -s .",
+    "test": "node --check js/app.js && node --check js/data.js"
   },
   "devDependencies": {
     "serve": "^14.2.0"

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es" class="dark scroll-smooth">
 
 <head>
@@ -66,7 +66,7 @@
   <link rel="apple-touch-icon" href="img/arkik_logo.jpg">
 </head>
 
-<body class="bg-[#07040e] text-gray-100 min-h-screen relative overflow-x-hidden antialiased">
+<body class="text-gray-100 min-h-screen relative overflow-x-hidden antialiased">
 
   <!-- Ambient Glow Orbs Layer -->
   <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -155,7 +155,7 @@
   <main class="w-full overflow-x-hidden">
 
     <!-- Hero Section (Full-Bleed 100vw Background Layer) -->
-    <section id="hero" class="w-full relative py-12 sm:py-16 md:py-24 lg:py-32 z-10 overflow-hidden bg-[#07040e]">
+    <section id="hero" class="w-full relative py-12 sm:py-16 md:py-24 lg:py-32 z-10 overflow-hidden">
 
       <!-- Cuerdas de Guitarra Neón Interactivas (motor Canvas reactivo a scroll y cursor) -->
       <canvas id="heroStringsCanvas" aria-hidden="true"></canvas>
@@ -169,7 +169,8 @@
             class="relative z-10 font-heading text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.12] max-w-4xl mx-auto">
             Tu evento merece <br class="hidden sm:block" />
             <span
-              class="hero-title-accent text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-200 via-purple-300 to-pink-400 drop-shadow-[0_0_25px_rgba(217,70,239,0.35)]">la mejor música y sonido profesional</span>
+              class="hero-title-accent text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-200 via-purple-300 to-pink-400 drop-shadow-[0_0_25px_rgba(217,70,239,0.35)]">la
+              mejor música y sonido profesional</span>
           </h1>
         </div>
 
@@ -198,10 +199,10 @@
     </section>
 
     <!-- Garantías & Valor Percibido (Full-Bleed Bar) -->
-    <section id="garantias"
-      class="w-full relative z-20 py-8 sm:py-10 bg-gradient-to-b from-transparent via-[#0c071a]/60 to-[#07040e]">
+    <section id="garantias" class="w-full relative z-20 py-8 sm:py-10">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div
+          class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-2xl">
 
           <!-- Benefit 1: 2 Horas Base -->
           <div
@@ -277,11 +278,6 @@
 
     <!-- Nuestra Esencia / Quiénes Somos (Full-Bleed Container) -->
     <section id="esencia" class="w-full relative z-10 py-12 sm:py-16 md:py-24">
-      <!-- Top Fade Overlay: difumina la entrada del halo púrpura de la sphere-card
-           para que el fondo fluya continuo desde las tarjetas de beneficios (#garantias) -->
-      <div
-        class="absolute top-0 left-0 right-0 h-16 sm:h-20 bg-gradient-to-b from-[#07040e] to-transparent pointer-events-none"
-        aria-hidden="true"></div>
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div
           class="esencia-sphere-card relative overflow-hidden rounded-3xl p-8 md:p-12 my-4 sm:my-8 border border-purple-500/30 shadow-2xl">
@@ -297,7 +293,7 @@
 
               <!-- Col 1: Nuestra Esencia — copywriting premium sobre cristal ultralimpio -->
               <div
-                class="esencia-inner-card bg-[#0c0818]/95 border border-purple-500/35 rounded-3xl p-6 md:p-10 relative z-10 shadow-[0_0_35px_rgba(147,51,234,0.15)]">
+                class="esencia-inner-card bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 md:p-10 relative z-10 shadow-[0_0_35px_rgba(147,51,234,0.15)]">
                 <span class="block text-purple-400 font-extrabold text-xs tracking-widest uppercase mb-2">Nuestra
                   Esencia</span>
                 <h2 class="text-white font-heading font-bold text-2xl md:text-3xl tracking-tight leading-snug mb-4">
@@ -324,7 +320,7 @@
 
               <!-- Col 2: Mensaje directo de Juan José — cristal continuo, sin bache negro -->
               <div
-                class="esencia-inner-card bg-[#0c0818]/95 border border-purple-500/35 rounded-3xl p-6 md:p-10 relative z-10 shadow-[0_0_35px_rgba(147,51,234,0.15)]">
+                class="esencia-inner-card bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 md:p-10 relative z-10 shadow-[0_0_35px_rgba(147,51,234,0.15)]">
                 <!-- Cita, comillas y firma con contraste superior sobre vidrio oscuro -->
                 <div class="relative z-10">
                   <svg class="w-8 h-8 text-purple-400/90" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -364,7 +360,7 @@
     </section>
 
     <!-- Interactive Catalog Section (Full-Bleed Container) -->
-    <section id="formatos" class="w-full py-12 sm:py-16 md:py-24 relative z-10 bg-[#07040e]">
+    <section id="formatos" class="w-full py-12 sm:py-16 md:py-24 relative z-10">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div class="flex flex-col md:flex-row md:items-end justify-between mb-12">
           <div>
@@ -401,7 +397,7 @@
     </section>
 
     <!-- NEW FEATURE: Biblioteca Multimedia Section (Full-Bleed Room) -->
-    <section id="biblioteca" class="w-full relative z-10 py-12 sm:py-16 md:py-24 overflow-hidden bg-[#07040e]">
+    <section id="biblioteca" class="w-full relative z-10 py-12 sm:py-16 md:py-24 overflow-hidden">
 
       <!-- Ambient Room Glows -->
       <div class="absolute -top-24 -left-32 w-[480px] h-[480px] bg-glow-purple pointer-events-none animate-orb-reverse">
@@ -455,7 +451,7 @@
     </section>
 
     <!-- SINPE Mobile Booking Process Section (Full-Bleed) -->
-    <section id="proceso" class="w-full py-12 sm:py-16 md:py-24 relative z-10 bg-[#07040e]">
+    <section id="proceso" class="w-full py-12 sm:py-16 md:py-24 relative z-10">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div class="text-center max-w-3xl mx-auto mb-16">
           <span class="text-xs font-bold text-purple-400 tracking-wider uppercase">Proceso Transparente</span>
@@ -466,7 +462,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div
-            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+            class="p-6 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">1</span>
             <h3 class="text-lg font-bold text-white mb-2">Selección & Extras</h3>
@@ -476,7 +472,7 @@
           </div>
 
           <div
-            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+            class="p-6 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">2</span>
             <h3 class="text-lg font-bold text-white mb-2">Ubicación & Viáticos</h3>
@@ -485,7 +481,7 @@
           </div>
 
           <div
-            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+            class="p-6 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">3</span>
             <h3 class="text-lg font-bold text-white mb-2">SINPE 50% Adelanto</h3>
@@ -494,7 +490,7 @@
           </div>
 
           <div
-            class="p-6 rounded-2xl bg-[#0d081b]/80 border border-purple-500/20 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
+            class="p-6 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] hover:-translate-y-1 relative">
             <span
               class="px-3.5 py-1.5 rounded-xl bg-purple-950/50 backdrop-blur-md border border-purple-400/40 text-purple-200 font-bold text-sm shadow-[0_0_15px_rgba(168,85,247,0.35)] flex items-center justify-center w-fit mb-4">4</span>
             <h3 class="text-lg font-bold text-white mb-2">Voucher WhatsApp</h3>
@@ -506,7 +502,7 @@
     </section>
 
     <!-- Headquarters & Executive Contact Command Hub (Full-Bleed VIP Section) -->
-    <section id="cobertura" class="w-full py-14 sm:py-20 md:py-28 relative z-10 bg-[#07040e] overflow-hidden">
+    <section id="cobertura" class="w-full py-14 sm:py-20 md:py-28 relative z-10 overflow-hidden">
       <!-- Ambient Backdrops -->
       <div class="absolute -top-32 -left-32 w-96 h-96 bg-glow-purple pointer-events-none opacity-40 animate-orb-slow">
       </div>
@@ -757,7 +753,7 @@
 
   <!-- Footer Unificado (Full-Bleed) — ARKIK LIGHT NEON AMBIENT, un solo bloque sin cortes -->
   <footer id="master-liquid-footer"
-    class="w-full overflow-hidden relative font-jakarta text-slate-200 select-none z-20 bg-[#07040e]">
+    class="w-full overflow-hidden relative font-jakarta text-slate-200 select-none z-20">
 
     <!-- Ambient light CSS puro: footer::before anima solo la opacidad del glow superior
          (sin canvas, sin rAF, sin repintados continuos). El contenido queda por encima. -->
@@ -1987,7 +1983,8 @@
       class="executive-auth-card relative max-w-xs sm:max-w-sm w-full mx-auto bg-[#080511]/95 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden">
 
       <!-- Close Button -->
-      <button type="button" id="admin-login-close" onclick="closeAdminLoginModal()" aria-label="Cerrar consola de acceso"
+      <button type="button" id="admin-login-close" onclick="closeAdminLoginModal()"
+        aria-label="Cerrar consola de acceso"
         class="absolute top-4 right-4 z-20 text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/5 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -2001,7 +1998,8 @@
           <span
             class="font-extrabold tracking-widest text-transparent bg-clip-text bg-gradient-to-br from-white via-purple-100 to-purple-400 font-heading">A</span>
         </div>
-        <h3 id="admin-login-title" class="font-heading font-bold text-2xl text-white tracking-tight">Consola Ejecutiva</h3>
+        <h3 id="admin-login-title" class="font-heading font-bold text-2xl text-white tracking-tight">Consola Ejecutiva
+        </h3>
         <p class="text-sm text-purple-300/70 font-medium mt-1.5">Acceso restringido · Arkik Productions</p>
       </div>
 
@@ -2062,10 +2060,12 @@
         class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
         <div class="min-w-0">
           <span
-            class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Sistema de Operaciones
+            class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Sistema
+            de Operaciones
             Ejecutivas</span>
           <h3 id="admin-modal-title"
-            class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Panel de Control
+            class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Panel de
+            Control
             de Arkik Productions</h3>
         </div>
         <div class="flex flex-wrap items-center gap-2 flex-shrink-0 justify-end">
@@ -2104,8 +2104,8 @@
             </span>
             <span id="admin-role-badge"
               class="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-md shrink-0">Propietario</span>
-            <span id="admin-user-name"
-              class="text-white font-bold text-sm tracking-wide truncate">Juan José Ramírez</span>
+            <span id="admin-user-name" class="text-white font-bold text-sm tracking-wide truncate">Juan José
+              Ramírez</span>
             <span class="text-slate-400 text-xs hidden sm:inline-flex items-center gap-1 font-mono shrink-0">
               <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2132,7 +2132,7 @@
         <!-- Rol Propietario: Analítica Financiera & Operativa -->
         <div id="admin-owner-view" class="hidden">
 
-<!-- ============================================================
+          <!-- ============================================================
                 BUSINESS INTELLIGENCE ENGINE — Lanzador
                 La consola completa vive en #ragStudioView (pantalla
                 completa, hermano de este modal). Acá sólo queda la
@@ -2153,7 +2153,7 @@
                 interpola por reglas deterministas. Sin embeddings ni modelo de lenguaje: cada
                 agregado es un cálculo, no una generación.
               </div>
-<button type="button" onclick="openRagStudio()"
+              <button type="button" onclick="openRagStudio()"
                 class="rag-action rag-action--primary btn-analytics-launch">
                 <span>Acceder a la Consola Analítica →</span>
               </button>
@@ -2165,7 +2165,7 @@
               <h4 class="text-sm font-bold text-white">Analítica Ejecutiva & Flujo Financiero</h4>
               <p class="text-[11px] text-gray-500">KPIs recalibrados dinámicamente por período seleccionado.</p>
             </div>
-            <button type="button" id="btnExportPDF" onclick="exportOwnerReportPDF()"
+            <button type="button" id="btnExportPDF" onclick="openExecutiveReportPreviewModal()"
               class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] my-2">
               <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2507,11 +2507,16 @@
       <!-- Action Controls Bar -->
       <div class="w-full flex flex-wrap items-center justify-between gap-3 pb-3 px-1 sm:px-2">
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <div
+            class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
           <div>
-            <h3 id="pre-invoice-modal-title" class="text-sm font-bold text-white tracking-wide">Prefactura y Comprobante de Reserva</h3>
+            <h3 id="pre-invoice-modal-title" class="text-sm font-bold text-white tracking-wide">Prefactura y Comprobante
+              de Reserva</h3>
             <p class="text-[11px] text-purple-300/70 font-mono">Vista Previa A4 (794px max-width)</p>
           </div>
         </div>
@@ -2533,7 +2538,8 @@
       </div>
 
       <!-- Preview Paper Stage & Card (Bounded 794px max-width white canvas) -->
-      <div id="preInvoicePaperStage" class="w-full flex justify-center overflow-x-auto p-1 sm:p-3 rounded-2xl bg-black/40 border border-white/10 shadow-2xl backdrop-blur-sm">
+      <div id="preInvoicePaperStage"
+        class="w-full flex justify-center overflow-x-auto p-1 sm:p-3 rounded-2xl bg-black/40 border border-white/10 shadow-2xl backdrop-blur-sm">
         <div id="preInvoicePreviewCard"
           style="width: 100%; max-width: 794px; min-height: 520px; padding: 28px; box-sizing: border-box; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', Arial, sans-serif;"
           class="rounded shadow-2xl transition-all">
@@ -2542,7 +2548,8 @@
       </div>
 
       <div class="w-full flex justify-end pt-2 px-2">
-        <button type="button" onclick="closePreInvoicePreview()" class="text-xs text-gray-400 hover:text-white transition-colors">
+        <button type="button" onclick="closePreInvoicePreview()"
+          class="text-xs text-gray-400 hover:text-white transition-colors">
           ✕ Cerrar Previsualización
         </button>
       </div>
@@ -2602,17 +2609,22 @@
   <div id="rackPreviewModal" role="dialog" aria-modal="true" aria-labelledby="rack-preview-title"
     onclick="if (event.target === this) closeRackPreview()"
     class="fixed inset-0 z-[110] hidden items-center justify-end p-0 bg-black/70 backdrop-blur-md opacity-0 pointer-events-none invisible">
-    <div class="relative w-full max-w-xl h-full max-h-full flex flex-col bg-[#0b0717] border-l border-purple-500/30 shadow-[0_0_60px_rgba(168,85,247,0.25)] animate-slide-in-right"
+    <div
+      class="relative w-full max-w-xl h-full max-h-full flex flex-col bg-[#0b0717] border-l border-purple-500/30 shadow-[0_0_60px_rgba(168,85,247,0.25)] animate-slide-in-right"
       style="will-change: transform;">
-      
+
       <!-- Drawer Header -->
-      <div class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
+      <div
+        class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
         <div class="min-w-0">
-          <span class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Previsualización de Reserva</span>
-          <h3 id="rack-preview-title" class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Datos Completos del Cliente</h3>
+          <span
+            class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Previsualización
+            de Reserva</span>
+          <h3 id="rack-preview-title"
+            class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Datos
+            Completos del Cliente</h3>
         </div>
-        <button type="button" id="rack-preview-close" onclick="closeRackPreview()"
-          aria-label="Cerrar previsualización"
+        <button type="button" id="rack-preview-close" onclick="closeRackPreview()" aria-label="Cerrar previsualización"
           class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all active:scale-90 shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -2641,7 +2653,8 @@
           <button type="button" onclick="closeRackPreview(); openWhatsAppFromRack()"
             class="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all min-h-[44px] flex items-center justify-center gap-2">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+              <path
+                d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
             </svg>
             <span>WhatsApp Directo</span>
           </button>
@@ -2650,7 +2663,68 @@
     </div>
   </div>
 
-<!-- ============================================================ -->
+  <!-- ============================================================ -->
+  <!-- EXECUTIVE REPORT PREVIEW MODAL (#execReportPreviewModal)     -->
+  <!-- WYSIWYG A4 preview: user sees the exact report before        -->
+  <!-- downloading. PDF is captured from the visible canvas.        -->
+  <!-- ============================================================ -->
+  <div id="execReportPreviewModal" role="dialog" aria-modal="true" aria-labelledby="exec-report-modal-title"
+    onclick="if (event.target === this) closeExecutiveReportPreviewModal()"
+    class="fixed inset-0 z-[125] hidden items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible transition-all duration-200">
+    <div class="relative m-auto w-full max-w-[850px] my-auto flex flex-col items-center">
+
+      <!-- Action Controls Bar -->
+      <div class="w-full flex flex-wrap items-center justify-between gap-3 pb-3 px-1 sm:px-2">
+        <div class="flex items-center gap-2.5">
+          <div
+            class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 id="exec-report-modal-title" class="text-sm font-bold text-white tracking-wide">Reporte Ejecutivo de
+              Ventas</h3>
+            <p class="text-[11px] text-purple-300/70 font-mono">Vista Previa A4 (794px) · WYSIWYG</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <button type="button" id="btn-exec-report-pdf" onclick="exportExecutiveReportPDF()"
+            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-purple-600 hover:bg-purple-500 hover:shadow-[0_0_20px_rgba(168,85,247,0.5)] active:scale-95 transition-all duration-150">
+            <span>📥 Descargar PDF</span>
+          </button>
+          <button type="button" id="btn-exec-report-docx" onclick="exportOwnerReportDOCX()"
+            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-blue-200 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 hover:border-blue-400 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 transition-all duration-150">
+            <span>📄 Exportar Word (.docx)</span>
+          </button>
+          <button type="button" onclick="closeExecutiveReportPreviewModal()" aria-label="Cerrar Previsualización"
+            class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-xs sm:text-sm font-medium text-gray-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 active:scale-95 transition-all duration-150">
+            <span>✕ Cerrar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- A4 Paper Canvas (White) -->
+      <div
+        class="w-full flex justify-center overflow-x-auto p-1 sm:p-3 rounded-2xl bg-black/40 border border-white/10 shadow-2xl backdrop-blur-sm">
+        <div id="execReportCanvas"
+          style="width: 794px; min-width: 794px; max-width: 794px; min-height: 520px; padding: 32px; box-sizing: border-box; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border-radius: 8px;">
+          <!-- Injected dynamically by openExecutiveReportPreviewModal() -->
+        </div>
+      </div>
+
+      <div class="w-full flex justify-end pt-2 px-2">
+        <button type="button" onclick="closeExecutiveReportPreviewModal()"
+          class="text-xs text-gray-400 hover:text-white transition-colors">
+          ✕ Cerrar Previsualización
+        </button>
+      </div>
+
+    </div>
+  </div>
+  <!-- ============================================================ -->
   <!-- BUSINESS INTELLIGENCE STUDIO (#ragStudioView)             -->
   <!-- Contenedor dedicado a pantalla completa. Es hermano de los -->
   <!-- modales, NO un hijo de #adminPortalModal: el Studio        -->
@@ -2669,8 +2743,7 @@
         <span id="rag-studio-badge" class="rag-studio-badge">🟢 Index Synced: Live Sync</span>
       </div>
       <div class="rag-studio-nav">
-        <button type="button" id="btn-rag-studio-back" onclick="closeRagStudio()"
-          class="rag-studio-btn">
+        <button type="button" id="btn-rag-studio-back" onclick="closeRagStudio()" class="rag-studio-btn">
           <span>Volver al Panel Admin</span>
         </button>
         <button type="button" id="btn-rag-studio-logout" onclick="ragStudioLogout()"
@@ -2688,8 +2761,7 @@
           placeholder="Buscar por cliente, teléfono (+506), hash ARK-XXXXXXXX, provincia o 'Sin abonar'..."
           aria-label="Consultar el índice operacional" class="rag-studio-input">
       </div>
-      <div id="rag-studio-pills" class="rag-studio-pills" role="group"
-        aria-label="Filtros rápidos del índice"></div>
+      <div id="rag-studio-pills" class="rag-studio-pills" role="group" aria-label="Filtros rápidos del índice"></div>
     </div>
 
     <!-- SECTION B: KPI dashboard -->

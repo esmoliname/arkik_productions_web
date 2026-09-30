@@ -4678,7 +4678,7 @@ function buildOwnerExecutiveReportHtml(periodFilter, metrics, bookingsList) {
 
   // ── KPI Flex Card (Strict 4-Column Flex — each card: calc(25% - 6px)) ──
   const kpiFlex = (label, value, extra, valueStyle) => `
-    <div style="width: calc(25% - 6px); box-sizing: border-box; overflow: hidden; padding: 10px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px;">
+    <div style="width: calc(25% - 6px); box-sizing: border-box; overflow: hidden; padding: 10px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; page-break-inside: avoid; break-inside: avoid;">
       <p style="margin: 0 0 6px 0; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b;">${label}</p>
       <p style="margin: 0; ${valueStyle}">${value}</p>
       ${extra ? `<p style="margin: 4px 0 0 0; font-size: 10px; color: #475569;">${extra}</p>` : ""}
@@ -4697,7 +4697,7 @@ function buildOwnerExecutiveReportHtml(periodFilter, metrics, bookingsList) {
   container.style.fontFamily = "'Inter', system-ui, sans-serif";
   container.style.fontSize = "12px";
   container.style.lineHeight = "1.5";
-  container.style.overflow = "hidden";
+  container.style.overflow = "visible"; // must be visible so html2canvas measures full height
 
   container.innerHTML = `
     <!-- ══ HEADER CORPORATIVO ══ -->
@@ -4843,13 +4843,24 @@ function exportOwnerReportPDF() {
   // 3. Pre-carga de imágenes (logo) dentro del DOM real antes de rasterizar
   preloadExecutiveImages(container)
     .then(() => {
-      // 4. Configuración del motor html2pdf.js — EXACT match to spec
+      // 4. Configuración del motor html2pdf.js — A4 portrait, sin clipping
+      // IMPORTANT: `width` (canvas capture width in px) must match container.style.width
+      // so html2canvas never samples beyond the 794px boundary. `windowWidth` alone
+      // only sets the JS layout viewport but does not constrain the raster capture area.
       const opt = {
-        margin: 0,
+        margin: [10, 10, 10, 10],  // mm — must match jsPDF unit below
         filename: `Arkik_Reporte_Ejecutivo_${filterKey}_${new Date().toISOString().split('T')[0]}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0, logging: false },
-        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          width: 794,           // capture exactly 794px — prevents right-side cutoff
+          windowWidth: 794,     // consistent JS layout width for media queries
+          scrollX: 0,
+          scrollY: 0,
+          logging: false
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
       return window.html2pdf().set(opt).from(container).save();
     })
@@ -4864,6 +4875,294 @@ function exportOwnerReportPDF() {
       showToast("Error al exportar PDF, abriendo vista de impresión.", "error");
       printFallback(container.innerHTML, `Reporte_Ejecutivo_${new Date().toISOString().slice(0, 10)}`);
     });
+}
+
+/* ============================================================
+   REPORTE EJECUTIVO — MODAL DE PREVISUALIZACIÓN WYSIWYG
+   (#execReportPreviewModal / #execReportCanvas)
+
+   El PDF se genera SIEMPRE desde el lienzo A4 visible en pantalla.
+   Nunca desde un contenedor off-screen ni de display:none: esa era
+   la causa del recorte horizontal (html2canvas no puede medir un
+   nodo que el navegador no ha laid out).
+   ============================================================ */
+
+/**
+ * Consolida los datos reales que alimentan el reporte ejecutivo.
+ *
+ * Si no hay filtro de período activo, `AdminModule.periodFilter` es "total"
+ * y `periodRange("total")` devuelve 0000-01-01 → 9999-12-31: los KPIs se leen
+ * del ACUMULADO HISTÓRICO completo, garantizando cifras reales y distintas
+ * de ₡0 en lugar de un período vacío.
+ *
+ * @returns {{filterKey: string, range: {start: string, end: string}, periodLabel: string,
+ *            bookings: Array, active: Array, total: number, deposits: number,
+ *            pending: number, volume: number, occupancy: number}}
+ */
+function collectExecutiveReportData() {
+  const filterKey = (typeof AdminModule !== "undefined" && AdminModule.periodFilter) ? AdminModule.periodFilter : "total";
+  const range = periodRange(filterKey);
+  const periodLabel = (PERIOD_FILTERS.find(f => f.key === filterKey) || PERIOD_FILTERS[PERIOD_FILTERS.length - 1]).label;
+
+  const bookings = bookingsInPeriod(filterKey);
+  const active = bookings.filter(b => b.status !== "cancelada");
+
+  const total = active.reduce((s, b) => s + (Number(b.granTotal) || 0), 0);
+  const deposits = active.reduce((s, b) => s + (Number(b.deposit50Amount) || 0), 0);
+  const pending = active.reduce((s, b) => s + (Number(b.remainingBalance) || 0), 0);
+
+  let spanDays = Math.max(1, Math.round((parseISO(range.end) - parseISO(range.start)) / 86400000) + 1);
+  if (filterKey === "total") {
+    const dates = active.map(b => parseISO(b.selectedDate)).filter(Boolean).sort((a, b) => a - b);
+    spanDays = dates.length >= 2 ? Math.max(1, Math.round((dates[dates.length - 1] - dates[0]) / 86400000) + 1) : 1;
+  }
+  const capacity = Math.max(1, spanDays * DEFAULT_MAX_EVENTS_PER_DAY);
+  const occupancy = Math.min(100, Math.round((active.length / capacity) * 100));
+
+  const rows = active
+    .slice()
+    .sort((a, b) => String(a.selectedDate || "").localeCompare(String(b.selectedDate || "")));
+
+  return { filterKey, range, periodLabel, bookings: rows, active, total, deposits, pending, volume: active.length, occupancy };
+}
+
+/**
+ * Construye el HTML completo del Reporte Ejecutivo dentro del lienzo A4.
+ * Plantilla WYSIWYG: lo que se ve en pantalla es exactamente lo que se
+ * rasteriza al PDF.
+ *
+ * - Encabezado oficial: logo (Data URL Base64), título, fecha/hora de
+ *   emisión y datos del emisor.
+ * - Tarjetas de KPI en grid estricto de 4 columnas.
+ * - Tabla de desglose financiero con `table-layout: fixed` y anchos de
+ *   columna en porcentaje exacto (15/16/18/18/11/11/11 = 100%).
+ *
+ * @returns {string} HTML listo para inyectar en `#execReportCanvas`.
+ */
+function buildExecutiveReportHTML() {
+  const data = collectExecutiveReportData();
+  const { range, periodLabel, filterKey, bookings, total, deposits, pending, volume, occupancy } = data;
+
+  const now = new Date();
+  const issuedDate = now.toLocaleDateString("es-CR", { day: "2-digit", month: "long", year: "numeric" });
+  const issuedTime = now.toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" });
+  const logoSrc = (typeof ArkikAssets !== "undefined") ? ArkikAssets.getLogo() : "";
+
+  const esc = (v) => (typeof sanitizeInput === "function" ? sanitizeInput(v == null ? "" : String(v)) : String(v == null ? "" : v));
+
+  const rangeLabel = filterKey === "total"
+    ? "Acumulado histórico completo"
+    : `${esc(range.start)} → ${esc(range.end)}`;
+
+  // ── Tarjetas de KPI (grid estricto de 4 columnas) ──
+  const kpi = (label, value, extra, valueStyle) => `
+      <div style="box-sizing:border-box; overflow:hidden; padding:10px; border:1px solid #e2e8f0; background:#f8fafc; border-radius:12px;">
+        <p style="margin:0 0 6px 0; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:#64748b;">${label}</p>
+        <p style="margin:0; font-size:17px; font-weight:900; color:#0f172a; line-height:1.15; ${valueStyle || ""}">${value}</p>
+        ${extra ? `<p style="margin:4px 0 0 0; font-size:10px; color:#475569;">${extra}</p>` : ""}
+      </div>`;
+
+  const kpiGrid = `
+    <div class="exec-report-kpis">
+      ${kpi("Facturación Total Proyectada", formatCRC(total), "", "")}
+      ${kpi("Adelantos Cobrados 50% SINPE", formatCRC(deposits), "", "")}
+      ${kpi("Saldos Pendientes", formatCRC(pending), "", "")}
+      ${kpi("Volumen de Reservas", String(volume), `Tasa de Ocupación: ${occupancy}% · Máx. ${DEFAULT_MAX_EVENTS_PER_DAY}/día`, "")}
+    </div>`;
+
+  // ── Filas del desglose financiero ──
+  const rowsHtml = bookings.length
+    ? bookings.map((b, i) => `
+      <tr style="border-bottom:1px solid #e2e8f0;${i % 2 === 1 ? " background:#f8fafc;" : ""}">
+        <td style="padding:6px 8px; vertical-align:top; font-weight:800; color:#334155;">${esc(b.code)}</td>
+        <td style="padding:6px 8px; vertical-align:top; color:#334155;">${esc(formatDisplayDate(b.selectedDate))}${b.selectedTime ? " · " + esc(b.selectedTime) : ""}</td>
+        <td style="padding:6px 8px; vertical-align:top;">
+          <strong style="color:#0f172a;">${esc(b.clientName)}</strong><br>
+          <span style="color:#64748b; font-size:9px;">${esc(b.clientPhone || "")}</span>
+        </td>
+        <td style="padding:6px 8px; vertical-align:top;">${esc(b.serviceName || "")}${b.eventType ? " · " + esc(b.eventType) : ""}</td>
+        <td style="padding:6px 8px; vertical-align:top; text-align:right; font-weight:800; color:#0f172a;">${formatCRC(b.granTotal)}</td>
+        <td style="padding:6px 8px; vertical-align:top; text-align:right; color:#047857; font-weight:700;">${formatCRC(b.deposit50Amount)}</td>
+        <td style="padding:6px 8px; vertical-align:top; text-align:right; color:#b45309; font-weight:700;">${formatCRC(b.remainingBalance)}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="7" style="padding:18px 8px; text-align:center; color:#64748b; font-size:11px;">No hay reservas registradas en este período.</td></tr>`;
+
+  return `
+    <!-- ══ ENCABEZADO OFICIAL ══ -->
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:14px; border-bottom:2px solid #0f172a;">
+      <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+        <img data-exec-logo src="${logoSrc}" alt="Arkik Productions"
+          style="height:46px; width:auto; display:block; flex-shrink:0;">
+        <div style="min-width:0;">
+          <p style="margin:0; font-size:9px; font-weight:800; letter-spacing:2.4px; text-transform:uppercase; color:#7c3aed;">Arkik Productions</p>
+          <h1 style="margin:3px 0 0; font-size:15px; font-weight:900; line-height:1.2; color:#0f172a;">REPORTE EJECUTIVO Y OPERATIVO DE VENTAS</h1>
+          <p style="margin:5px 0 0; font-size:10px; color:#475569;">Fecha y hora de emisión: ${esc(issuedDate)} · ${esc(issuedTime)}</p>
+        </div>
+      </div>
+      <div style="text-align:right; flex-shrink:0; font-size:10px; color:#334155;">
+        <p style="margin:0; font-weight:800; color:#0f172a;">Propietario: Juan José Ramírez</p>
+        <p style="margin:4px 0 0; color:#475569;">Periodo: ${esc(periodLabel)}</p>
+        <p style="margin:2px 0 0; color:#64748b; font-family:'SFMono-Regular',Consolas,monospace; font-size:9px;">${rangeLabel}</p>
+      </div>
+    </div>
+
+    <!-- ══ KPIs ══ -->
+    <div style="margin-top:16px;">
+      <p style="margin:0 0 8px 0; font-size:9px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase; color:#64748b;">Indicadores Clave</p>
+      ${kpiGrid}
+    </div>
+
+    <!-- ══ DESGLOSE FINANCIERO ══ -->
+    <div style="margin-top:18px;">
+      <p style="margin:0 0 8px 0; font-size:9px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase; color:#64748b;">Desglose Financiero por Reserva</p>
+      <table style="table-layout:fixed; width:100%; border-collapse:collapse; font-size:10px; word-break:break-word;">
+        <colgroup>
+          <col style="width:15%;">
+          <col style="width:16%;">
+          <col style="width:18%;">
+          <col style="width:18%;">
+          <col style="width:11%;">
+          <col style="width:11%;">
+          <col style="width:11%;">
+        </colgroup>
+        <thead>
+          <tr style="background:#0f172a; color:#ffffff;">
+            <th style="padding:8px; text-align:left; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">ARK CODE</th>
+            <th style="padding:8px; text-align:left; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">FECHA/HORA</th>
+            <th style="padding:8px; text-align:left; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">CLIENTE</th>
+            <th style="padding:8px; text-align:left; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">FORMATO</th>
+            <th style="padding:8px; text-align:right; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">TOTAL</th>
+            <th style="padding:8px; text-align:right; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">ADELANTO</th>
+            <th style="padding:8px; text-align:right; font-size:9px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; word-break:break-word;">SALDO</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr style="background:#eef2ff; border-top:2px solid #0f172a;">
+            <td colspan="4" style="padding:8px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#312e81;">Totales consolidados</td>
+            <td style="padding:8px; text-align:right; font-weight:900; color:#0f172a;">${formatCRC(total)}</td>
+            <td style="padding:8px; text-align:right; font-weight:900; color:#047857;">${formatCRC(deposits)}</td>
+            <td style="padding:8px; text-align:right; font-weight:900; color:#b45309;">${formatCRC(pending)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- ══ PIE / CONFIDENCIALIDAD ══ -->
+    <div style="margin-top:18px; padding-top:10px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; gap:12px; font-size:9px; color:#64748b;">
+      <span style="max-width:70%;">Documento confidencial generado por Arkik Productions. Contenido financiero de uso exclusivo del propietario.</span>
+      <span style="white-space:nowrap; font-family:'SFMono-Regular',Consolas,monospace;">${esc(now.toISOString().slice(0, 10))}</span>
+    </div>
+  `;
+}
+
+/**
+ * Abre el modal de previsualización WYSIWYG del Reporte Ejecutivo.
+ * Sincroniza el logo Base64 ANTES de rasterizar para que html2canvas
+ * nunca dependa de una petición CORS en vivo.
+ */
+async function openExecutiveReportPreviewModal() {
+  const modal = document.getElementById("execReportPreviewModal");
+  const canvas = document.getElementById("execReportCanvas");
+  if (!modal || !canvas) {
+    if (typeof showToast === "function") showToast("El visor del reporte ejecutivo no está disponible.", "error");
+    return;
+  }
+
+  // 1. Precarga del logotipo Base64 (evita bloqueos CORS en html2canvas).
+  try {
+    if (typeof ArkikAssets !== "undefined" && !ArkikAssets.logoBase64) await ArkikAssets.init();
+  } catch (err) {
+    console.warn("[ExecReport] No se pudo precargar el logo:", err);
+  }
+
+  // 2. Render del documento A4 dentro del lienzo VISIBLE.
+  canvas.innerHTML = buildExecutiveReportHTML();
+
+  const logo = canvas.querySelector("[data-exec-logo]");
+  if (logo && typeof ArkikAssets !== "undefined" && ArkikAssets.logoBase64) {
+    logo.src = ArkikAssets.logoBase64;
+  }
+
+  // 3. Apertura del modal + reset del stage horizontal (móvil).
+  ModalController.open("execReportPreviewModal");
+  const stage = canvas.parentElement;
+  if (stage && typeof stage.scrollTo === "function") stage.scrollTo({ left: 0, top: 0 });
+
+  // 4. Las imágenes del documento deben estar decodificadas antes del clic de exportación.
+  preloadExecutiveImages(canvas).catch(() => {});
+}
+
+/**
+ * Cierra el modal de previsualización del Reporte Ejecutivo.
+ */
+function closeExecutiveReportPreviewModal() {
+  ModalController.close("execReportPreviewModal");
+}
+
+/**
+ * Exporta el Reporte Ejecutivo a PDF rasterizando el lienzo A4 VISIBLE
+ * `#execReportCanvas`. La sombra y el radio del lienzo son decoración de
+ * pantalla: se suspenden durante la captura y se restauran siempre.
+ */
+async function exportExecutiveReportPDF() {
+  const canvas = document.getElementById("execReportCanvas");
+  const btn = document.getElementById("btn-exec-report-pdf");
+  const stamp = new Date().toISOString().split("T")[0];
+  const filename = `Arkik_Reporte_Ejecutivo_${stamp}.pdf`;
+
+  if (!canvas || !canvas.innerHTML.trim()) {
+    if (typeof showToast === "function") showToast("No hay reporte para exportar: abre la previsualización primero.", "error");
+    return;
+  }
+
+  if (!window.html2pdf) {
+    printFallback(canvas.innerHTML, `Reporte_Ejecutivo_${stamp}`);
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+  }
+  if (typeof showToast === "function") showToast("Generando reporte ejecutivo PDF...", "info");
+
+  const prevShadow = canvas.style.boxShadow;
+  const prevRadius = canvas.style.borderRadius;
+
+  try {
+    // Re-sincroniza el logo en el instante de la captura.
+    if (typeof ArkikAssets !== "undefined" && ArkikAssets.logoBase64) {
+      const logo = canvas.querySelector("[data-exec-logo]");
+      if (logo) logo.src = ArkikAssets.logoBase64;
+    }
+
+    await preloadExecutiveImages(canvas);
+
+    canvas.style.boxShadow = "none";
+    canvas.style.borderRadius = "0px";
+
+    await window.html2pdf().set({
+      margin: 0,
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
+    }).from(canvas).save();
+
+    if (typeof showToast === "function") showToast("¡Reporte ejecutivo PDF exportado con éxito!", "success");
+  } catch (err) {
+    console.warn("Exec report PDF export:", err);
+    if (typeof showToast === "function") showToast("Error al exportar el PDF, abriendo vista de impresión.", "error");
+    printFallback(canvas.innerHTML, `Reporte_Ejecutivo_${stamp}`);
+  } finally {
+    canvas.style.boxShadow = prevShadow;
+    canvas.style.borderRadius = prevRadius;
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+    }
+  }
 }
 
 /**
@@ -6271,6 +6570,11 @@ function setupEventListeners() {
     }
 
     if (e.key === "Escape") {
+      const execReportModal = document.getElementById("execReportPreviewModal");
+      if (execReportModal && !execReportModal.classList.contains("hidden")) {
+        closeExecutiveReportPreviewModal();
+        return;
+      }
       const mediaLightbox = document.getElementById("mediaLightboxModal");
       if (mediaLightbox && !mediaLightbox.classList.contains("hidden")) {
         closeMediaLightbox();
@@ -6791,7 +7095,7 @@ function adminLogout() {
 // explicit user interaction. Wipes any leftover visible state on
 // app boot so a rogue backdrop can never black the page out.
 const ModalController = {
-  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal'],
+  _ids: ['booking-modal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
 
   open(modalId) {
     const modal = document.getElementById(modalId);
@@ -6808,7 +7112,7 @@ const ModalController = {
       modal.classList.remove('flex', 'opacity-100', 'pointer-events-auto', 'visible');
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex');
+    const anyOpen = document.querySelectorAll('#booking-modal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
     if (anyOpen.length === 0) {
       document.body.style.overflow = '';
     }
@@ -9390,16 +9694,16 @@ function ragStudioLogout() {
 // ---- Acciones de 1 clic (ventana global: onclick inline del HTML) ----
 
 /**
- * Exporta el reporte ejecutivo. DELega en el exportador PDF ya
- * existente (exportOwnerReportPDF) en lugar de duplicarlo: mismo
- * documento, una sola implementación.
+ * Exporta el reporte ejecutivo desde el RAG Studio. Delega en el modal
+ * WYSIWYG (openExecutiveReportPreviewModal) en lugar de duplicarlo: mismo
+ * documento, una sola implementación, y siempre visible al rasterizar.
  */
 function ragActionExport() {
-  if (typeof exportOwnerReportPDF === "function") {
-    exportOwnerReportPDF();
+  if (typeof openExecutiveReportPreviewModal === "function") {
+    openExecutiveReportPreviewModal();
     return;
   }
-  ragOutput("El exportador PDF no está disponible en este contexto.");
+  ragOutput("El visor del reporte ejecutivo no está disponible en este contexto.");
 }
 
 /**
@@ -9548,5 +9852,10 @@ window.openPreInvoicePreview = openPreInvoicePreview;
 window.closePreInvoicePreview = closePreInvoicePreview;
 window.exportVoucherPDF = exportVoucherPDF;
 window.exportVoucherDOCX = exportVoucherDOCX;
+window.buildExecutiveReportHTML = buildExecutiveReportHTML;
+window.collectExecutiveReportData = collectExecutiveReportData;
+window.openExecutiveReportPreviewModal = openExecutiveReportPreviewModal;
+window.closeExecutiveReportPreviewModal = closeExecutiveReportPreviewModal;
+window.exportExecutiveReportPDF = exportExecutiveReportPDF;
 
 
