@@ -1,4 +1,4 @@
-﻿/* Plus Jakarta Sans se pide como VARIABLE (wght 300..800 + itálico) para que
+/* Plus Jakarta Sans se pide como VARIABLE (wght 300..800 + itálico) para que
    el eje opsz esté disponible en el titular del hero. Syne se eliminó de esta
    petición: ya no tiene consumidores tras migrar el h1 y cada familia en el
    @import es un download extra en el critical path del LCP. */
@@ -5291,18 +5291,41 @@ select.ark-input:active {
   transform: translateY(-1px);
 }
 
-/* WhatsApp: tarjeta de conversión principal */
+/* WhatsApp: tarjeta de conversión ejecutiva (glassmorphism + hover emerald)
+   Valores espejados de las utilidades Tailwind del marcado
+   (bg-[#0d071d]/60 · backdrop-blur-xl · border-white/10 · rounded-2xl · p-4 sm:p-5)
+   para que el resultado sea idéntico sin importar el orden de las hojas. */
 .footer-wa-card {
-  background: rgba(6, 78, 59, 0.22);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(13, 7, 29, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .footer-wa-card {
+    padding: 1.25rem;
+  }
 }
 
 .footer-wa-card:hover {
-  transform: translateY(-2px);
-  background: rgba(6, 78, 59, 0.34);
-  border-color: rgba(52, 211, 153, 0.6);
-  box-shadow: 0 10px 34px -12px rgba(16, 185, 129, 0.5);
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.1), 0 4px 6px -4px rgba(16, 185, 129, 0.1);
+}
+
+.footer-wa-card:focus-visible {
+  border-color: rgba(52, 211, 153, 0.65);
 }
 
 /* Social icons circulares: brillo perimetral en hover (IG magenta / FB cyan) */
