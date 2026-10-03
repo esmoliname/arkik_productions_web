@@ -79,7 +79,6 @@ code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .r
      pointer-events: auto;
      /* 60 FPS: capa GPU propia, evita repaints del backdrop en móvil */
      transform: translate3d(0, 0, 0);
-     will-change: transform;
    }
 
    /* Modal Card - centered, constrained size */
@@ -97,7 +96,6 @@ code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .r
      position: relative;
      /* 60 FPS: promover a capa compuesta; el scroll interno sigue siendo GPU */
      transform: translate3d(0, 0, 0);
-     will-change: transform;
    }
 
    /* Focus trap area within modal */
@@ -618,7 +616,6 @@ html {
 
 /* Pre-mounted modal base - initially hidden but present in DOM */
 .modal-premounted {
-  will-change: opacity, pointer-events;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -633,7 +630,6 @@ html {
   overscroll-behavior: contain;
   /* 60 FPS: capa de composición propia para el scroll del sheet en móvil */
   transform: translate3d(0, 0, 0);
-  will-change: transform;
 }
 
 @media (min-width: 640px) {
@@ -708,7 +704,6 @@ input[type="submit"],
   -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.5s ease, border-color 0.5s ease;
-  will-change: transform;
 }
 
 .gallery-card:hover {
@@ -1155,6 +1150,7 @@ html {
 /* ---- Scroll & Paint Performance ----
    Secciones fuera de pantalla: render súper liviano durante el scroll.
    #hero queda excluido para no alterar la medición inicial del canvas interactivo. */
+#garantias,
 #esencia,
 #formatos,
 #proceso,
@@ -1162,7 +1158,14 @@ html {
 #biblioteca,
 #master-liquid-footer {
   content-visibility: auto;
-  contain-intrinsic-size: 1px 800px;
+  contain-intrinsic-size: auto 800px;
+}
+
+/* Filas del listado administrativo: omitir el contenido que está fuera de
+   pantalla en lugar de mantenerlo residente en la GPU durante el scroll. */
+.admin-booking-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
 /* Hero background override - subtle radial accent on top of body gradient */
@@ -1357,7 +1360,6 @@ footer > .max-w-7xl {
     inset 0 0 15px rgba(255, 255, 255, 0.15);
   color: #ffffff;
   cursor: pointer;
-  will-change: transform;
   transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, border-color 0.3s ease-out, background 0.3s ease-out;
 }
 
@@ -1460,7 +1462,6 @@ footer > .max-w-7xl {
   color: #94a3b8;
   font-weight: 500;
   transition: color 0.3s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
-  will-change: transform;
 }
 
 #adminLoginModal .role-btn:hover {
@@ -2453,7 +2454,6 @@ footer > .max-w-7xl {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform;
 }
 
 /* PIN: el autofill amarillo/claro por defecto de Chrome y Safari rompe la
@@ -2556,7 +2556,6 @@ footer > .max-w-7xl {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
@@ -2593,7 +2592,6 @@ footer > .max-w-7xl {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform;
 }
 
 /* ---- Trend Bar SVG de Flujo de Caja ---- */
@@ -2608,7 +2606,6 @@ footer > .max-w-7xl {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform;
 }
 
 .glass-panel,
@@ -2622,7 +2619,6 @@ footer > .max-w-7xl {
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform;
 }
 
 /* Mantener transform hover sobre la capa GPU (sin perder composición) */
@@ -3160,7 +3156,6 @@ select.ark-input:active {
    ============================================================ */
 .slot-conflict-card {
   transform: translate3d(0, 0, 0);
-  will-change: transform;
   animation: slotConflictIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
@@ -4308,7 +4303,6 @@ select.ark-input:active {
 .catalog-card__img {
   transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
   filter: brightness(0.9) contrast(1.1) saturate(1.15);
-  will-change: transform;
 }
 .group:hover .catalog-card__img {
   transform: scale(1.08);
@@ -5291,40 +5285,34 @@ select.ark-input:active {
   transform: translateY(-1px);
 }
 
-/* WhatsApp: tarjeta de conversión ejecutiva (glassmorphism + hover emerald)
+/* WhatsApp: barra de acción minimalista de una sola línea (lujo discreto)
    Valores espejados de las utilidades Tailwind del marcado
-   (bg-[#0d071d]/60 · backdrop-blur-xl · border-white/10 · rounded-2xl · p-4 sm:p-5)
+   (bg-white/[0.02] -> border-white/10 -> rounded-xl -> px-4 py-3 -> max-w-md mx-auto)
    para que el resultado sea idéntico sin importar el orden de las hojas. */
-.footer-wa-card {
+.footer-wa-bar {
   display: flex;
-  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   width: 100%;
+  max-width: 28rem;
   min-width: 0;
-  padding: 1rem;
-  border-radius: 1rem;
-  background: rgba(13, 7, 29, 0.6);
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
   text-decoration: none;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-@media (min-width: 640px) {
-  .footer-wa-card {
-    padding: 1.25rem;
-  }
+.footer-wa-bar:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
-.footer-wa-card:hover {
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.1), 0 4px 6px -4px rgba(16, 185, 129, 0.1);
-}
-
-.footer-wa-card:focus-visible {
+.footer-wa-bar:focus-visible {
   border-color: rgba(52, 211, 153, 0.65);
 }
 
@@ -5358,7 +5346,7 @@ select.ark-input:active {
   #master-liquid-footer .footer-brand-card,
   #master-liquid-footer .footer-sinpe-card,
   #master-liquid-footer .footer-copy-btn,
-  #master-liquid-footer .footer-wa-card,
+  #master-liquid-footer .footer-wa-bar,
   #master-liquid-footer .footer-social {
     transition-duration: 0.01ms !important;
   }
@@ -7148,4 +7136,45 @@ body.rack-preview-open {
   .rag-row:hover { transform: none; }
   .rag-studio-btn:active,
   .rag-row-btn:active { transform: none; }
+}
+/* ============================================================
+   MOBILE GPU MEMORY GUARD — iOS / Android (<= 768px)
+   `will-change` persistente y filtros `backdrop-filter` caros agotan la
+   textura de la GPU durante el scroll rápido (pantalla negra / crash del
+   renderizador). En viewports móviles se desactivan por completo.
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Capas GPU permanentes sobre contenedores estáticos: no aportan nada. */
+  .gpu,
+  .glass-panel,
+  .benefit-card,
+  .admin-booking-row,
+  .gallery-card,
+  .catalog-card__img,
+  .modal-card,
+  .modal-sheet-panel,
+  .modal-premounted,
+  .slot-conflict-card,
+  .fintech-login-panel {
+    will-change: auto !important;
+  }
+
+  /* Blur de backdrop: cada uno es una textura de tamaño completo. */
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl,
+  .backdrop-blur-3xl {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Scrims de modal / pantalla completa: sin blur se compensa con un fondo
+     opaco para conservar la legibilidad del contenido encima.
+     (Solo los scrims: las tarjetas glass conservan su propio background.) */
+  [class*="bg-black/85"].backdrop-blur-md,
+  [class*="bg-black/80"].backdrop-blur-md,
+  [class*="bg-black/70"].backdrop-blur-md {
+    background-color: rgba(10, 6, 24, 0.96) !important;
+  }
 }

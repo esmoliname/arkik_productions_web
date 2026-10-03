@@ -328,6 +328,28 @@ function safeSet(key, value) {
 }
 
 // ============================================================
+// SYNC METADATA — sello de escritura global para CloudSync
+// ============================================================
+// `updatedAt` marca la última mutación del mapa de disponibilidad (LWW a nivel
+// de mapa, de modo que también propague el borrado de un bloqueo).
+// `clearedAt` es una marca de agua: todo registro creado antes de ese instante
+// se descarta, lo que permite que un factory reset sí se propague a la nube.
+function readSyncMeta() {
+  const raw = safeParse(STORAGE_KEYS.syncMeta, null);
+  const meta = raw && typeof raw === "object" ? raw : {};
+  return {
+    updatedAt: typeof meta.updatedAt === "string" ? meta.updatedAt : "",
+    clearedAt: typeof meta.clearedAt === "string" ? meta.clearedAt : ""
+  };
+}
+
+function writeSyncMeta(partial) {
+  const meta = Object.assign(readSyncMeta(), partial || {});
+  safeSet(STORAGE_KEYS.syncMeta, meta);
+  return meta;
+}
+
+// ============================================================
 // 1. ARKIK ASSETS CACHE MANAGER (Base64 Logo Preloader)
 // ============================================================
 
@@ -810,6 +832,8 @@ const StorageEngine = {
       this._config = { ...this._config, ...payload.customConfig };
       this.persistConfig();
     }
+    writeSyncMeta({ updatedAt: new Date().toISOString() });
+    CloudSync.notify("import");
     this.onDataChange("all");
   },
 
@@ -983,9 +1007,11 @@ const AvailabilityManager = {
       this._data[iso] = status;
     }
     this.persist();
+    writeSyncMeta({ updatedAt: new Date().toISOString() });
     if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
       StorageEngine.onDataChange("availability");
     }
+    CloudSync.notify("availability");
   },
 
   all() {
@@ -1007,10 +1033,11 @@ const AvailabilityManager = {
       } else if (v && typeof v === "object") {
         const state = v.state;
         if (state === "soldout" || state === "disabled") {
-          this._data[k] = { state, reason: typeof v.reason === "string" ? v.reason.slice(0, 120) : null };
+          this._data[k] = { state, reason: typeof v.reason === "string" ? v.reason.slice(0, 120) : null, isSeed: v.isSeed === true };
         }
       }
     });
+    this.persist();
   }
 };
 
@@ -1040,8 +1067,10 @@ const BookingStore = {
   },
 
   add(booking) {
+    booking.updatedAt = new Date().toISOString();
     this._data.unshift(booking);
     this.persist();
+    CloudSync.notify("bookings");
   },
 
   get(code) {
@@ -1058,10 +1087,12 @@ const BookingStore = {
     const b = this.get(code);
     if (!b || !iso) return false;
     b.selectedDate = iso;
+    b.updatedAt = new Date().toISOString();
     this.persist();
     if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
       StorageEngine.onDataChange("bookings");
     }
+    CloudSync.notify("bookings");
     return true;
   },
 
@@ -1069,7 +1100,9 @@ const BookingStore = {
     const b = this.get(code);
     if (b && BOOKING_STATUSES[status]) {
       b.status = status;
+      b.updatedAt = new Date().toISOString();
       this.persist();
+      CloudSync.notify("bookings");
     }
   },
 
@@ -1083,6 +1116,478 @@ const BookingStore = {
 
   replace(list) {
     this._data = Array.isArray(list) ? list : [];
+    this.persist();
+  }
+};
+
+// ============================================================
+// 4.5 CLOUD SYNC ENGINE — Sincronización multidispositivo
+// ============================================================
+// Local-first: (1) la escritura va primero a SafeStorage, (2) se encola un
+// push asíncrono que jamás bloquea la UI, (3) al iniciar / en cada polling /
+// al volver a primer plano se ejecuta pull -> merge -> apply.
+// Conflictos: reservas = unión por `code` con last-write-wins por
+// updatedAt/createdAt; disponibilidad = mapa completo con last-write-wins
+// mediado por writeSyncMeta().updatedAt. Los registros con `isSeed: true`
+// nunca viajan a la nube. Con CLOUD_SYNC_CONFIG.enabled = false el motor no
+// emite NINGUNA petición de red.
+
+const CLOUD_DEVICE_KEY = "arkik_device_id_v1";
+
+const CloudSync = {
+  _enabled: false,
+  _driver: null,
+  _rev: 0,
+  _dirty: false,
+  _busy: false,
+  _queued: false,
+  _ready: false,
+  _timer: null,
+  _debounce: null,
+  _deviceId: null,
+  _lastError: null,
+  _lastSyncAt: 0,
+
+  /* ---------------- Ciclo de vida ---------------- */
+
+  init() {
+    try {
+      this.configure();
+      if (!this._enabled) {
+        console.info("[Arkik] CloudSync inactivo (solo almacenamiento local). Configure CLOUD_SYNC_CONFIG en js/data.js para sincronizacion multidispositivo.");
+        return;
+      }
+      this._deviceId = this._readDeviceId();
+      this._ready = true;
+      this.sync("boot").catch(function () {});
+      this._startTimer();
+      this._bindVisibility();
+      console.info("[Arkik] CloudSync activo · driver=" + CLOUD_SYNC_CONFIG.driver);
+    } catch (err) {
+      this._enabled = false;
+      console.warn("[Arkik] CloudSync init:", err && err.message);
+    }
+  },
+
+  configure() {
+    this._enabled = false;
+    this._driver = null;
+    if (typeof CLOUD_SYNC_CONFIG === "undefined" || !CLOUD_SYNC_CONFIG) return;
+    const cfg = CLOUD_SYNC_CONFIG;
+    if (!cfg.enabled) return;
+    const driver = String(cfg.driver || "rest").toLowerCase();
+    if (driver === "supabase") {
+      if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+        console.warn("[Arkik] CloudSync: driver 'supabase' exige supabaseUrl y supabaseAnonKey.");
+        return;
+      }
+      this._driver = this._supabaseDriver(cfg);
+    } else if (driver === "rest") {
+      if (!cfg.endpoint) {
+        console.warn("[Arkik] CloudSync: driver 'rest' exige CLOUD_SYNC_CONFIG.endpoint.");
+        return;
+      }
+      this._driver = this._restDriver(cfg);
+    } else {
+      return;
+    }
+    this._enabled = true;
+  },
+
+  _readDeviceId() {
+    try {
+      let id = SafeStorage.getItem(CLOUD_DEVICE_KEY);
+      if (!id) {
+        id = "dev-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+        SafeStorage.setItem(CLOUD_DEVICE_KEY, id);
+      }
+      return id;
+    } catch (err) {
+      return "dev-anon";
+    }
+  },
+
+  status() {
+    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" && CLOUD_SYNC_CONFIG ? CLOUD_SYNC_CONFIG : {};
+    return {
+      enabled: this._enabled,
+      driver: this._enabled ? (cfg.driver || "rest") : "local",
+      ready: this._ready,
+      revision: this._rev,
+      dirty: this._dirty,
+      pending: this._busy || this._queued,
+      lastSyncAt: this._lastSyncAt ? new Date(this._lastSyncAt).toISOString() : null,
+      lastError: this._lastError
+    };
+  },
+
+  /* ---------------- Drivers remotos ---------------- */
+
+  _headers(extra) {
+    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" ? CLOUD_SYNC_CONFIG : null;
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+    if (cfg && cfg.apiKey) headers[cfg.apiKeyHeader || "X-Master-Key"] = cfg.apiKey;
+    return Object.assign(headers, extra || {});
+  },
+
+  async _http(method, url, payload, headers) {
+    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" ? CLOUD_SYNC_CONFIG : {};
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, cfg.timeoutMs || 8000) : null;
+    try {
+      const res = await fetch(url, {
+        method: method,
+        headers: headers || this._headers(),
+        body: payload === undefined || payload === null ? undefined : JSON.stringify(payload),
+        cache: "no-store",
+        credentials: "omit",
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      if (!text) return null;
+      try { return JSON.parse(text); } catch (err) { return null; }
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  },
+
+  // Endpoint JSON genérico con GET + PUT sobre la misma URL (JSONBin, npoint,
+  // RestDB con documento único, servidor propio). Tolera el envoltorio {record}.
+  _restDriver(cfg) {
+    const self = this;
+    const endpoint = cfg.endpoint;
+    return {
+      async get() {
+        const raw = await self._http("GET", endpoint, null, self._headers());
+        if (!raw || typeof raw !== "object") return null;
+        return raw.record && typeof raw.record === "object" ? raw.record : raw;
+      },
+      async put(doc) {
+        await self._http("PUT", endpoint, doc, self._headers());
+        return true;
+      }
+    };
+  },
+
+  // Supabase REST (PostgREST): una única fila { id, doc } con upsert.
+  _supabaseDriver(cfg) {
+    const self = this;
+    const base = String(cfg.supabaseUrl).replace(/\/+$/, "");
+    const root = base + "/rest/v1/" + encodeURIComponent(cfg.supabaseTable || "arkik_sync");
+    const rowId = cfg.supabaseRowId || "arkik";
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      apikey: cfg.supabaseAnonKey,
+      Authorization: "Bearer " + cfg.supabaseAnonKey
+    };
+    return {
+      async get() {
+        const rows = await self._http("GET", root + "?id=eq." + encodeURIComponent(rowId) + "&select=doc", null, headers);
+        if (!Array.isArray(rows) || !rows.length) return null;
+        const doc = rows[0] && rows[0].doc;
+        return doc && typeof doc === "object" ? doc : null;
+      },
+      async put(doc) {
+        await self._http("POST", root + "?on_conflict=id", { id: rowId, doc: doc },
+          Object.assign({}, headers, { Prefer: "resolution=merge-duplicates,return=minimal" }));
+        return true;
+      }
+    };
+  },
+
+  /* ---------------- Ciclo de sincronización ---------------- */
+
+  // Llamado por los stores después de escribir en local (latencia cero).
+  notify(domain) {
+    if (!this._enabled) return;
+    this._dirty = true;
+    if (this._debounce) clearTimeout(this._debounce);
+    const self = this;
+    this._debounce = setTimeout(function () {
+      self._debounce = null;
+      self.sync("local:" + domain).catch(function () {});
+    }, 600);
+  },
+
+  async sync(reason) {
+    if (!this._enabled || !this._driver) return false;
+    if (this._busy) { this._queued = true; return false; }
+    this._busy = true;
+    let applied = false;
+    try {
+      const raw = await this._driver.get();
+      const remote = raw && typeof raw === "object" ? raw : {};
+      const local = this._envelope();
+      const merged = this._merge(remote, local);
+
+      // 1) Bajar a local (merge, nunca pisar lo local sin fusionarlo).
+      applied = this._applyLocal(merged);
+
+      // 2) Subir solo si aportamos algo o hay escrituras pendientes.
+      const remoteBookings = Array.isArray(remote.bookings) ? remote.bookings : [];
+      const remoteAvail = remote.availability && typeof remote.availability === "object" ? remote.availability : {};
+      const localDelta = this._mergeBookings(remoteBookings, local.bookings).length - remoteBookings.length;
+      const availabilityDelta = !this._sameMap(merged.availability, remoteAvail);
+      const remoteEmpty = remoteBookings.length === 0 && Object.keys(remoteAvail).length === 0;
+      const shouldPush = this._dirty || localDelta > 0 || availabilityDelta || remoteEmpty;
+
+      if (shouldPush) {
+        merged.rev = Math.max(Number(remote.rev) || 0, this._rev) + 1;
+        merged.updatedAt = new Date().toISOString();
+        merged.deviceId = this._deviceId;
+        await this._driver.put(merged);
+        this._rev = merged.rev;
+        this._dirty = false;
+      } else {
+        this._rev = Math.max(Number(remote.rev) || 0, this._rev);
+      }
+
+      this._lastSyncAt = Date.now();
+      this._lastError = null;
+      if (applied) this._refreshUI();
+      return true;
+    } catch (err) {
+      this._lastError = String((err && err.message) || err);
+      console.warn("[Arkik] CloudSync (" + reason + "):", this._lastError);
+      return false;
+    } finally {
+      this._busy = false;
+      if (this._queued) {
+        this._queued = false;
+        const self = this;
+        setTimeout(function () { self.sync("queued").catch(function () {}); }, 300);
+      }
+    }
+  },
+
+  _startTimer() {
+    const cfg = CLOUD_SYNC_CONFIG;
+    const every = Math.max(10000, Number(cfg.pollIntervalMs) || 20000);
+    const self = this;
+    this._stopTimer();
+    this._timer = setInterval(function () {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        self.sync("poll").catch(function () {});
+      }
+    }, every);
+  },
+
+  _stopTimer() {
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+  },
+
+  _bindVisibility() {
+    if (typeof document === "undefined" || !document.addEventListener) return;
+    const self = this;
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") self.sync("visible").catch(function () {});
+    }, { passive: true });
+  },
+
+  /* ---------------- Modelo y merge ---------------- */
+
+  // Documento local listo para viajar (sin semillas ni datos ya purgados).
+  _envelope() {
+    const meta = readSyncMeta();
+    const clearedAt = meta.clearedAt;
+    const bookings = (BookingStore.all() || []).filter(function (b) {
+      if (!b || b.isSeed || !b.code) return false;
+      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
+      return true;
+    });
+    const availability = {};
+    const all = AvailabilityManager.all();
+    Object.keys(all).forEach(function (iso) {
+      const value = all[iso];
+      if (value && typeof value === "object" && value.isSeed) return;
+      availability[iso] = value;
+    });
+    return {
+      v: 1,
+      rev: this._rev,
+      updatedAt: meta.updatedAt,
+      clearedAt: meta.clearedAt,
+      availabilityUpdatedAt: meta.updatedAt,
+      deviceId: this._deviceId,
+      bookings: bookings,
+      availability: availability
+    };
+  },
+
+  _merge(remote, local) {
+    const r = remote && typeof remote === "object" ? remote : {};
+    const l = local && typeof local === "object" ? local : {};
+    const rBook = Array.isArray(r.bookings) ? r.bookings : [];
+    const lBook = Array.isArray(l.bookings) ? l.bookings : [];
+    const rAvail = r.availability && typeof r.availability === "object" ? r.availability : {};
+    const lAvail = l.availability && typeof l.availability === "object" ? l.availability : {};
+    const rUpd = String(r.availabilityUpdatedAt || "");
+    const lUpd = String(l.availabilityUpdatedAt || "");
+    const rClear = String(r.clearedAt || "");
+    const lClear = String(l.clearedAt || "");
+
+    // Disponibilidad: last-write-wins a nivel de mapa (propaga borrados).
+    let availability;
+    if (!rUpd && !lUpd) availability = Object.assign({}, rAvail, lAvail);
+    else if (rUpd >= lUpd) availability = Object.assign({}, rAvail);
+    else availability = Object.assign({}, lAvail);
+
+    const clearedAt = rClear >= lClear ? rClear : lClear;
+
+    return {
+      v: 1,
+      rev: Math.max(Number(r.rev) || 0, Number(l.rev) || 0),
+      updatedAt: String(r.updatedAt || "") >= String(l.updatedAt || "") ? (r.updatedAt || l.updatedAt || "") : (l.updatedAt || ""),
+      clearedAt: clearedAt,
+      availabilityUpdatedAt: rUpd >= lUpd ? (rUpd || lUpd) : (lUpd || rUpd),
+      deviceId: l.deviceId || r.deviceId || null,
+      bookings: this._mergeBookings(rBook, lBook, clearedAt),
+      availability: availability
+    };
+  },
+
+  _stamp(entry) {
+    return String((entry && (entry.updatedAt || entry.createdAt)) || "");
+  },
+
+  _mergeBookings(remoteList, localList, clearedAt) {
+    const self = this;
+    const byCode = {};
+    const keep = function (b) {
+      if (!b || !b.code || b.isSeed) return false;
+      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
+      return true;
+    };
+    const absorb = function (list, onTie) {
+      (Array.isArray(list) ? list : []).forEach(function (b) {
+        if (!keep(b)) return;
+        const prev = byCode[b.code];
+        if (!prev) { byCode[b.code] = b; return; }
+        const a = self._stamp(prev), z = self._stamp(b);
+        if (z > a || (z === a && onTie)) byCode[b.code] = b;
+      });
+    };
+    absorb(remoteList, true);
+    absorb(localList, false);
+    return Object.keys(byCode).map(function (k) { return byCode[k]; })
+      .sort(function (x, y) {
+        return String(y.createdAt || "").localeCompare(String(x.createdAt || ""));
+      });
+  },
+
+  _sameBookings(a, b) {
+    const x = Array.isArray(a) ? a : [];
+    const y = Array.isArray(b) ? b : [];
+    if (x.length !== y.length) return false;
+    const index = {};
+    y.forEach(function (item) { if (item && item.code) index[item.code] = JSON.stringify(item); });
+    for (let i = 0; i < x.length; i++) {
+      const item = x[i];
+      if (!item || !item.code) return false;
+      if (index[item.code] !== JSON.stringify(item)) return false;
+      delete index[item.code];
+    }
+    return Object.keys(index).length === 0;
+  },
+
+  _sameMap(a, b) {
+    const x = a && typeof a === "object" ? a : {};
+    const y = b && typeof b === "object" ? b : {};
+    const kx = Object.keys(x).sort();
+    const ky = Object.keys(y).sort();
+    if (kx.length !== ky.length) return false;
+    for (let i = 0; i < kx.length; i++) {
+      if (kx[i] !== ky[i]) return false;
+      if (JSON.stringify(x[kx[i]]) !== JSON.stringify(y[ky[i]])) return false;
+    }
+    return true;
+  },
+
+  /* ---------------- Aplicación al store local ---------------- */
+
+  _applyLocal(merged) {
+    let changed = false;
+    const clearedAt = String(merged.clearedAt || "");
+    const localMeta = readSyncMeta();
+
+    // ---- Reservas ----
+    const localAll = (BookingStore.all() || []).slice();
+    const seeds = localAll.filter(function (b) { return b && b.isSeed; });
+    const incoming = (merged.bookings || []).filter(function (b) {
+      if (!b || !b.code) return false;
+      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
+      return true;
+    });
+    const localReal = localAll.filter(function (b) {
+      if (!b || b.isSeed || !b.code) return false;
+      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
+      return true;
+    });
+    const nextBookings = this._mergeBookings(incoming, localReal, clearedAt)
+      .concat(seeds)
+      .sort(function (x, y) {
+        return String(y.createdAt || "").localeCompare(String(x.createdAt || ""));
+      });
+    if (!this._sameBookings(nextBookings, localAll)) {
+      BookingStore.replace(nextBookings);
+      BookingStore.persist();
+      changed = true;
+    }
+
+    // ---- Disponibilidad ----
+    const localAvail = AvailabilityManager.all();
+    const localSeeds = {};
+    Object.keys(localAvail).forEach(function (iso) {
+      const value = localAvail[iso];
+      if (value && typeof value === "object" && value.isSeed) localSeeds[iso] = value;
+    });
+    const nextAvail = Object.assign({}, merged.availability || {}, localSeeds);
+    if (!this._sameMap(nextAvail, localAvail)) {
+      AvailabilityManager.replace(nextAvail);
+      AvailabilityManager.persist();
+      changed = true;
+    }
+
+    // ---- Sellado local: adopta el estado ya consolidado ----
+    const stamp = {
+      updatedAt: String(merged.availabilityUpdatedAt || localMeta.updatedAt || ""),
+      clearedAt: clearedAt || localMeta.clearedAt || ""
+    };
+    if (stamp.updatedAt !== localMeta.updatedAt || stamp.clearedAt !== localMeta.clearedAt) {
+      writeSyncMeta(stamp);
+    }
+
+    return changed;
+  },
+
+  _refreshUI() {
+    try {
+      if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+        StorageEngine.onDataChange("availability");
+      }
+    } catch (err) { /* noop */ }
+    try {
+      if (typeof CalendarModule !== "undefined" && CalendarModule.render) CalendarModule.render();
+    } catch (err) { /* noop */ }
+    try {
+      if (typeof renderTimeSelector === "function") renderTimeSelector();
+    } catch (err) { /* noop */ }
+    try {
+      if (typeof ModalController !== "undefined" && ModalController.isOpen("adminPortalModal") &&
+          typeof AdminModule !== "undefined" && AdminModule.renderDashboard) {
+        AdminModule.renderDashboard();
+      }
+    } catch (err) { /* noop */ }
+    try {
+      const step = typeof lastModalStep !== "undefined" ? lastModalStep : 1;
+      if (typeof ModalController !== "undefined" && ModalController.isOpen("booking-modal") &&
+          step < 4 && typeof cart !== "undefined" && cart.selectedDate && cart.selectedTime) {
+        const check = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+        if (!check.ok) showSlotConflictAlert(check.message);
+      }
+    } catch (err) { /* noop */ }
   }
 };
 
@@ -3420,6 +3925,10 @@ const AdminModule = {
     safeSet(STORAGE_KEYS.bookings, []);
     safeSet(STORAGE_KEYS.prices, { services: {}, extras: {} });
     safeSet(STORAGE_KEYS.availability, {});
+    // Marca de agua: todo lo existente queda por debajo de este instante,
+    // de modo que el borrado SÍ se propague a la nube y no sea revocado
+    // por el siguiente pull.
+    writeSyncMeta({ updatedAt: new Date().toISOString(), clearedAt: new Date().toISOString() });
     safeSet(STORAGE_KEYS.customConfig, typeof SEED_CONFIG_V1 === "function" ? SEED_CONFIG_V1() : {});
     // Recargar todos los managers desde cero (estado de fábrica)
     PriceManager.load();
@@ -3433,6 +3942,7 @@ const AdminModule = {
     if (typeof renderCatalog === "function") renderCatalog(CATALOG_SERVICES, typeof currentCatalogCategory !== "undefined" ? currentCatalogCategory : "Todos");
     if (typeof updateSummaryPrices === "function") updateSummaryPrices();
     if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") CalendarModule.render();
+    CloudSync.notify("reset");
     AuditLog.recordEvent("reset", "Motor restablecido al estado de fábrica (borrado total).");
     this.renderIT();
     showToast("Sistema restablecido al estado de fábrica.", "success");
@@ -5854,6 +6364,8 @@ window.closeMediaLightbox = closeMediaLightbox;
 window.copyLightboxUrl = copyLightboxUrl;
 window.AdminModule = AdminModule;
 window.StorageEngine = StorageEngine;
+window.CloudSync = CloudSync;
+window.arkikCloudSyncStatus = () => CloudSync.status();
 
 // ============================================================
 // 11. GLOBAL APP INSTANCE & BOOT
@@ -5904,6 +6416,8 @@ function initApp() {
   // Guarantee no leftover modal/backdrop is visible on boot
   ModalController.closeAll();
   StorageEngine.init();
+  // Sincronización multidispositivo: arranque sin bloquear el render.
+  CloudSync.init();
   // Inicializar cache de assets (logo Base64) ANTES de renderizar vistas
   ArkikAssets.init().catch(() => {});
   normalizeSpaPath();

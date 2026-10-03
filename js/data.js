@@ -29,6 +29,44 @@ const EMAILJS_CONFIG = {
 };
 
 // ============================================================
+// CLOUD SYNC — Sincronización multidispositivo (Supabase / REST KV)
+// ============================================================
+// Motor local-first: la escritura SIEMPRE va primero a SafeStorage (latencia
+// cero) y después, de forma asíncrona, al almacén remoto. Al iniciar y en
+// cada ciclo de polling se hace pull + merge, de modo que una reserva creada
+// en móvil aparece como ocupada en escritorio y viceversa.
+//
+// Cómo activarlo (elegir UNO):
+//   A) Supabase (recomendado):
+//        driver: "supabase", supabaseUrl, supabaseAnonKey
+//        Tabla exigida en Postgres:
+//          create table public.arkik_sync (
+//            id text primary key,
+//            doc jsonb not null
+//          );
+//   B) Endpoint REST de un solo documento JSON (JSONBin.io, RestDB, npoint,
+//      o cualquier servidor propio con GET + PUT sobre la misma URL):
+//        driver: "rest", endpoint: "https://...", apiKey/opcional
+//
+// Con `enabled: false` el motor NO realiza NINGUNA petición de red.
+const CLOUD_SYNC_CONFIG = {
+  enabled: false,
+  driver: "rest",                 // "rest" | "supabase"
+  // ---- Driver "rest" (JSONBin / RestDB / servidor propio) ----
+  endpoint: "",                   // p. ej. https://api.jsonbin.io/v3/b/<BIN_ID>
+  apiKey: "",                     // vacío si el proveedor no exige llave
+  apiKeyHeader: "X-Master-Key",   // cabecera donde viaja la llave
+  // ---- Driver "supabase" ----
+  supabaseUrl: "",                // p. ej. https://abcdefgh.supabase.co
+  supabaseAnonKey: "",            // anon/public key
+  supabaseTable: "arkik_sync",    // tabla con columnas: id text, doc jsonb
+  supabaseRowId: "arkik",         // fila única que guarda el documento
+  // ---- Comportamiento ----
+  pollIntervalMs: 20000,          // refresco en segundo plano (mín. 10 s)
+  timeoutMs: 8000                 // tope por petición: nunca cuelga la UI
+};
+
+// ============================================================
 // PLANTILLA EMAILJS RECOMENDADA (Comprobante de Reserva)
 // ============================================================
 // Cuando se configuren las llaves reales en producción:
@@ -416,6 +454,7 @@ const STORAGE_KEYS = {
   cart: STORAGE_KEY,
   bookings: "arkik_bookings_v1",
   availability: "arkik_blocked_dates_v1",
+  syncMeta: "arkik_sync_meta_v1",
   prices: "arkik_prices_v1",
   gallery: "arkik_media_v1",
   customConfig: "arkik_custom_config_v1",
@@ -460,8 +499,8 @@ const SEED_CONFIG_V1 = () => ({
 // Blackouts pre-configurados: uno de mantenimiento y uno operativo.
 // Se recalculan en cada arranque para no caducar.
 const SEED_BLOCKED_DATES_V1 = () => ({
-  [arkikSeedIso(17)]: { state: "disabled", reason: "Mantenimiento técnico de equipo" },
-  [arkikSeedIso(31)]: { state: "soldout", reason: "Bloqueo operativo interno" }
+  [arkikSeedIso(17)]: { state: "disabled", reason: "Mantenimiento técnico de equipo", isSeed: true },
+  [arkikSeedIso(31)]: { state: "soldout", reason: "Bloqueo operativo interno", isSeed: true }
 });
 
 // Muestras de reservas confirmadas: alimentan los KPIs del panel y
