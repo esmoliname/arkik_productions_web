@@ -29,40 +29,48 @@ const EMAILJS_CONFIG = {
 };
 
 // ============================================================
-// CLOUD SYNC — Sincronización multidispositivo (Supabase / REST KV)
+// CLOUD SYNC — Sincronización multidispositivo (Supabase PostgreSQL)
 // ============================================================
 // Motor local-first: la escritura SIEMPRE va primero a SafeStorage (latencia
 // cero) y después, de forma asíncrona, al almacén remoto. Al iniciar y en
 // cada ciclo de polling se hace pull + merge, de modo que una reserva creada
 // en móvil aparece como ocupada en escritorio y viceversa.
 //
-// Cómo activarlo (elegir UNO):
-//   A) Supabase (recomendado):
-//        driver: "supabase", supabaseUrl, supabaseAnonKey
-//        Tabla exigida en Postgres:
-//          create table public.arkik_sync (
-//            id text primary key,
-//            doc jsonb not null
-//          );
-//   B) Endpoint REST de un solo documento JSON (JSONBin.io, RestDB, npoint,
-//      o cualquier servidor propio con GET + PUT sobre la misma URL):
-//        driver: "rest", endpoint: "https://...", apiKey/opcional
+// Proveedor activo: Supabase PostgREST sobre una única fila del documento.
+//   POST  CLOUD_SYNC_CONFIG.endpoint            -> upsert
+//         (Prefer: resolution=merge-duplicates,return=minimal)
+//         payload: { id, doc, updated_at }
+//   GET   endpoint?id=eq.global_state&select=doc,updated_at -> pull
+//
+// Esquema de la tabla (verificado contra el proyecto en vivo):
+//     create table public.arkik_sync (
+//       id         text    primary key,
+//       doc        jsonb   not null,
+//       updated_at timestamptz not null default now()
+//     );
+//
+// NOTA DE SEGURIDAD: la clave publicable viaja en el navegador POR DISEÑO
+// (por eso se llama publishable/anon). Nunca coloques aquí la service_role.
+// Protege la tabla con RLS en el dashboard de Supabase.
+//
+// El driver "rest" sigue disponible para endpoints JSON de un solo documento
+// (JSONBin / RestDB / servidor propio) cambiando `provider` a "rest".
 //
 // Con `enabled: false` el motor NO realiza NINGUNA petición de red.
 const CLOUD_SYNC_CONFIG = {
-  enabled: false,
-  driver: "rest",                 // "rest" | "supabase"
-  // ---- Driver "rest" (JSONBin / RestDB / servidor propio) ----
-  endpoint: "",                   // p. ej. https://api.jsonbin.io/v3/b/<BIN_ID>
-  apiKey: "",                     // vacío si el proveedor no exige llave
-  apiKeyHeader: "X-Master-Key",   // cabecera donde viaja la llave
-  // ---- Driver "supabase" ----
-  supabaseUrl: "",                // p. ej. https://abcdefgh.supabase.co
-  supabaseAnonKey: "",            // anon/public key
-  supabaseTable: "arkik_sync",    // tabla con columnas: id text, doc jsonb
-  supabaseRowId: "arkik",         // fila única que guarda el documento
+  enabled: true,
+  provider: "supabase",           // "supabase" | "rest"
+  driver: "supabase",             // alias retrocompatible de `provider`
+  // ---- Supabase PostgreSQL (PostgREST) ----
+  endpoint: "https://tndldnbcjshtfggodskc.supabase.co/rest/v1/arkik_sync",
+  apiKey: "sb_publishable_QOn6CTNXf8govKWLkg_4RA_0s7ygaSf",
+  apiKeyHeader: "apikey",         // cabecera donde viaja la llave
+  supabaseUrl: "https://tndldnbcjshtfggodskc.supabase.co",
+  supabaseAnonKey: "sb_publishable_QOn6CTNXf8govKWLkg_4RA_0s7ygaSf",
+  supabaseTable: "arkik_sync",    // tabla con columnas: id, doc, updated_at
+  supabaseRowId: "global_state",  // fila única que guarda el documento
   // ---- Comportamiento ----
-  pollIntervalMs: 20000,          // refresco en segundo plano (mín. 10 s)
+  pollIntervalMs: 8000,           // 8 s: captura reservas entrantes desde móvil
   timeoutMs: 8000                 // tope por petición: nunca cuelga la UI
 };
 

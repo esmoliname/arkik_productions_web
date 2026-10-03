@@ -1175,12 +1175,21 @@ const CloudSync = {
     if (typeof CLOUD_SYNC_CONFIG === "undefined" || !CLOUD_SYNC_CONFIG) return;
     const cfg = CLOUD_SYNC_CONFIG;
     if (!cfg.enabled) return;
-    const driver = String(cfg.driver || "rest").toLowerCase();
+    const driver = String(cfg.provider || cfg.driver || "rest").toLowerCase();
     if (driver === "supabase") {
-      if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
-        console.warn("[Arkik] CloudSync: driver 'supabase' exige supabaseUrl y supabaseAnonKey.");
+      // Acepta la forma explícita (supabaseUrl + supabaseAnonKey) y también la
+      // forma compacta (endpoint + apiKey): PostgREST se deriva de cualquiera.
+      const endpoint = String(cfg.endpoint || "").replace(/\/+$/, "");
+      const url = cfg.supabaseUrl || (endpoint ? endpoint.split("/rest/")[0] : "");
+      const key = cfg.supabaseAnonKey || cfg.apiKey || "";
+      if (!url || !key) {
+        console.warn("[Arkik] CloudSync: driver 'supabase' exige supabaseUrl+supabaseAnonKey o endpoint+apiKey.");
         return;
       }
+      cfg.supabaseUrl = url;
+      cfg.supabaseAnonKey = key;
+      if (!cfg.supabaseTable) cfg.supabaseTable = "arkik_sync";
+      if (!cfg.supabaseRowId) cfg.supabaseRowId = "global_state";
       this._driver = this._supabaseDriver(cfg);
     } else if (driver === "rest") {
       if (!cfg.endpoint) {
@@ -1211,7 +1220,8 @@ const CloudSync = {
     const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" && CLOUD_SYNC_CONFIG ? CLOUD_SYNC_CONFIG : {};
     return {
       enabled: this._enabled,
-      driver: this._enabled ? (cfg.driver || "rest") : "local",
+      driver: this._enabled ? (cfg.provider || cfg.driver || "rest") : "local",
+      endpoint: this._enabled ? (cfg.endpoint || "") : "",
       ready: this._ready,
       revision: this._rev,
       dirty: this._dirty,
@@ -1270,28 +1280,42 @@ const CloudSync = {
     };
   },
 
-  // Supabase REST (PostgREST): una única fila { id, doc } con upsert.
+  // Supabase REST (PostgREST): una única fila { id, doc, updated_at } con
+  // upsert idempotente vía Prefer: resolution=merge-duplicates.
   _supabaseDriver(cfg) {
     const self = this;
-    const base = String(cfg.supabaseUrl).replace(/\/+$/, "");
-    const root = base + "/rest/v1/" + encodeURIComponent(cfg.supabaseTable || "arkik_sync");
-    const rowId = cfg.supabaseRowId || "arkik";
+    // Si se configuró `endpoint` completo se usa tal cual; si no, se construye
+    // a partir de supabaseUrl + tabla.
+    const root = cfg.endpoint
+      ? String(cfg.endpoint).replace(/\/+$/, "")
+      : String(cfg.supabaseUrl).replace(/\/+$/, "") + "/rest/v1/" + encodeURIComponent(cfg.supabaseTable || "arkik_sync");
+    const rowId = cfg.supabaseRowId || "global_state";
+    const key = cfg.apiKey || cfg.supabaseAnonKey;
     const headers = {
       "Content-Type": "application/json",
       "Accept": "application/json",
-      apikey: cfg.supabaseAnonKey,
-      Authorization: "Bearer " + cfg.supabaseAnonKey
+      apikey: key,
+      Authorization: "Bearer " + key
     };
     return {
       async get() {
-        const rows = await self._http("GET", root + "?id=eq." + encodeURIComponent(rowId) + "&select=doc", null, headers);
+        const rows = await self._http(
+          "GET",
+          root + "?id=eq." + encodeURIComponent(rowId) + "&select=doc,updated_at",
+          null,
+          headers
+        );
         if (!Array.isArray(rows) || !rows.length) return null;
         const doc = rows[0] && rows[0].doc;
         return doc && typeof doc === "object" ? doc : null;
       },
       async put(doc) {
-        await self._http("POST", root + "?on_conflict=id", { id: rowId, doc: doc },
-          Object.assign({}, headers, { Prefer: "resolution=merge-duplicates,return=minimal" }));
+        await self._http(
+          "POST",
+          root + "?on_conflict=id",
+          { id: rowId, doc: doc, updated_at: new Date().toISOString() },
+          Object.assign({}, headers, { Prefer: "resolution=merge-duplicates,return=minimal" })
+        );
         return true;
       }
     };
@@ -1362,9 +1386,24 @@ const CloudSync = {
     }
   },
 
+  // API pública — pull: baja el documento remoto, lo fusiona con lo local y
+  // refresca la UI (tabla del admin + calendario de disponibilidad).
+  async pull() {
+    return this.sync("manual:pull");
+  },
+
+  // API pública — push: sube el estado local completo al remoto (fuerza la
+  // escritura aunque no haya cambios pendientes).
+  async push() {
+    if (!this._enabled || !this._driver) return false;
+    this._dirty = true;
+    if (this._debounce) { clearTimeout(this._debounce); this._debounce = null; }
+    return this.sync("manual:push");
+  },
+
   _startTimer() {
     const cfg = CLOUD_SYNC_CONFIG;
-    const every = Math.max(10000, Number(cfg.pollIntervalMs) || 20000);
+    const every = Math.max(4000, Number(cfg.pollIntervalMs) || 8000);
     const self = this;
     this._stopTimer();
     this._timer = setInterval(function () {
@@ -6365,6 +6404,7 @@ window.copyLightboxUrl = copyLightboxUrl;
 window.AdminModule = AdminModule;
 window.StorageEngine = StorageEngine;
 window.CloudSync = CloudSync;
+window.CloudSyncEngine = CloudSync; // alias público del motor
 window.arkikCloudSyncStatus = () => CloudSync.status();
 
 // ============================================================
