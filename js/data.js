@@ -74,6 +74,14 @@ const CLOUD_SYNC_CONFIG = {
   timeoutMs: 8000                 // tope por petición: nunca cuelga la UI
 };
 
+// ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
+const CLIENT_GUARD_CONFIG = {
+  maxSubmitAttempts: 3,          // intentos de reserva por ventana
+  submitWindowMs: 5 * 60 * 1000, // ventana: 5 minutos
+  submitLockMs: 3000,            // bloqueo mínimo del botón tras cada toque
+  preSubmitPullTimeoutMs: 3000   // tope del pull de nube antes de validar
+};
+
 // ============================================================
 // PLANTILLA EMAILJS RECOMENDADA (Comprobante de Reserva)
 // ============================================================

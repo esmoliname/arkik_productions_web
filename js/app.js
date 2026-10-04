@@ -308,6 +308,89 @@ if (typeof window !== "undefined") {
   window.arkikStorageStatus = () => SafeStorage.status();
 }
 
+// ============================================================
+// ERROR BOUNDARY GLOBAL — la pestaña móvil NUNCA se congela
+// ============================================================
+// Captura excepciones de script y promesas no manejadas, las registra y
+// muestra un toast sutil. Nunca re-lanza: SafeStorage ya operó el fallback
+// a memoria en cada lectura/escritura, así que la UI sigue viva aunque la
+// red o el DOM fallen.
+(function installGlobalErrorBoundary() {
+  if (typeof window === "undefined" || !window.addEventListener) return;
+  let lastToastAt = 0;
+  function softFail(message) {
+    try {
+      const now = Date.now();
+      if (now - lastToastAt < 4000) return; // anti-spam de toasts
+      lastToastAt = now;
+      if (typeof showToast === "function") showToast(message, "error");
+    } catch (err) { /* noop */ }
+  }
+  window.addEventListener("error", function (ev) {
+    const msg = ev && ev.message ? String(ev.message) : "";
+    if (!msg) return; // resource errors (img/script): fuera de alcance
+    console.warn("[Arkik] Error capturado:", (ev && ev.error) || msg);
+    softFail("Ocurrió un error inesperado. La aplicación sigue operando.");
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    const reason = ev && ev.reason;
+    console.warn("[Arkik] Promesa rechazada:", reason);
+    const text = String((reason && reason.message) || reason || "");
+    if (/fetch|network|timeout|abort|HTTP 5\d\d/i.test(text)) {
+      softFail("Sin conexión con el servidor. Trabajando con datos locales.");
+    } else {
+      softFail("Operación interrumpida. Sus datos locales están a salvo.");
+    }
+  });
+})();
+
+// ============================================================
+// PERF GUARD — limita mutaciones de DOM durante el scroll rápido móvil
+// ============================================================
+// En pantallas <768px difiere las reconstrucciones no críticas (renders de
+// nube/calendario) mientras el usuario está scrolleando, y siempre las
+// ejecuta a los 800 ms como máximo (anti-starvation). Los listeners de
+// scroll/touch del proyecto ya son { passive: true } (verificado).
+const PerfGuard = {
+  _active: false,
+  _idleTimer: null,
+  _pending: null,
+  _pendingSince: 0,
+
+  init() {
+    if (typeof window === "undefined" || !window.addEventListener) return;
+    const self = this;
+    window.addEventListener("scroll", function () {
+      self._active = true;
+      if (self._idleTimer) clearTimeout(self._idleTimer);
+      self._idleTimer = setTimeout(function () { self._active = false; }, 150);
+    }, { passive: true, capture: true });
+  },
+  isMobile() {
+    return typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768;
+  },
+  shouldDefer() { return this._active && this.isMobile(); },
+  schedule(fn) {
+    if (typeof fn !== "function") return;
+    if (!this.shouldDefer()) { fn(); return; }
+    this._pending = fn;
+    if (!this._pendingSince) this._pendingSince = Date.now();
+    const self = this;
+    setTimeout(function () {
+      const run = self._pending;
+      if (!run) return;
+      const expired = Date.now() - self._pendingSince > 800;
+      if (self._active && self.isMobile() && !expired) {
+        self.schedule(run); // reintenta, respeta el tope de 800 ms
+        return;
+      }
+      self._pending = null;
+      self._pendingSince = 0;
+      try { run(); } catch (err) { console.warn("[Arkik] PerfGuard:", err); }
+    }, 120);
+  }
+};
+
 function safeParse(key, fallback) {
   try {
     const raw = SafeStorage.getItem(key);
@@ -1145,8 +1228,10 @@ const CloudSync = {
   _timer: null,
   _debounce: null,
   _deviceId: null,
+  _sessionId: null,
   _lastError: null,
   _lastSyncAt: 0,
+  _netToastAt: 0,
 
   /* ---------------- Ciclo de vida ---------------- */
 
@@ -1158,6 +1243,7 @@ const CloudSync = {
         return;
       }
       this._deviceId = this._readDeviceId();
+      this._sessionId = this._readSessionId();
       this._ready = true;
       this.sync("boot").catch(function () {});
       this._startTimer();
@@ -1214,6 +1300,41 @@ const CloudSync = {
     } catch (err) {
       return "dev-anon";
     }
+  },
+
+  // Identidad de sesión de pestaña: cambia en cada arranque y permite al
+  // servidor distinguir reintentos del mismo dispositivo de sesiones nuevas.
+  _readSessionId() {
+    try {
+      return "s-" + fnv1aHex(String(Date.now()) + "-" + String(Math.random()) + "-" + ((typeof navigator !== "undefined" && navigator.userAgent) || ""));
+    } catch (err) { return "s-anon"; }
+  },
+
+  // Sanitiza el documento antes del dispatch: rechaza estructuras rotas y
+  // descarta reservas sin código identificable (imposibles de fusionar).
+  // Nunca envía payloads malformados a Supabase.
+  _sanitizeDoc(doc) {
+    if (!doc || typeof doc !== "object") return null;
+    if (!Array.isArray(doc.bookings)) return null;
+    if (!doc.availability || typeof doc.availability !== "object" || Array.isArray(doc.availability)) return null;
+    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+    const bookings = doc.bookings.filter(function (b) {
+      return b && typeof b === "object" && typeof b.code === "string" && b.code.length > 0 && b.code.length <= 64 &&
+        typeof b.selectedDate === "string" && isoRe.test(b.selectedDate);
+    });
+    const availability = {};
+    Object.keys(doc.availability).forEach(function (iso) {
+      if (isoRe.test(iso)) availability[iso] = doc.availability[iso];
+    });
+    const out = Object.assign({}, doc, {
+      bookings: bookings,
+      availability: availability,
+      rev: Number(doc.rev) || 0,
+      sessionId: this._sessionId || null,
+      clientTs: new Date().toISOString()
+    });
+    if (typeof out.updatedAt !== "string" || !out.updatedAt) out.updatedAt = out.clientTs;
+    return out;
   },
 
   status() {
@@ -1361,9 +1482,14 @@ const CloudSync = {
         merged.rev = Math.max(Number(remote.rev) || 0, this._rev) + 1;
         merged.updatedAt = new Date().toISOString();
         merged.deviceId = this._deviceId;
-        await this._driver.put(merged);
-        this._rev = merged.rev;
-        this._dirty = false;
+        const safeDoc = this._sanitizeDoc(merged);
+        if (!safeDoc) {
+          console.warn("[Arkik] CloudSync: payload inválido, dispatch cancelado.");
+        } else {
+          await this._driver.put(safeDoc);
+          this._rev = safeDoc.rev;
+          this._dirty = false;
+        }
       } else {
         this._rev = Math.max(Number(remote.rev) || 0, this._rev);
       }
@@ -1375,6 +1501,10 @@ const CloudSync = {
     } catch (err) {
       this._lastError = String((err && err.message) || err);
       console.warn("[Arkik] CloudSync (" + reason + "):", this._lastError);
+      if (Date.now() - this._netToastAt > 30000 && typeof showToast === "function") {
+        this._netToastAt = Date.now();
+        showToast("Sin conexión con la nube. Sus datos siguen guardados en este dispositivo.", "info");
+      }
       return false;
     } finally {
       this._busy = false;
@@ -1602,6 +1732,11 @@ const CloudSync = {
   },
 
   _refreshUI() {
+    if (typeof PerfGuard !== "undefined" && PerfGuard.shouldDefer()) {
+      const self = this;
+      PerfGuard.schedule(function () { self._refreshUI(); });
+      return;
+    }
     try {
       if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
         StorageEngine.onDataChange("availability");
@@ -6458,6 +6593,8 @@ function initApp() {
   StorageEngine.init();
   // Sincronización multidispositivo: arranque sin bloquear el render.
   CloudSync.init();
+  // Guardia de rendimiento móvil: difiere renders de nube durante el scroll.
+  PerfGuard.init();
   // Inicializar cache de assets (logo Base64) ANTES de renderizar vistas
   ArkikAssets.init().catch(() => {});
   normalizeSpaPath();
@@ -8830,7 +8967,7 @@ function updateVoucherUploadUI() {
 function updateGenerateButtonState() {
   const btn = document.getElementById("btn-submit-booking");
   if (!btn) return;
-  btn.disabled = !Boolean(cart.voucherImage);
+  btn.disabled = cart.isSubmitting || !Boolean(cart.voucherImage);
 }
 
 /**
@@ -8843,16 +8980,138 @@ function resetVoucherUploadState() {
 }
 
 // ============================================================
+// CLIENT THROTTLER — rate limiting de envíos por sesión de usuario
+// ============================================================
+// Máximo 3 intentos de reserva cada 5 minutos (por dispositivo, con
+// persistencia en SafeStorage) + bloqueo mínimo de 3 s del botón en
+// cada toque. Anti-spam client-side: no sustituye RLS en la nube, pero
+// dispara el envío espurio de doble toque y los bots lentos.
+const ClientThrottler = {
+  _KEY: "arkik_submit_throttle_v1",
+  _lockUntil: 0,
+
+  _read() {
+    try {
+      const raw = SafeStorage.getItem(this._KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter((t) => typeof t === "number") : [];
+    } catch (err) { return []; }
+  },
+  _write(arr) {
+    try { SafeStorage.setItem(this._KEY, JSON.stringify(arr)); } catch (err) { /* noop */ }
+  },
+  _windowMs() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitWindowMs)
+      ? CLIENT_GUARD_CONFIG.submitWindowMs : 300000;
+  },
+  _max() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.maxSubmitAttempts)
+      ? CLIENT_GUARD_CONFIG.maxSubmitAttempts : 3;
+  },
+  _submitLockMs() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitLockMs)
+      ? CLIENT_GUARD_CONFIG.submitLockMs : 3000;
+  },
+  isLocked() { return Date.now() < this._lockUntil; },
+  lock(ms) { this._lockUntil = Date.now() + (ms || this._submitLockMs()); },
+  check() {
+    const now = Date.now();
+    if (this.isLocked()) return { ok: false, reason: "locked", retryMs: this._lockUntil - now };
+    const recent = this._read().filter((t) => now - t < this._windowMs());
+    if (recent.length >= this._max()) {
+      const oldest = Math.min.apply(null, recent);
+      return { ok: false, reason: "rate", retryMs: Math.max(1000, oldest + this._windowMs() - now) };
+    }
+    return { ok: true };
+  },
+  record() {
+    const now = Date.now();
+    const recent = this._read().filter((t) => now - t < this._windowMs());
+    recent.push(now);
+    this._write(recent);
+    this.lock();
+  }
+};
+
+// Revalidación en vivo contra la nube justo antes del envío: cierra la
+// ventana de los 8 s de polling. Espera (breve) cualquier sync en curso,
+// lanza un pull acotado y devuelve true si la nube respondió a tiempo.
+async function preSubmitCloudRefresh(maxWaitMs) {
+  try {
+    if (typeof CloudSync === "undefined" || !CloudSync._enabled) return false;
+    const cap = Number(maxWaitMs) || 3000;
+    const t0 = Date.now();
+    while (CloudSync._busy && Date.now() - t0 < Math.min(1500, cap)) {
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    if (CloudSync._busy) return false;
+    const pull = CloudSync.sync("presubmit");
+    const timeout = new Promise(function (r) { setTimeout(function () { r("timeout"); }, cap); });
+    const result = await Promise.race([pull, timeout]);
+    return result === true;
+  } catch (err) {
+    console.warn("[Arkik] preSubmitCloudRefresh:", err);
+    return false;
+  }
+}
+
+// ============================================================
 // 16. FINALIZACIÓN DE RESERVA & MENSAJES WHATSAPP
 // ============================================================
 
-function submitStaticBooking() {
+async function submitStaticBooking() {
   if (cart.isSubmitting) return;
 
   if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
 
+  // (3) Anti-spam de inmediato: ventana de rate limiting por dispositivo y
+  // bloqueo mínimo del botón en cada toque. Estas dos salidas NO bloquean
+  // nada todavía, así que no hay nada que liberar.
+  const tapAt = Date.now();
+  const gate = ClientThrottler.check();
+  if (!gate.ok) {
+    if (gate.reason === "locked") {
+      showToast(`Espere ${Math.ceil(gate.retryMs / 1000)} segundos antes de reintentar.`, "error");
+    } else {
+      showToast(`Demasiados envíos de reserva. Vuelva a intentarlo en ${Math.ceil(gate.retryMs / 60000)} min.`, "error");
+    }
+    return;
+  }
+
+  // (4) Captura la etiqueta original y bloquea el botón de inmediato: el
+  // usuario ve "Verificando…" mientras se revalida contra la nube.
+  const btn = document.getElementById("btn-submit-booking");
+  const originalLabel = btn ? btn.innerHTML : "";
+  cart.isSubmitting = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("btn-loading");
+    btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Verificando…';
+  }
+
+  // (5) Única vía de desbloqueo. Respeta el bloqueo mínimo por toque y
+  // restaura etiqueta + estado habilitado sin dejar el botón colgado.
+  let lockReleased = false;
+  const releaseLock = function () {
+    if (lockReleased) return;
+    lockReleased = true;
+    const minLock = (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitLockMs)
+      ? CLIENT_GUARD_CONFIG.submitLockMs : 3000;
+    const wait = Math.max(0, minLock - (Date.now() - tapAt));
+    setTimeout(function () {
+      cart.isSubmitting = false;
+      if (btn) {
+        btn.classList.remove("btn-loading");
+        btn.innerHTML = originalLabel;
+      }
+      updateGenerateButtonState();
+    }, wait);
+  };
+
+  // (6) Validaciones de campos obligatorios (sin cambios de criterio).
   if (!cart.clientName || !cart.clientPhone || !cart.selectedDate || !cart.province || !cart.canton) {
     showToast("Faltan datos obligatorios del evento. Complete el formulario.", "error");
+    releaseLock();
     return;
   }
 
@@ -8860,33 +9119,53 @@ function submitStaticBooking() {
   if (!cart.selectedTime) {
     showToast("Seleccione la hora del evento en el Calendario & Hora.", "error");
     goToStep(2);
+    releaseLock();
     return;
   }
   if (!cart.voucherImage) {
     showToast("Adjunte la captura del comprobante SINPE para confirmar la reserva.", "error");
+    releaseLock();
     return;
   }
 
-  // Revalidación de disponibilidad en el instante del envío: protege contra
+  // (7) Revalidación de disponibilidad en el instante del envío: protege contra
   // condiciones de carrera con otra pestaña o dispositivo que ya tomó el turno.
   const slotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
   if (!slotCheck.ok) {
     if (slotCheck.code === "slot_taken" || slotCheck.code === "day_full") {
       showSlotConflictAlert(slotCheck.message);
+      goToStep(2);
+      releaseLock();
       return;
     }
     showToast(slotCheck.message, "error");
     goToStep(2);
+    releaseLock();
     return;
   }
 
-  const btn = document.getElementById("btn-submit-booking");
-  const originalLabel = btn ? btn.innerHTML : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = "Generando voucher…";
+  // (8) Revalidación en vivo contra la nube: cierra la ventana de los 8 s de
+  // polling antes de comprometer el turno. Si la nube respondió a tiempo,
+  // se vuelve a validar con el estado ya refrescado.
+  await preSubmitCloudRefresh(CLIENT_GUARD_CONFIG.preSubmitPullTimeoutMs);
+  const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+  if (!lateSlotCheck.ok) {
+    if (lateSlotCheck.code === "slot_taken" || lateSlotCheck.code === "day_full") {
+      showSlotConflictAlert(lateSlotCheck.message);
+      goToStep(2);
+      releaseLock();
+      return;
+    }
+    showToast(lateSlotCheck.message, "error");
+    goToStep(2);
+    releaseLock();
+    return;
   }
-  cart.isSubmitting = true;
+
+  // (9) El intento consumido queda registrado ANTES de generar el voucher.
+  ClientThrottler.record();
+
+  // (10) Generación del voucher (interna, sin cambios de criterio).
   cart.createdBooking = null;
 
   setTimeout(() => {
@@ -9033,11 +9312,7 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
         }
       } finally {
         // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
-        cart.isSubmitting = false;
-        if (btn) {
-          btn.innerHTML = originalLabel;
-          btn.disabled = !cart.voucherImage;
-        }
+        releaseLock();
       }
     }, 200);
 }

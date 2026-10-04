@@ -539,6 +539,33 @@ html {
   }
 }
 
+/* ---- Botón de reserva: estado de verificación en vivo (spinner) ---- */
+#btn-submit-booking.btn-loading {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+#btn-submit-booking .btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  display: inline-block;
+  animation: btnSpin 0.7s linear infinite;
+}
+
+@keyframes btnSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #btn-submit-booking .btn-spinner {
+    animation: none;
+    border-top-color: rgba(255, 255, 255, 0.9);
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
