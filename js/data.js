@@ -29,50 +29,30 @@ const EMAILJS_CONFIG = {
 };
 
 // ============================================================
-// CLOUD SYNC — Sincronización multidispositivo (Supabase PostgreSQL)
+// REMOTE API — Serverless backend (Vercel + Neon PostgreSQL)
 // ============================================================
-// Motor local-first: la escritura SIEMPRE va primero a SafeStorage (latencia
-// cero) y después, de forma asíncrona, al almacén remoto. Al iniciar y en
-// cada ciclo de polling se hace pull + merge, de modo que una reserva creada
-// en móvil aparece como ocupada en escritorio y viceversa.
+// Remote-first: the server is the source of truth and localStorage is only a
+// read cache. Every request is issued by js/api.js against the same origin
+// that serves the page (baseUrl "" -> /api/*).
 //
-// Proveedor activo: Supabase PostgREST sobre una única fila del documento.
-//   POST  CLOUD_SYNC_CONFIG.endpoint            -> upsert
-//         (Prefer: resolution=merge-duplicates,return=minimal)
-//         payload: { id, doc, updated_at }
-//   GET   endpoint?id=eq.global_state&select=doc,updated_at -> pull
-//
-// Esquema de la tabla (verificado contra el proyecto en vivo):
-//     create table public.arkik_sync (
-//       id         text    primary key,
-//       doc        jsonb   not null,
-//       updated_at timestamptz not null default now()
-//     );
-//
-// NOTA DE SEGURIDAD: la clave publicable viaja en el navegador POR DISEÑO
-// (por eso se llama publishable/anon). Nunca coloques aquí la service_role.
-// Protege la tabla con RLS en el dashboard de Supabase.
-//
-// El driver "rest" sigue disponible para endpoints JSON de un solo documento
-// (JSONBin / RestDB / servidor propio) cambiando `provider` a "rest".
-//
-// Con `enabled: false` el motor NO realiza NINGUNA petición de red.
-const CLOUD_SYNC_CONFIG = {
+//   enabled        false => local-only legacy mode: no network call is made
+//                  for bookings/availability, CloudSync stays inactive and the
+//                  admin PIN can never authenticate (no secret ships here).
+//   baseUrl        "" (same origin) or an absolute origin such as
+//                  "https://arkik-productions.vercel.app".
+//   pollIntervalMs how often the admin views revalidate against the server.
+//   timeoutMs      per-request cap so the UI never hangs.
+const API_CONFIG = {
   enabled: true,
-  provider: "supabase",           // "supabase" | "rest"
-  driver: "supabase",             // alias retrocompatible de `provider`
-  // ---- Supabase PostgreSQL (PostgREST) ----
-  endpoint: "https://tndldnbcjshtfggodskc.supabase.co/rest/v1/arkik_sync",
-  apiKey: "sb_publishable_QOn6CTNXf8govKWLkg_4RA_0s7ygaSf",
-  apiKeyHeader: "apikey",         // cabecera donde viaja la llave
-  supabaseUrl: "https://tndldnbcjshtfggodskc.supabase.co",
-  supabaseAnonKey: "sb_publishable_QOn6CTNXf8govKWLkg_4RA_0s7ygaSf",
-  supabaseTable: "arkik_sync",    // tabla con columnas: id, doc, updated_at
-  supabaseRowId: "global_state",  // fila única que guarda el documento
-  // ---- Comportamiento ----
-  pollIntervalMs: 8000,           // 8 s: captura reservas entrantes desde móvil
-  timeoutMs: 8000                 // tope por petición: nunca cuelga la UI
+  baseUrl: "",
+  pollIntervalMs: 8000,
+  timeoutMs: 8000
 };
+
+// Demo catalog: when true, StorageEngine._healSeedData() re-plants the sample
+// bookings/availability/price seeds into an empty or corrupted localStorage.
+// Production keeps this false: the server owns the data.
+const SEED_MODE = false;
 
 // ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
 const CLIENT_GUARD_CONFIG = {
@@ -430,9 +410,11 @@ const PROVINCES_AND_CANTONES = {
   "Limón": ["Central (Limón)", "Pococí (Guápiles)", "Talamanca (Puerto Viejo/Cahuita)", "Siquirres", "Matina"]
 };
 
-// ---- Security & Administration Configuration (v3) ----
-// PIN por defecto (hash verificado en runtime con SHA-256):
-//   Propietario  -> 2580   |   Ingeniero de TI -> 1234
+// ---- Security & Administration Configuration (v4) ----
+// Remote-first authentication: the PIN never leaves the browser unverified and
+// is never compared against a client-side digest. SecurityModule.verifyPin()
+// posts {role, pin} to POST /api/admin/login and the server decides. This file
+// therefore carries only presentation data (labels, timeouts, lockout policy).
 
 const ADMIN_CONFIG = {
   roles: {
@@ -440,17 +422,13 @@ const ADMIN_CONFIG = {
       id: "owner",
       label: "Propietario",
       shortLabel: "Propietario",
-      name: "Juan José Ramírez",
-      hashKey: "ownerHash",
-      defaultHash: "ed946f65d2c785d90e827c5ffd879ce3b49c68d4c88013074176a7e73bc58bcf"
+      name: "Juan José Ramírez"
     },
     it: {
       id: "it",
       label: "Ingeniero de TI",
       shortLabel: "Ingeniero TI",
-      name: "Esteban Molina",
-      hashKey: "itHash",
-      defaultHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+      name: "Esteban Molina"
     }
   },
   maxAttempts: 3,

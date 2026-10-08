@@ -1,10 +1,19 @@
 {
-  "name": "arkik_static",
-  "version": "1.0.0",
-  "description": "Static site for Arkik Productions",
+  "name": "arkik_productions_web",
+  "version": "2.0.0",
+  "description": "Arkik Productions — SPA vanilla + Vercel Serverless API + Neon PostgreSQL",
   "scripts": {
     "dev": "serve -s .",
-    "test": "node --check js/app.js && node --check js/data.js"
+    "check": "node --check js/app.js && node --check js/data.js && node --check js/api.js",
+    "test": "npm run check && node --test \"test/*.test.cjs\"",
+    "db:migrate": "node db/migrate.js",
+    "db:seed:dev": "node db/seed-dev.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
   },
   "devDependencies": {
     "serve": "^14.2.0"

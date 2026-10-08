@@ -41,8 +41,9 @@ function sanitizeUrl(url) {
   return "#";
 }
 
-// Hash FNV-1a (32 bit) — SOLO para firmas de sesión, NUNCA para PINs:
-// un digest de 8 hex no es comparable con un SHA-256 de 64 hex.
+// Hash FNV-1a (32 bit) — SOLO para la firma de integridad de la sesión local
+// (persistSession / verifySessionIntegrity). Nunca participa en autenticación:
+// el PIN se verifica en el servidor, este navegador no compara ningún digest.
 function fnv1aHex(text) {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
@@ -50,141 +51,6 @@ function fnv1aHex(text) {
     h = Math.imul(h, 0x01000193);
   }
   return ("00000000" + (h >>> 0).toString(16)).slice(-8);
-}
-
-// ---- SHA-256 en JavaScript puro (respaldo cuando no hay WebCrypto) ----
-// `crypto.subtle` SOLO existe en un contexto seguro. Servir el sitio por
-// http:// sobre una IP de red local deja `subtle` en undefined; si el hash cae a
-// otro algoritmo, el digest del PIN nunca puede igualar al SHA-256 configurado
-// y CADA intento válido se contabiliza como fallo -> bloqueo permanente de la
-// consola. Este respaldo produce el MISMO digest SHA-256 de 64 hex, así el
-// resultado es idéntico con y sin WebCrypto.
-const SHA256_K = new Uint32Array([
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-]);
-
-// Codificación UTF-8 (TextEncoder cuando existe; manual para navegadores viejos)
-function utf8Bytes(text) {
-  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(text);
-  const str = String(text);
-  const out = [];
-  for (let i = 0; i < str.length; i++) {
-    let code = str.charCodeAt(i);
-    if (code < 0x80) { out.push(code); continue; }
-    if (code < 0x800) { out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f)); continue; }
-    if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
-      const low = str.charCodeAt(i + 1);
-      if (low >= 0xdc00 && low <= 0xdfff) {
-        code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
-        i++;
-        out.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-        continue;
-      }
-    }
-    out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-  }
-  return new Uint8Array(out);
-}
-
-function bytesToHex(bytes) {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let hex = "";
-  for (let i = 0; i < view.length; i++) hex += view[i].toString(16).padStart(2, "0");
-  return hex;
-}
-
-// SHA-256 sin dependencias: mismo digest que WebCrypto para toda entrada UTF-8.
-// (Límite de longitud: 2^29 - 1 bytes, muy por encima de cualquier uso real aquí.)
-function sha256HexSync(text) {
-  const bytes = utf8Bytes(String(text == null ? "" : text));
-  const bitLen = bytes.length * 8;
-  const padded = (((bytes.length + 8) >> 6) + 1) << 6;
-  const buf = new Uint8Array(padded);
-  buf.set(bytes);
-  buf[bytes.length] = 0x80;
-  const high = Math.floor(bitLen / 0x20000000);
-  const low = bitLen >>> 0;
-  buf[padded - 8] = (high >>> 24) & 0xff;
-  buf[padded - 7] = (high >>> 16) & 0xff;
-  buf[padded - 6] = (high >>> 8) & 0xff;
-  buf[padded - 5] = high & 0xff;
-  buf[padded - 4] = (low >>> 24) & 0xff;
-  buf[padded - 3] = (low >>> 16) & 0xff;
-  buf[padded - 2] = (low >>> 8) & 0xff;
-  buf[padded - 1] = low & 0xff;
-
-  const H = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-  ]);
-  const w = new Uint32Array(64);
-
-  for (let offset = 0; offset < padded; offset += 64) {
-    for (let i = 0; i < 16; i++) {
-      const j = offset + i * 4;
-      w[i] = ((buf[j] << 24) | (buf[j + 1] << 16) | (buf[j + 2] << 8) | buf[j + 3]) >>> 0;
-    }
-    for (let i = 16; i < 64; i++) {
-      const x = w[i - 15];
-      const y = w[i - 2];
-      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
-      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
-    }
-
-    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
-    for (let i = 0; i < 64; i++) {
-      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
-      const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
-      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
-      const maj = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (S0 + maj) >>> 0;
-      h = g; g = f; f = e;
-      e = (d + t1) >>> 0;
-      d = c; c = b; b = a;
-      a = (t1 + t2) >>> 0;
-    }
-
-    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
-    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
-  }
-
-  let hex = "";
-  for (let i = 0; i < 8; i++) hex += H[i].toString(16).padStart(8, "0");
-  return hex;
-}
-
-// SHA-256 con WebCrypto cuando está disponible; respaldo puro si no lo está.
-// Ambos caminos devuelven EXACTAMENTE el mismo digest de 64 hex en minúsculas.
-async function sha256Hex(text) {
-  const value = String(text == null ? "" : text);
-  try {
-    if (window.crypto && window.crypto.subtle) {
-      const buf = await window.crypto.subtle.digest("SHA-256", utf8Bytes(value));
-      return bytesToHex(new Uint8Array(buf));
-    }
-  } catch (err) {
-    /* contexto no seguro o API ausente: respaldo determinista */
-  }
-  return sha256HexSync(value);
-}
-
-// Comparación de digests en tiempo constante (no filtra el prefijo correcto
-// por temporización). La longitud se compara aparte porque siempre es fija (64).
-function digestsEqual(a, b) {
-  const x = String(a == null ? "" : a);
-  const y = String(b == null ? "" : b);
-  if (x.length !== y.length) return false;
-  let diff = 0;
-  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
-  return diff === 0;
 }
 
 // ============================================================
@@ -683,6 +549,111 @@ function setPriceText(el, text) {
 }
 
 // ============================================================
+// 1.9 REMOTE API BRIDGE (puente hacia js/api.js)
+// ============================================================
+// Remote-first: el servidor manda y localStorage es solo caché de lectura.
+// Estos dos helpers son el ÚNICO punto donde app.js decide si habla con la
+// API; si js/api.js no cargó o API_CONFIG.enabled === false, el SPA queda en
+// el modo local heredado sin emitir ninguna petición de red.
+
+function apiEnabled() {
+  return typeof ArkikApi !== "undefined" && ArkikApi !== null &&
+    typeof ArkikApi.isEnabled === "function" && ArkikApi.isEnabled();
+}
+
+// Envoltorio de error uniforme para las mutaciones remotas. Nunca lanza.
+// Esppega el estándar {code, message} en `error` y copia campos extra
+// (details, retryAfterMs) que el servidor adjunta a algunos errores.
+function apiFailure(res) {
+  const r = res || {};
+  const code = r.code || (r.error && r.error.code) || "network";
+  const message = r.message || (r.error && r.error.message) ||
+    "No fue posible conectar con el servidor.";
+  const out = {
+    ok: false,
+    code: code,
+    message: message,
+    status: r.status || 0,
+    error: { code: code, message: message }
+  };
+  if (r.details !== undefined) out.details = r.details;
+  else if (r.error && r.error.details !== undefined) out.details = r.error.details;
+  if (r.retryAfterMs !== undefined) out.retryAfterMs = r.retryAfterMs;
+  else if (r.error && r.error.retryAfterMs !== undefined) out.retryAfterMs = r.error.retryAfterMs;
+  return out;
+}
+
+// Construye un fallo local con la misma forma que apiFailure() (para
+// respuestas incompletas o rutas heredadas que no pasan por la API).
+function apiError(code, message, status) {
+  return {
+    ok: false,
+    code: code,
+    message: message,
+    status: status || 0,
+    error: { code: code, message: message }
+  };
+}
+
+// True cuando hay sesión administrativa en la pestaña (memoria o
+// sessionStorage). GET /api/bookings exige la cookie HttpOnly que emite el
+// login admin, así que los visitantes anónimos jamás deben dispararlo.
+function hasAdminSession() {
+  if (typeof ADMIN_SESSION !== "undefined" && ADMIN_SESSION &&
+      ADMIN_SESSION.role && ADMIN_SESSION.token) {
+    return true;
+  }
+  try {
+    return Boolean(typeof sessionStorage !== "undefined" && sessionStorage.getItem(STORAGE_KEYS.session));
+  } catch (err) { return false; }
+}
+
+/**
+ * Resuelve el comprobante SINPE de una reserva para mostrarlo en pantalla.
+ * 1) caché local (la imagen viaja en la reserva creada / ya abierta);
+ * 2) GET /api/bookings/[code]?include=voucher  (el listado solo trae `hasVoucher`).
+ * La imagen recuperada queda cacheada para que la siguiente apertura sea
+ * instantánea y funcione sin red. Nunca lanza.
+ * @param {object} booking
+ * @returns {Promise<string|null>} data-URL de la imagen o null.
+ */
+async function resolveVoucherImage(booking) {
+  if (!booking) return null;
+  if (typeof booking.voucherImage === "string" && booking.voucherImage) return booking.voucherImage;
+  if (!apiEnabled()) return null;
+  try {
+    const res = await ArkikApi.getBooking(booking.code, true);
+    if (!res.ok) {
+      if (res.code === "not_found") {
+        showToast("Esta reserva no tiene comprobante SINPE adjunto.", "error");
+        return null;
+      }
+      showToast(res.message || "No fue posible cargar el comprobante.", "error");
+      return null;
+    }
+    const remote = res.data && res.data.booking ? res.data.booking : null;
+    const image = remote && typeof remote.voucherImage === "string" ? remote.voucherImage : null;
+    if (!image) {
+      showToast("Esta reserva no tiene comprobante SINPE adjunto.", "error");
+      return null;
+    }
+    const cached = BookingStore.get(booking.code);
+    if (cached) {
+      cached.voucherImage = image;
+      cached.hasVoucher = true;
+      BookingStore.persist();
+    }
+    booking.voucherImage = image;
+    booking.hasVoucher = true;
+    return image;
+  } catch (err) {
+    console.warn("[Arkik] resolveVoucherImage:", err);
+    showToast("No fue posible cargar el comprobante.", "error");
+    return null;
+  }
+}
+
+// ============================================================
 // 2. STORAGE ENGINE (Motor Centralizado de Persistencia, Hidratación & CRUD)
 // ============================================================
 
@@ -707,6 +678,11 @@ const StorageEngine = {
   // o con un tipo inesperado. Un arreglo u objeto válido —aunque vacío por
   // decisión del operador— NUNCA se sobrescribe.
   _healSeedData() {
+    // Remote-first: the server owns the data, so the demo seeds are planted
+    // only outside production. data.js declares SEED_MODE=false, so in the
+    // shipped SPA this returns immediately: an empty (or freshly cleared)
+    // cache is valid and is refetched from /api.
+    if (typeof SEED_MODE !== "undefined" && !SEED_MODE) return [];
     const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
     const heals = [
       { key: STORAGE_KEYS.bookings, make: SEED_BOOKINGS_V1, expect: Array.isArray },
@@ -1023,6 +999,135 @@ const PriceManager = {
   exportData() {
     if (!this._data) this.load();
     return JSON.parse(JSON.stringify(this._data));
+  },
+
+  // ---- Remote-first pricing -------------------------------------------
+  // The server owns overrides + rates. localStorage keeps a read cache so the
+  // first paint never waits on the network, but every authoritative read goes
+  // through /api/pricing (public) or /api/admin/pricing (admin).
+  _remote: false,
+
+  // Merges {overrides, rates} into memory WITHOUT writing to localStorage:
+  // remote state must never be echoed back to the local cache.
+  applyRemote(payload) {
+    if (!payload || typeof payload !== "object") return false;
+    const overrides = payload.overrides;
+    if (overrides && typeof overrides === "object") {
+      this._data = this.normalize({ services: overrides.services, extras: overrides.extras });
+      this._remote = true;
+    }
+    const rates = payload.rates;
+    if (rates && typeof rates === "object") this._applyRatesInMemory(rates);
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
+    return true;
+  },
+
+  normalize(next) {
+    const out = { services: {}, extras: {} };
+    const services = (next && next.services) || {};
+    const extras = (next && next.extras) || {};
+    Object.keys(services).forEach(k => {
+      const v = Number(services[k]);
+      if (Number.isFinite(v) && v > 0) out.services[k] = v;
+    });
+    Object.keys(extras).forEach(k => {
+      const v = Number(extras[k]);
+      if (Number.isFinite(v) && v > 0) out.extras[k] = v;
+    });
+    return out;
+  },
+
+  // Rates live in StorageEngine._config (extraHourMultiplier,
+  // travelSurchargeRate). Remote rates are applied in memory only, so the
+  // persisted local config is untouched and can be restored verbatim.
+  _applyRatesInMemory(rates) {
+    if (typeof StorageEngine === "undefined" || !StorageEngine) return;
+    if (!StorageEngine._config) StorageEngine.loadConfig();
+    if (!StorageEngine._config) return;
+    const extra = Number(rates.extraHourMultiplier);
+    if (Number.isFinite(extra)) StorageEngine._config.extraHourMultiplier = extra;
+    const travel = Number(rates.travelSurchargeRate);
+    if (Number.isFinite(travel)) StorageEngine._config.travelSurchargeRate = travel;
+  },
+
+  // Snapshot of everything a failed PUT must restore (overrides + rates).
+  snapshot() {
+    const hasStorage = typeof StorageEngine !== "undefined" && StorageEngine;
+    return {
+      data: this.exportData(),
+      extraHourMultiplier: hasStorage ? StorageEngine.getConfig("extraHourMultiplier", 0.50) : 0.50,
+      travelSurchargeRate: hasStorage ? StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE) : NON_GAM_SURCHARGE_RATE
+    };
+  },
+
+  rollback(snapshot) {
+    if (!snapshot) return;
+    if (snapshot.data && typeof snapshot.data === "object") this._data = snapshot.data;
+    this._applyRatesInMemory({
+      extraHourMultiplier: snapshot.extraHourMultiplier,
+      travelSurchargeRate: snapshot.travelSurchargeRate
+    });
+    // Persiste las tasas restauradas: setConfig() ya había escrito en
+    // localStorage los valores que el servidor rechazó y un rollback solo en
+    // memoria los resucitaría en la siguiente recarga.
+    if (typeof StorageEngine !== "undefined" && StorageEngine && StorageEngine._config) {
+      StorageEngine.persistConfig();
+    }
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("prices");
+    }
+  },
+
+  // PUT the current pricing to the server. On rejection the previous state is
+  // restored, so the UI never keeps showing a price the database refused.
+  async persistRemote(snapshot) {
+    if (!apiEnabled()) return { ok: true, source: "local" };
+    const hasStorage = typeof StorageEngine !== "undefined" && StorageEngine;
+    const payload = {
+      overrides: this._data
+        ? { services: Object.assign({}, this._data.services), extras: Object.assign({}, this._data.extras) }
+        : undefined,
+      rates: {
+        extraHourMultiplier: hasStorage ? StorageEngine.getConfig("extraHourMultiplier", 0.50) : 0.50,
+        travelSurchargeRate: hasStorage ? StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE) : NON_GAM_SURCHARGE_RATE
+      }
+    };
+    const res = await ArkikApi.admin.putPricing(payload);
+    if (!res.ok) {
+      this.rollback(snapshot);
+      if (typeof showToast === "function") showToast("No se pudieron guardar los tarifarios.", "error");
+      return apiFailure(res);
+    }
+    if (res.data) this.applyRemote(res.data);
+    return { ok: true, data: res.data };
+  },
+
+  // Admin read (requires the session cookie). Best effort: on failure the
+  // local cache stays in place so the panel keeps working offline.
+  async loadRemote() {
+    if (!apiEnabled()) return { ok: true, source: "local" };
+    const res = await ArkikApi.admin.getPricing();
+    if (res.ok) {
+      if (res.data) this.applyRemote(res.data);
+      return { ok: true, data: res.data };
+    }
+    // api.js collapses timeout+abort into `network`; there is no `timeout`
+    // error code. Local cache stays authoritative while offline.
+    if (res.code === "network" || res.code === "disabled") return { ok: true, source: "local" };
+    return apiFailure(res);
+  },
+
+  // Public read used on boot: no cookie, no auth.
+  async loadPublic() {
+    if (!apiEnabled()) return { ok: true, source: "local" };
+    const res = await ArkikApi.pricing();
+    if (res.ok) {
+      if (res.data) this.applyRemote(res.data);
+      return { ok: true, data: res.data };
+    }
+    return { ok: true, source: "local" }; // connectivity never blocks the first paint
   }
 };
 
@@ -1031,7 +1136,14 @@ const PriceManager = {
 // ============================================================
 
 const AvailabilityManager = {
-  _data: null,
+  _data: null,        // local cache (legacy mode + seeds)
+  _blocked: null,     // server override map { iso: {state, reason} }
+  _capacity: null,    // server capacity  { iso: {remainingSlots, bookedTimes} }
+  _details: null,     // single-date detail from GET /api/availability?date=
+  _scope: null,       // coverage of `_blocked`: {kind:'full'} | {kind:'range', from, to}
+  _scopeKey: null,    // dedupe key so a re-render never refetches the same window
+  _pending: null,     // in-flight request (dedupe of concurrent renders)
+  _pendingKey: null,
 
   load() {
     try {
@@ -1056,36 +1168,241 @@ const AvailabilityManager = {
     safeSet(STORAGE_KEYS.availability, this._data);
   },
 
-  get(iso) {
+  // ---- Remote-first helpers ------------------------------------------
+
+  _ensure() {
+    if (!this._blocked) this._blocked = {};
+    if (!this._capacity) this._capacity = {};
+    if (!this._details) this._details = {};
     if (!this._data) this.load();
-    const raw = this._data[iso] || null;
-    // Soporte v3.3: los valores pueden ser string ("soldout"/"disabled")
-    // o un objeto { state, reason } — normaliza siempre al estado.
-    if (raw && typeof raw === "object") return raw.state || null;
-    return raw;
+  },
+
+  // True when the server answer covers this date (full map, or the fetched range).
+  _covered(iso) {
+    if (!this._scope) return false;
+    if (this._scope.kind === "full") return true;
+    return iso >= this._scope.from && iso <= this._scope.to;
   },
 
   /**
-   * Devuelve el detalle completo de un override: { state, reason }.
-   * Compatible con valores string legacy (reason queda null).
+   * Pulls the blocked map from the server.
+   * - no window: GET /api/availability            -> {blocked}          (states only)
+   * - window:    GET /api/availability?from&to     -> {blocked,capacity} (states + slots)
+   * Non-forced calls are deduped by window so a calendar re-render is free;
+   * polling passes force=true to revalidate.
    */
-  getDetails(iso) {
+  async fetchMap(from, to, force) {
+    if (!apiEnabled()) return { ok: true, source: "local" };
+    this._ensure();
+    const isRange = Boolean(from && to);
+    const key = isRange ? from + "|" + to : "full";
+    if (!force && this._scopeKey === key && this._pending === null) {
+      return { ok: true, source: "remote", cached: true };
+    }
+    if (this._pending && this._pendingKey === key) return this._pending;
+
+    const request = ArkikApi.availability(isRange ? { from: from, to: to } : undefined)
+      .then((res) => {
+        this._pending = null;
+        this._pendingKey = null;
+        if (!res.ok) return apiFailure(res);
+
+        const data = res.data || {};
+        const incoming = data.blocked && typeof data.blocked === "object" ? data.blocked : {};
+        this._ensure();
+
+        if (isRange) {
+          // The window is authoritative: any date the server did not report is
+          // no longer blocked, so stale local overrides are dropped.
+          Object.keys(this._data).forEach((iso) => {
+            if (iso >= from && iso <= to && !incoming[iso]) delete this._data[iso];
+          });
+          Object.keys(this._blocked).forEach((iso) => {
+            if (iso >= from && iso <= to && !incoming[iso]) delete this._blocked[iso];
+          });
+          // Capacity merges instead of replacing: a narrower window must not
+          // erase the slots already fetched for another month.
+          this._capacity = Object.assign({}, this._capacity,
+            data.capacity && typeof data.capacity === "object" ? data.capacity : {});
+          // Coverage widens (union): entries kept from a previous window stay
+          // authoritative, so a date reported as free keeps resolving free.
+          if (!this._scope || this._scope.kind === "full") {
+            if (!this._scope) this._scope = { kind: "range", from: from, to: to };
+          } else {
+            this._scope = {
+              kind: "range",
+              from: from < this._scope.from ? from : this._scope.from,
+              to: to > this._scope.to ? to : this._scope.to
+            };
+          }
+        } else {
+          this._blocked = {};
+          this._capacity = {};
+          this._scope = { kind: "full" };
+        }
+
+        Object.keys(incoming).forEach((iso) => { this._blocked[iso] = incoming[iso]; });
+        this._scopeKey = key;
+        this.persist();
+        return { ok: true, source: "remote" };
+      })
+      .catch(() => {
+        this._pending = null;
+        this._pendingKey = null;
+        return { ok: false, code: "network", message: "No fue posible conectar con el servidor." };
+      });
+
+    this._pending = request;
+    this._pendingKey = key;
+    return request;
+  },
+
+  /**
+   * Single-date detail (state + remainingSlots + blockedTimes + bookedTimes).
+   * Used right after the visitor picks a day so the time chips reflect the
+   * server instead of the local cache.
+   */
+  async fetchDetail(iso) {
+    if (!apiEnabled() || !iso) return { ok: true, source: "local" };
+    this._ensure();
+    const res = await ArkikApi.availability({ date: iso });
+    if (!res.ok) return apiFailure(res);
+    const data = res.data || {};
+    this._ensure();
+    if (data.detail && typeof data.detail === "object") {
+      this._details[data.detail.date || iso] = Object.assign({}, data.detail, { fetchedAt: Date.now() });
+    }
+    const reported = data.blocked && typeof data.blocked === "object" ? data.blocked : {};
+    const override = reported[iso];
+    if (override) {
+      this._blocked[iso] = override;
+    } else {
+      // Authoritative "no override" for this date: server wins over the cache.
+      delete this._blocked[iso];
+      delete this._data[iso];
+      this.persist();
+    }
+    if (data.detail && typeof data.detail === "object") {
+      this._details[iso] = Object.assign({}, data.detail, { fetchedAt: Date.now() });
+    } else {
+      delete this._details[iso];
+    }
+    return { ok: true, source: "remote", detail: data.detail || null };
+  },
+
+  // Full-map pull used at boot and by the admin polling loop.
+  async hydrate(force) {
+    return this.fetchMap(null, null, force !== false);
+  },
+
+  /**
+   * Effective override for a date: the server wins whenever it has spoken,
+   * otherwise the local cache is used (legacy/local-only mode).
+   * @returns {{state:string, reason:string|null}}
+   */
+  resolve(iso) {
     if (!this._data) this.load();
+    this._ensure();
+    const remote = this._blocked[iso];
+    if (remote) {
+      return { state: remote.state || "available", reason: remote.reason || null };
+    }
+    if (this._covered(iso)) return { state: "available", reason: null };
     const raw = this._data[iso] || null;
     if (!raw) return { state: "available", reason: null };
-    if (typeof raw === "object") {
-      return { state: raw.state || "available", reason: raw.reason || null };
-    }
+    if (typeof raw === "object") return { state: raw.state || "available", reason: raw.reason || null };
     return { state: raw, reason: null };
   },
 
-  set(iso, status, reason) {
-    if (!this._data) this.load();
+  get(iso) {
+    const state = this.resolve(iso).state;
+    return state === "available" ? null : state;
+  },
+
+  /**
+   * Devuelve el detalle completo de un override: { state, reason } y, cuando
+   * el servidor lo aporta, los cupos/horarios del día.
+   * Compatible con valores string legacy (reason queda null).
+   */
+  getDetails(iso) {
+    const base = this.resolve(iso);
+    this._ensure();
+    const detail = this._details[iso];
+    const capacity = this._capacity[iso];
+    return {
+      state: base.state,
+      reason: base.reason,
+      remainingSlots: detail && Number.isFinite(Number(detail.remainingSlots))
+        ? Number(detail.remainingSlots)
+        : (capacity && Number.isFinite(Number(capacity.remainingSlots)) ? Number(capacity.remainingSlots) : null),
+      bookedTimes: detail && Array.isArray(detail.bookedTimes)
+        ? detail.bookedTimes
+        : (capacity && Array.isArray(capacity.bookedTimes) ? capacity.bookedTimes : null),
+      blockedTimes: detail && Array.isArray(detail.blockedTimes) ? detail.blockedTimes : null
+    };
+  },
+
+  // Server-side booked times for a date, or null when the server has not
+  // covered it (caller falls back to the local BookingStore).
+  getBookedTimes(iso) {
+    const details = this.getDetails(iso);
+    return Array.isArray(details.bookedTimes) ? details.bookedTimes : null;
+  },
+
+  /**
+   * Booked times for the time chips: server capacity/detail when available,
+   * otherwise the legacy local BookingStore map (pure-local mode or a date
+   * the server has not covered yet).
+   * @returns {string[]} "HH:MM" list, never null.
+   */
+  bookedTimesFor(iso) {
+    const details = this.getDetails(iso);
+    if (Array.isArray(details.bookedTimes)) return details.bookedTimes;
+    if (apiEnabled() && this._covered(iso)) return []; // covered → server says none
+    // Fallback local (modo heredado o fecha sin cobertura remota todavía).
+    return BookingStore.getBookingsForDate(iso)
+      .map((b) => (b && typeof b.selectedTime === "string" ? b.selectedTime : null))
+      .filter((t) => t !== null);
+  },
+
+  /**
+   * Escribe un override. Con la API activa la operación es remota y el
+   * servidor queda como fuente de verdad; en modo local conserva el
+   * comportamiento heredado. En fallo remoto NO toca el caché y NO muestra
+   * toast: el caller decide el mensaje.
+   * @returns {Promise<{ok:true}|{ok:false, error:object}>}
+   */
+  async set(iso, status, reason) {
+    this._ensure();
+    const normalizedReason = reason && typeof reason === "string" && reason.trim()
+      ? reason.trim().slice(0, 120)
+      : null;
+
+    if (apiEnabled()) {
+      const res = await ArkikApi.setAvailability({ date: iso, state: status, reason: normalizedReason });
+      if (!res.ok) return { ok: false, error: apiFailure(res) };
+      if (status === "available") {
+        delete this._blocked[iso];
+        delete this._data[iso];
+      } else {
+        this._blocked[iso] = { state: status, reason: normalizedReason };
+        delete this._data[iso];
+      }
+      delete this._details[iso];
+      this.persist();
+      writeSyncMeta({ updatedAt: new Date().toISOString() });
+      if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+        StorageEngine.onDataChange("availability");
+      }
+      CloudSync.notify("availability");
+      return { ok: true };
+    }
+
     if (status === "available") {
       delete this._data[iso];
-    } else if (reason && typeof reason === "string" && reason.trim()) {
+    } else if (normalizedReason) {
       // Guarda estado + motivo documentado (auditable por el rol IT)
-      this._data[iso] = { state: status, reason: reason.trim().slice(0, 120) };
+      this._data[iso] = { state: status, reason: normalizedReason };
     } else {
       this._data[iso] = status;
     }
@@ -1095,14 +1412,58 @@ const AvailabilityManager = {
       StorageEngine.onDataChange("availability");
     }
     CloudSync.notify("availability");
+    return { ok: true };
+  },
+
+  /**
+   * Limpia el override de una fecha (DELETE /api/availability?date=... en
+   * remoto; borra la entrada local en modo heredado). Idempotente, mismo
+   * contrato de resultado que set().
+   * @returns {Promise<{ok:true}|{ok:false, error:object}>}
+   */
+  async clear(iso) {
+    if (!iso) return { ok: true };
+    this._ensure();
+    if (apiEnabled()) {
+      const res = await ArkikApi.clearAvailability(iso);
+      if (!res.ok) return { ok: false, error: apiFailure(res) };
+      delete this._blocked[iso];
+      delete this._data[iso];
+      delete this._details[iso];
+      this.persist();
+      writeSyncMeta({ updatedAt: new Date().toISOString() });
+      if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+        StorageEngine.onDataChange("availability");
+      }
+      CloudSync.notify("availability");
+      return { ok: true };
+    }
+    delete this._data[iso];
+    this.persist();
+    writeSyncMeta({ updatedAt: new Date().toISOString() });
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("availability");
+    }
+    CloudSync.notify("availability");
+    return { ok: true };
   },
 
   all() {
     if (!this._data) this.load();
-    return JSON.parse(JSON.stringify(this._data));
+    this._ensure();
+    const out = JSON.parse(JSON.stringify(this._data));
+    // Server overrides always win over the local cache.
+    Object.keys(this._blocked).forEach((iso) => { out[iso] = this._blocked[iso]; });
+    return out;
   },
 
+  // Cupos restantes del día. Con capacidad remota se usa el cálculo del
+  // servidor; sin ella se estima desde el caché local (modo legacy).
   remainingSlots(iso) {
+    const state = this.resolve(iso).state;
+    if (state === "soldout" || state === "disabled") return 0;
+    const details = this.getDetails(iso);
+    if (typeof details.remainingSlots === "number") return details.remainingSlots;
     const booked = BookingStore.countForDate(iso);
     return Math.max(0, DEFAULT_MAX_EVENTS_PER_DAY - booked);
   },
@@ -1130,6 +1491,7 @@ const AvailabilityManager = {
 
 const BookingStore = {
   _data: null,
+  _hydratedAt: 0,
 
   load() {
     try {
@@ -1149,11 +1511,77 @@ const BookingStore = {
     return this._data;
   },
 
-  add(booking) {
-    booking.updatedAt = new Date().toISOString();
-    this._data.unshift(booking);
+  /**
+   * Remote-first: replaces the local cache with the server list.
+   * GET /api/bookings requires the admin session cookie, so this is a no-op
+   * for anonymous visitors (their availability comes from /api/availability).
+   * @param {boolean} force bypass the short dedupe window used by polling.
+   */
+  async hydrate(force) {
+    if (!apiEnabled()) return { ok: true, source: "local" };
+    if (!hasAdminSession()) return { ok: true, source: "local" }; // sin cookie: nada que listar
+    const dedupeMs = 4000;
+    if (!force && this._hydratedAt && Date.now() - this._hydratedAt < dedupeMs) {
+      return { ok: true, source: "remote", cached: true };
+    }
+    const res = await ArkikApi.listBookings({ limit: 500 });
+    if (!res.ok) return apiFailure(res);
+    const list = res.data && Array.isArray(res.data.bookings) ? res.data.bookings : [];
+    this.replace(list);
+    this._hydratedAt = Date.now();
+    return { ok: true, source: "remote", total: list.length };
+  },
+
+  /**
+   * Crea una reserva. Con la API activa el servidor calcula código, montos y
+   * cupo: el payload NO lleva importes ni estado (nunca se envían).
+   * @param {object} booking registro completo del carrito (solo lectura local)
+   * @param {string} [idempotencyKey] clave reutilizable en reintentos
+   * @returns {Promise<{ok:boolean, booking?:object, code?:string, message?:string}>}
+   */
+  async add(booking, idempotencyKey) {
+    if (!apiEnabled()) {
+      booking.updatedAt = booking.updatedAt || new Date().toISOString();
+      this._data.unshift(booking);
+      this.persist();
+      CloudSync.notify("bookings");
+      return { ok: true, booking: booking, source: "local" };
+    }
+
+    const payload = {
+      clientName: booking.clientName,
+      clientPhone: booking.clientPhone,
+      clientEmail: booking.clientEmail || "",
+      eventType: booking.eventType,
+      serviceId: booking.serviceId,
+      selectedDate: booking.selectedDate,
+      selectedTime: booking.selectedTime,
+      province: booking.province,
+      canton: booking.canton,
+      address: booking.address || "",
+      sinpeRef: booking.sinpeRef || "",
+      extras: {
+        extraHoursCount: Number(booking.extras && booking.extras.extraHoursCount) || 0,
+        djHoursCount: Number(booking.extras && booking.extras.djHoursCount) || 0,
+        subwoofersCount: Number(booking.extras && booking.extras.subwoofersCount) || 0
+      }
+    };
+    // The voucher travels as a data URL; the server derives mime + byte size.
+    if (booking.voucherImage) payload.voucherImage = booking.voucherImage;
+
+    const res = await ArkikApi.createBooking(payload, idempotencyKey);
+    if (!res.ok) return apiFailure(res);
+
+    const created = res.data && res.data.booking ? res.data.booking : null;
+    if (!created) return apiError("invalid_response", "Respuesta inesperada del servidor.");
+
+    // Display-only: the create response omits the image, but the visitor just
+    // uploaded it, so the confirmation screen keeps showing it.
+    if (booking.voucherImage && !created.voucherImage) created.voucherImage = booking.voucherImage;
+    this._data.unshift(created);
     this.persist();
     CloudSync.notify("bookings");
+    return { ok: true, booking: created, source: "remote" };
   },
 
   get(code) {
@@ -1165,10 +1593,23 @@ const BookingStore = {
     return this.get(code);
   },
 
-  // Reprogramación: solo cambia selectedDate; montos y SINPE quedan intactos
-  updateDate(code, iso) {
+  // Reprogramación: solo cambia selectedDate; montos y SINPE quedan intactos.
+  // El servidor exige fecha Y hora válidas, por eso la hora viaja en el payload.
+  async updateDate(code, iso, selectedTime) {
     const b = this.get(code);
-    if (!b || !iso) return false;
+    if (!b || !iso) return apiError("not_found", "Reserva no encontrada.");
+
+    if (apiEnabled()) {
+      const res = await ArkikApi.reschedule(code, {
+        selectedDate: iso,
+        selectedTime: selectedTime || b.selectedTime
+      });
+      if (!res.ok) return apiFailure(res);
+      this._absorb(res.data && res.data.booking, code);
+      CloudSync.notify("bookings");
+      return { ok: true, booking: this.get(code), source: "remote" };
+    }
+
     b.selectedDate = iso;
     b.updatedAt = new Date().toISOString();
     this.persist();
@@ -1176,16 +1617,45 @@ const BookingStore = {
       StorageEngine.onDataChange("bookings");
     }
     CloudSync.notify("bookings");
-    return true;
+    return { ok: true, booking: b, source: "local" };
   },
 
-  updateStatus(code, status) {
+  async updateStatus(code, status) {
     const b = this.get(code);
-    if (b && BOOKING_STATUSES[status]) {
-      b.status = status;
-      b.updatedAt = new Date().toISOString();
-      this.persist();
+    if (!b || !BOOKING_STATUSES[status]) {
+      return apiError("not_found", "Reserva no encontrada.");
+    }
+
+    if (apiEnabled()) {
+      const res = await ArkikApi.setStatus(code, status);
+      if (!res.ok) return apiFailure(res);
+      this._absorb(res.data && res.data.booking, code);
       CloudSync.notify("bookings");
+      return { ok: true, booking: this.get(code), source: "remote" };
+    }
+
+    b.status = status;
+    b.updatedAt = new Date().toISOString();
+    this.persist();
+    CloudSync.notify("bookings");
+    return { ok: true, booking: b, source: "local" };
+  },
+
+  // Aplica la fila devuelta por el servidor sobre el caché local.
+  _absorb(remote, code) {
+    if (!remote || typeof remote !== "object") return;
+    const index = this._data.findIndex(b => b.code === (remote.code || code));
+    if (index === -1) {
+      this._data.unshift(remote);
+    } else {
+      // Keep a locally cached voucher image: list responses never carry it.
+      const localImage = this._data[index].voucherImage;
+      this._data[index] = Object.assign({}, this._data[index], remote);
+      if (!this._data[index].voucherImage && localImage) this._data[index].voucherImage = localImage;
+    }
+    this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("bookings");
     }
   },
 
@@ -1200,22 +1670,23 @@ const BookingStore = {
   replace(list) {
     this._data = Array.isArray(list) ? list : [];
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("bookings");
+    }
   }
 };
 
 // ============================================================
 // 4.5 CLOUD SYNC ENGINE — Sincronización multidispositivo
 // ============================================================
-// Local-first: (1) la escritura va primero a SafeStorage, (2) se encola un
-// push asíncrono que jamás bloquea la UI, (3) al iniciar / en cada polling /
-// al volver a primer plano se ejecuta pull -> merge -> apply.
-// Conflictos: reservas = unión por `code` con last-write-wins por
-// updatedAt/createdAt; disponibilidad = mapa completo con last-write-wins
-// mediado por writeSyncMeta().updatedAt. Los registros con `isSeed: true`
-// nunca viajan a la nube. Con CLOUD_SYNC_CONFIG.enabled = false el motor no
-// emite NINGUNA petición de red.
-
-const CLOUD_DEVICE_KEY = "arkik_device_id_v1";
+// Remote-first: the serverless API (/api) is the source of truth and this
+// engine is now a *reader*. Writes never travel through here — BookingStore,
+// AvailabilityManager and PriceManager commit straight to the API and then
+// notify, which schedules a refresh so every open view revalidates against
+// the server. localStorage remains a read cache for the first paint.
+//
+// Con `API_CONFIG.enabled = false` el motor no emite NINGUNA petición de red
+// y el SPA opera en modo local heredado.
 
 const CloudSync = {
   _enabled: false,
@@ -1227,8 +1698,6 @@ const CloudSync = {
   _ready: false,
   _timer: null,
   _debounce: null,
-  _deviceId: null,
-  _sessionId: null,
   _lastError: null,
   _lastSyncAt: 0,
   _netToastAt: 0,
@@ -1239,16 +1708,14 @@ const CloudSync = {
     try {
       this.configure();
       if (!this._enabled) {
-        console.info("[Arkik] CloudSync inactivo (solo almacenamiento local). Configure CLOUD_SYNC_CONFIG en js/data.js para sincronizacion multidispositivo.");
+        console.info("[Arkik] CloudSync inactivo (solo almacenamiento local). Active API_CONFIG en js/data.js para sincronizacion multidispositivo.");
         return;
       }
-      this._deviceId = this._readDeviceId();
-      this._sessionId = this._readSessionId();
       this._ready = true;
       this.sync("boot").catch(function () {});
       this._startTimer();
       this._bindVisibility();
-      console.info("[Arkik] CloudSync activo · driver=" + CLOUD_SYNC_CONFIG.driver);
+      console.info("[Arkik] CloudSync activo · driver=arkik-api");
     } catch (err) {
       this._enabled = false;
       console.warn("[Arkik] CloudSync init:", err && err.message);
@@ -1256,195 +1723,32 @@ const CloudSync = {
   },
 
   configure() {
-    this._enabled = false;
-    this._driver = null;
-    if (typeof CLOUD_SYNC_CONFIG === "undefined" || !CLOUD_SYNC_CONFIG) return;
-    const cfg = CLOUD_SYNC_CONFIG;
-    if (!cfg.enabled) return;
-    const driver = String(cfg.provider || cfg.driver || "rest").toLowerCase();
-    if (driver === "supabase") {
-      // Acepta la forma explícita (supabaseUrl + supabaseAnonKey) y también la
-      // forma compacta (endpoint + apiKey): PostgREST se deriva de cualquiera.
-      const endpoint = String(cfg.endpoint || "").replace(/\/+$/, "");
-      const url = cfg.supabaseUrl || (endpoint ? endpoint.split("/rest/")[0] : "");
-      const key = cfg.supabaseAnonKey || cfg.apiKey || "";
-      if (!url || !key) {
-        console.warn("[Arkik] CloudSync: driver 'supabase' exige supabaseUrl+supabaseAnonKey o endpoint+apiKey.");
-        return;
-      }
-      cfg.supabaseUrl = url;
-      cfg.supabaseAnonKey = key;
-      if (!cfg.supabaseTable) cfg.supabaseTable = "arkik_sync";
-      if (!cfg.supabaseRowId) cfg.supabaseRowId = "global_state";
-      this._driver = this._supabaseDriver(cfg);
-    } else if (driver === "rest") {
-      if (!cfg.endpoint) {
-        console.warn("[Arkik] CloudSync: driver 'rest' exige CLOUD_SYNC_CONFIG.endpoint.");
-        return;
-      }
-      this._driver = this._restDriver(cfg);
-    } else {
-      return;
-    }
-    this._enabled = true;
-  },
-
-  _readDeviceId() {
-    try {
-      let id = SafeStorage.getItem(CLOUD_DEVICE_KEY);
-      if (!id) {
-        id = "dev-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
-        SafeStorage.setItem(CLOUD_DEVICE_KEY, id);
-      }
-      return id;
-    } catch (err) {
-      return "dev-anon";
-    }
-  },
-
-  // Identidad de sesión de pestaña: cambia en cada arranque y permite al
-  // servidor distinguir reintentos del mismo dispositivo de sesiones nuevas.
-  _readSessionId() {
-    try {
-      return "s-" + fnv1aHex(String(Date.now()) + "-" + String(Math.random()) + "-" + ((typeof navigator !== "undefined" && navigator.userAgent) || ""));
-    } catch (err) { return "s-anon"; }
-  },
-
-  // Sanitiza el documento antes del dispatch: rechaza estructuras rotas y
-  // descarta reservas sin código identificable (imposibles de fusionar).
-  // Nunca envía payloads malformados a Supabase.
-  _sanitizeDoc(doc) {
-    if (!doc || typeof doc !== "object") return null;
-    if (!Array.isArray(doc.bookings)) return null;
-    if (!doc.availability || typeof doc.availability !== "object" || Array.isArray(doc.availability)) return null;
-    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
-    const bookings = doc.bookings.filter(function (b) {
-      return b && typeof b === "object" && typeof b.code === "string" && b.code.length > 0 && b.code.length <= 64 &&
-        typeof b.selectedDate === "string" && isoRe.test(b.selectedDate);
-    });
-    const availability = {};
-    Object.keys(doc.availability).forEach(function (iso) {
-      if (isoRe.test(iso)) availability[iso] = doc.availability[iso];
-    });
-    const out = Object.assign({}, doc, {
-      bookings: bookings,
-      availability: availability,
-      rev: Number(doc.rev) || 0,
-      sessionId: this._sessionId || null,
-      clientTs: new Date().toISOString()
-    });
-    if (typeof out.updatedAt !== "string" || !out.updatedAt) out.updatedAt = out.clientTs;
-    return out;
+    this._enabled = apiEnabled();
+    this._driver = this._enabled ? "arkik-api" : "local";
   },
 
   status() {
-    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" && CLOUD_SYNC_CONFIG ? CLOUD_SYNC_CONFIG : {};
+    const cfg = typeof API_CONFIG !== "undefined" && API_CONFIG ? API_CONFIG : {};
     return {
       enabled: this._enabled,
-      driver: this._enabled ? (cfg.provider || cfg.driver || "rest") : "local",
-      endpoint: this._enabled ? (cfg.endpoint || "") : "",
+      driver: this._enabled ? "arkik-api" : "local",
+      endpoint: this._enabled ? "/api" : "",
       ready: this._ready,
       revision: this._rev,
       dirty: this._dirty,
       pending: this._busy || this._queued,
       lastSyncAt: this._lastSyncAt ? new Date(this._lastSyncAt).toISOString() : null,
-      lastError: this._lastError
+      lastError: this._lastError,
+      pollIntervalMs: Number(cfg.pollIntervalMs) || 8000
     };
   },
 
-  /* ---------------- Drivers remotos ---------------- */
-
-  _headers(extra) {
-    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" ? CLOUD_SYNC_CONFIG : null;
-    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
-    if (cfg && cfg.apiKey) headers[cfg.apiKeyHeader || "X-Master-Key"] = cfg.apiKey;
-    return Object.assign(headers, extra || {});
-  },
-
-  async _http(method, url, payload, headers) {
-    const cfg = typeof CLOUD_SYNC_CONFIG !== "undefined" ? CLOUD_SYNC_CONFIG : {};
-    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, cfg.timeoutMs || 8000) : null;
-    try {
-      const res = await fetch(url, {
-        method: method,
-        headers: headers || this._headers(),
-        body: payload === undefined || payload === null ? undefined : JSON.stringify(payload),
-        cache: "no-store",
-        credentials: "omit",
-        signal: ctrl ? ctrl.signal : undefined
-      });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const text = await res.text();
-      if (!text) return null;
-      try { return JSON.parse(text); } catch (err) { return null; }
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  },
-
-  // Endpoint JSON genérico con GET + PUT sobre la misma URL (JSONBin, npoint,
-  // RestDB con documento único, servidor propio). Tolera el envoltorio {record}.
-  _restDriver(cfg) {
-    const self = this;
-    const endpoint = cfg.endpoint;
-    return {
-      async get() {
-        const raw = await self._http("GET", endpoint, null, self._headers());
-        if (!raw || typeof raw !== "object") return null;
-        return raw.record && typeof raw.record === "object" ? raw.record : raw;
-      },
-      async put(doc) {
-        await self._http("PUT", endpoint, doc, self._headers());
-        return true;
-      }
-    };
-  },
-
-  // Supabase REST (PostgREST): una única fila { id, doc, updated_at } con
-  // upsert idempotente vía Prefer: resolution=merge-duplicates.
-  _supabaseDriver(cfg) {
-    const self = this;
-    // Si se configuró `endpoint` completo se usa tal cual; si no, se construye
-    // a partir de supabaseUrl + tabla.
-    const root = cfg.endpoint
-      ? String(cfg.endpoint).replace(/\/+$/, "")
-      : String(cfg.supabaseUrl).replace(/\/+$/, "") + "/rest/v1/" + encodeURIComponent(cfg.supabaseTable || "arkik_sync");
-    const rowId = cfg.supabaseRowId || "global_state";
-    const key = cfg.apiKey || cfg.supabaseAnonKey;
-    const headers = {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      apikey: key,
-      Authorization: "Bearer " + key
-    };
-    return {
-      async get() {
-        const rows = await self._http(
-          "GET",
-          root + "?id=eq." + encodeURIComponent(rowId) + "&select=doc,updated_at",
-          null,
-          headers
-        );
-        if (!Array.isArray(rows) || !rows.length) return null;
-        const doc = rows[0] && rows[0].doc;
-        return doc && typeof doc === "object" ? doc : null;
-      },
-      async put(doc) {
-        await self._http(
-          "POST",
-          root + "?on_conflict=id",
-          { id: rowId, doc: doc, updated_at: new Date().toISOString() },
-          Object.assign({}, headers, { Prefer: "resolution=merge-duplicates,return=minimal" })
-        );
-        return true;
-      }
-    };
-  },
 
   /* ---------------- Ciclo de sincronización ---------------- */
 
-  // Llamado por los stores después de escribir en local (latencia cero).
+  // Llamado por los stores después de una escritura. En modo remoto la
+  // escritura ya llegó al servidor: esto solo agenda una revalidación para
+  // que las vistas abiertas vuelvan a leer la fuente de verdad.
   notify(domain) {
     if (!this._enabled) return;
     this._dirty = true;
@@ -1452,87 +1756,118 @@ const CloudSync = {
     const self = this;
     this._debounce = setTimeout(function () {
       self._debounce = null;
-      self.sync("local:" + domain).catch(function () {});
+      self.refresh(domain || "notify").catch(function () {});
     }, 600);
   },
 
+  // API pública histórica (preSubmitCloudRefresh y los diagnósticos de
+  // consola la usan): en remote-first "sincronizar" == revalidar contra /api.
   async sync(reason) {
-    if (!this._enabled || !this._driver) return false;
+    return this.refresh(reason);
+  },
+
+  /**
+   * Pull: revalida disponibilidad (y reservas, si hay sesión de admin) contra
+   * el servidor y refresca la UI. Nunca lanza.
+   * @param {string} reason diagnóstico ("boot", "poll", "presubmit", ...)
+   * @returns {Promise<boolean>} true si el servidor respondió a tiempo.
+   */
+  async refresh(reason) {
+    if (!this._enabled) return false;
     if (this._busy) { this._queued = true; return false; }
     this._busy = true;
-    let applied = false;
     try {
-      const raw = await this._driver.get();
-      const remote = raw && typeof raw === "object" ? raw : {};
-      const local = this._envelope();
-      const merged = this._merge(remote, local);
+      let ok = true;
+      let failCode = null;
 
-      // 1) Bajar a local (merge, nunca pisar lo local sin fusionarlo).
-      applied = this._applyLocal(merged);
+      // 1) Disponibilidad: mapa completo (estados) + ventana con capacidad.
+      const blocked = await AvailabilityManager.hydrate(true);
+      if (blocked && blocked.ok === false) {
+        ok = false;
+        failCode = blocked.code || "network";
+      }
 
-      // 2) Subir solo si aportamos algo o hay escrituras pendientes.
-      const remoteBookings = Array.isArray(remote.bookings) ? remote.bookings : [];
-      const remoteAvail = remote.availability && typeof remote.availability === "object" ? remote.availability : {};
-      const localDelta = this._mergeBookings(remoteBookings, local.bookings).length - remoteBookings.length;
-      const availabilityDelta = !this._sameMap(merged.availability, remoteAvail);
-      const remoteEmpty = remoteBookings.length === 0 && Object.keys(remoteAvail).length === 0;
-      const shouldPush = this._dirty || localDelta > 0 || availabilityDelta || remoteEmpty;
-
-      if (shouldPush) {
-        merged.rev = Math.max(Number(remote.rev) || 0, this._rev) + 1;
-        merged.updatedAt = new Date().toISOString();
-        merged.deviceId = this._deviceId;
-        const safeDoc = this._sanitizeDoc(merged);
-        if (!safeDoc) {
-          console.warn("[Arkik] CloudSync: payload inválido, dispatch cancelado.");
-        } else {
-          await this._driver.put(safeDoc);
-          this._rev = safeDoc.rev;
-          this._dirty = false;
+      if (ok && typeof cart !== "undefined" && cart && cart.selectedDate) {
+        // Cupos del día elegido: cierra la ventana del polling justo antes
+        // de comprometer el turno en el paso 4.
+        const window = this._windowAround(cart.selectedDate, 7);
+        const capacity = await AvailabilityManager.fetchMap(window.from, window.to, true);
+        if (capacity && capacity.ok === false) {
+          ok = false;
+          failCode = capacity.code || "network";
         }
-      } else {
-        this._rev = Math.max(Number(remote.rev) || 0, this._rev);
+      }
+
+      // 2) Reservas: solo con sesión de admin viva (GET /api/bookings la exige).
+      if (ok && this._adminSessionActive()) {
+        const bookings = await BookingStore.hydrate(true);
+        if (bookings && bookings.ok === false) {
+          // 401 durante una sesión activa: el portal sigue usable con el caché.
+          if (bookings.code !== "unauthorized") {
+            ok = false;
+            failCode = bookings.code || "network";
+          }
+        }
       }
 
       this._lastSyncAt = Date.now();
-      this._lastError = null;
-      if (applied) this._refreshUI();
-      return true;
-    } catch (err) {
-      this._lastError = String((err && err.message) || err);
-      console.warn("[Arkik] CloudSync (" + reason + "):", this._lastError);
-      if (Date.now() - this._netToastAt > 30000 && typeof showToast === "function") {
+      this._lastError = ok ? null : (failCode || "network");
+      if (ok) {
+        this._dirty = false;
+        this._refreshUI();
+      } else if (failCode === "network" && Date.now() - this._netToastAt > 30000 && typeof showToast === "function") {
+        // Solo fallos reales de red; nunca prometer que "los datos están seguros".
         this._netToastAt = Date.now();
-        showToast("Sin conexión con la nube. Sus datos siguen guardados en este dispositivo.", "info");
+        showToast("Sin conexión con el servidor. Los datos podrían no estar actualizados.", "info");
       }
+      return ok;
+    } catch (err) {
+      this._lastError = "exception";
+      console.warn("[Arkik] CloudSync (" + reason + "):", String((err && err.message) || err));
       return false;
     } finally {
       this._busy = false;
       if (this._queued) {
         this._queued = false;
         const self = this;
-        setTimeout(function () { self.sync("queued").catch(function () {}); }, 300);
+        setTimeout(function () { self.refresh("queued").catch(function () {}); }, 300);
       }
     }
   },
 
-  // API pública — pull: baja el documento remoto, lo fusiona con lo local y
-  // refresca la UI (tabla del admin + calendario de disponibilidad).
-  async pull() {
-    return this.sync("manual:pull");
+  _adminSessionActive() {
+    if (typeof ADMIN_SESSION === "undefined" || !ADMIN_SESSION) return false;
+    if (ADMIN_SESSION.token && ADMIN_SESSION.role) return true;
+    if (typeof ModalController !== "undefined" && ModalController.isOpen && ModalController.isOpen("adminPortalModal")) return true;
+    return false;
   },
 
-  // API pública — push: sube el estado local completo al remoto (fuerza la
-  // escritura aunque no haya cambios pendientes).
+  _windowAround(iso, days) {
+    const base = typeof parseISO === "function" ? parseISO(iso) : null;
+    const start = base && !Number.isNaN(base.getTime()) ? base : new Date();
+    const from = new Date(start.getTime() - days * 86400000);
+    const to = new Date(start.getTime() + days * 86400000);
+    return { from: isoOf(from), to: isoOf(to) };
+  },
+
+  // API pública — pull: baja el estado remoto y refresca la UI.
+  async pull() {
+    return this.refresh("all");
+  },
+
+  // API pública — push: en remote-first no hay documento local que subir
+  // (cada mutación ya fue confirmada por el servidor), así que fuerza una
+  // revalidación completa.
   async push() {
-    if (!this._enabled || !this._driver) return false;
+    if (!this._enabled) return false;
     this._dirty = true;
     if (this._debounce) { clearTimeout(this._debounce); this._debounce = null; }
-    return this.sync("manual:push");
+    return this.refresh("all");
   },
 
+
   _startTimer() {
-    const cfg = CLOUD_SYNC_CONFIG;
+    const cfg = typeof API_CONFIG !== "undefined" && API_CONFIG ? API_CONFIG : {};
     const every = Math.max(4000, Number(cfg.pollIntervalMs) || 8000);
     const self = this;
     this._stopTimer();
@@ -1555,181 +1890,7 @@ const CloudSync = {
     }, { passive: true });
   },
 
-  /* ---------------- Modelo y merge ---------------- */
-
-  // Documento local listo para viajar (sin semillas ni datos ya purgados).
-  _envelope() {
-    const meta = readSyncMeta();
-    const clearedAt = meta.clearedAt;
-    const bookings = (BookingStore.all() || []).filter(function (b) {
-      if (!b || b.isSeed || !b.code) return false;
-      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
-      return true;
-    });
-    const availability = {};
-    const all = AvailabilityManager.all();
-    Object.keys(all).forEach(function (iso) {
-      const value = all[iso];
-      if (value && typeof value === "object" && value.isSeed) return;
-      availability[iso] = value;
-    });
-    return {
-      v: 1,
-      rev: this._rev,
-      updatedAt: meta.updatedAt,
-      clearedAt: meta.clearedAt,
-      availabilityUpdatedAt: meta.updatedAt,
-      deviceId: this._deviceId,
-      bookings: bookings,
-      availability: availability
-    };
-  },
-
-  _merge(remote, local) {
-    const r = remote && typeof remote === "object" ? remote : {};
-    const l = local && typeof local === "object" ? local : {};
-    const rBook = Array.isArray(r.bookings) ? r.bookings : [];
-    const lBook = Array.isArray(l.bookings) ? l.bookings : [];
-    const rAvail = r.availability && typeof r.availability === "object" ? r.availability : {};
-    const lAvail = l.availability && typeof l.availability === "object" ? l.availability : {};
-    const rUpd = String(r.availabilityUpdatedAt || "");
-    const lUpd = String(l.availabilityUpdatedAt || "");
-    const rClear = String(r.clearedAt || "");
-    const lClear = String(l.clearedAt || "");
-
-    // Disponibilidad: last-write-wins a nivel de mapa (propaga borrados).
-    let availability;
-    if (!rUpd && !lUpd) availability = Object.assign({}, rAvail, lAvail);
-    else if (rUpd >= lUpd) availability = Object.assign({}, rAvail);
-    else availability = Object.assign({}, lAvail);
-
-    const clearedAt = rClear >= lClear ? rClear : lClear;
-
-    return {
-      v: 1,
-      rev: Math.max(Number(r.rev) || 0, Number(l.rev) || 0),
-      updatedAt: String(r.updatedAt || "") >= String(l.updatedAt || "") ? (r.updatedAt || l.updatedAt || "") : (l.updatedAt || ""),
-      clearedAt: clearedAt,
-      availabilityUpdatedAt: rUpd >= lUpd ? (rUpd || lUpd) : (lUpd || rUpd),
-      deviceId: l.deviceId || r.deviceId || null,
-      bookings: this._mergeBookings(rBook, lBook, clearedAt),
-      availability: availability
-    };
-  },
-
-  _stamp(entry) {
-    return String((entry && (entry.updatedAt || entry.createdAt)) || "");
-  },
-
-  _mergeBookings(remoteList, localList, clearedAt) {
-    const self = this;
-    const byCode = {};
-    const keep = function (b) {
-      if (!b || !b.code || b.isSeed) return false;
-      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
-      return true;
-    };
-    const absorb = function (list, onTie) {
-      (Array.isArray(list) ? list : []).forEach(function (b) {
-        if (!keep(b)) return;
-        const prev = byCode[b.code];
-        if (!prev) { byCode[b.code] = b; return; }
-        const a = self._stamp(prev), z = self._stamp(b);
-        if (z > a || (z === a && onTie)) byCode[b.code] = b;
-      });
-    };
-    absorb(remoteList, true);
-    absorb(localList, false);
-    return Object.keys(byCode).map(function (k) { return byCode[k]; })
-      .sort(function (x, y) {
-        return String(y.createdAt || "").localeCompare(String(x.createdAt || ""));
-      });
-  },
-
-  _sameBookings(a, b) {
-    const x = Array.isArray(a) ? a : [];
-    const y = Array.isArray(b) ? b : [];
-    if (x.length !== y.length) return false;
-    const index = {};
-    y.forEach(function (item) { if (item && item.code) index[item.code] = JSON.stringify(item); });
-    for (let i = 0; i < x.length; i++) {
-      const item = x[i];
-      if (!item || !item.code) return false;
-      if (index[item.code] !== JSON.stringify(item)) return false;
-      delete index[item.code];
-    }
-    return Object.keys(index).length === 0;
-  },
-
-  _sameMap(a, b) {
-    const x = a && typeof a === "object" ? a : {};
-    const y = b && typeof b === "object" ? b : {};
-    const kx = Object.keys(x).sort();
-    const ky = Object.keys(y).sort();
-    if (kx.length !== ky.length) return false;
-    for (let i = 0; i < kx.length; i++) {
-      if (kx[i] !== ky[i]) return false;
-      if (JSON.stringify(x[kx[i]]) !== JSON.stringify(y[ky[i]])) return false;
-    }
-    return true;
-  },
-
-  /* ---------------- Aplicación al store local ---------------- */
-
-  _applyLocal(merged) {
-    let changed = false;
-    const clearedAt = String(merged.clearedAt || "");
-    const localMeta = readSyncMeta();
-
-    // ---- Reservas ----
-    const localAll = (BookingStore.all() || []).slice();
-    const seeds = localAll.filter(function (b) { return b && b.isSeed; });
-    const incoming = (merged.bookings || []).filter(function (b) {
-      if (!b || !b.code) return false;
-      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
-      return true;
-    });
-    const localReal = localAll.filter(function (b) {
-      if (!b || b.isSeed || !b.code) return false;
-      if (clearedAt && String(b.createdAt || "") < clearedAt) return false;
-      return true;
-    });
-    const nextBookings = this._mergeBookings(incoming, localReal, clearedAt)
-      .concat(seeds)
-      .sort(function (x, y) {
-        return String(y.createdAt || "").localeCompare(String(x.createdAt || ""));
-      });
-    if (!this._sameBookings(nextBookings, localAll)) {
-      BookingStore.replace(nextBookings);
-      BookingStore.persist();
-      changed = true;
-    }
-
-    // ---- Disponibilidad ----
-    const localAvail = AvailabilityManager.all();
-    const localSeeds = {};
-    Object.keys(localAvail).forEach(function (iso) {
-      const value = localAvail[iso];
-      if (value && typeof value === "object" && value.isSeed) localSeeds[iso] = value;
-    });
-    const nextAvail = Object.assign({}, merged.availability || {}, localSeeds);
-    if (!this._sameMap(nextAvail, localAvail)) {
-      AvailabilityManager.replace(nextAvail);
-      AvailabilityManager.persist();
-      changed = true;
-    }
-
-    // ---- Sellado local: adopta el estado ya consolidado ----
-    const stamp = {
-      updatedAt: String(merged.availabilityUpdatedAt || localMeta.updatedAt || ""),
-      clearedAt: clearedAt || localMeta.clearedAt || ""
-    };
-    if (stamp.updatedAt !== localMeta.updatedAt || stamp.clearedAt !== localMeta.clearedAt) {
-      writeSyncMeta(stamp);
-    }
-
-    return changed;
-  },
+  /* ---------------- Utilidades de estado ---------------- */
 
   _refreshUI() {
     if (typeof PerfGuard !== "undefined" && PerfGuard.shouldDefer()) {
@@ -1766,8 +1927,11 @@ const CloudSync = {
 };
 
 // ============================================================
-// 5. SECURITY MODULE (PIN hasheado + Anti fuerza bruta)
+// 5. SECURITY MODULE (verificación remota + anti fuerza bruta)
 // ============================================================
+// El PIN se verifica EXCLUSIVAMENTE en el servidor (POST /api/admin/login,
+// scrypt + cookie HttpOnly). En el navegador solo queda el estado del
+// candado local: intentos, bloqueo y nivel — nunca ningún digest de PIN.
 
 // Retraso anti-timing: jitter aleatorio 800-1500 ms antes de responder un error de autenticación
 function authJitterDelay() {
@@ -1778,16 +1942,7 @@ const SecurityModule = {
   _data: null,
 
   emptyState() {
-    return { ownerHash: null, itHash: null, attempts: 0, lockoutUntil: 0, lockoutLevel: 0 };
-  },
-
-  // Un hash persistido solo es válido si es un digest SHA-256 (64 hex minúsculas).
-  // Cualquier otra forma (build legacy, corrupción, FNV-1a de 8 hex) se descarta:
-  // conservarla haría que el PIN válido no coincida nunca y quemaría el rate limit.
-  sanitizeHash(value) {
-    if (typeof value !== "string") return null;
-    const normalized = value.trim().toLowerCase();
-    return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
+    return { attempts: 0, lockoutUntil: 0, lockoutLevel: 0 };
   },
 
   sanitizeCounter(value) {
@@ -1804,9 +1959,9 @@ const SecurityModule = {
       raw = null;
     }
     const data = raw && typeof raw === "object" ? raw : {};
+    // `ownerHash`/`itHash` (digests de PIN de builds anteriores) se descartan
+    // y no se reescriben: el caché deja de arrastrar material derivado del PIN.
     this._data = {
-      ownerHash: this.sanitizeHash(data.ownerHash),
-      itHash: this.sanitizeHash(data.itHash),
       attempts: this.sanitizeCounter(data.attempts),
       lockoutUntil: this.sanitizeCounter(data.lockoutUntil),
       lockoutLevel: this.sanitizeCounter(data.lockoutLevel)
@@ -1841,6 +1996,16 @@ const SecurityModule = {
     return this._data;
   },
 
+  /**
+   * Verificación de PIN remota: la fuente de verdad es POST /api/admin/login.
+   * El navegador NUNCA compara el PIN contra un digest — el servidor lo
+   * verifica, emite la cookie HttpOnly y lleva el conteo de intentos.
+   *
+   * El contador local que queda aquí es solo un espejo para la UI (cuenta
+   * regresiva de bloqueo y `SecurityModule.status()`).
+   *
+   * @returns {Promise<{ok:boolean, locked?:boolean, waitMs?:number, remaining?:number, message?:string}>}
+   */
   async verifyPin(roleId, pin) {
     this.load();
     const now = Date.now();
@@ -1857,32 +2022,60 @@ const SecurityModule = {
     const role = ADMIN_CONFIG.roles[roleId];
     if (!role) return { ok: false, locked: false, remaining: ADMIN_CONFIG.maxAttempts };
 
-    // Comparación estricta tras .trim(): el PIN se normaliza antes de hashear,
-    // de modo que " 2580 " y "2580" son la misma credencial y solo una coincide.
-    const inputHash = await sha256Hex(String(pin == null ? "" : pin).trim());
-    const expected = this._data[role.hashKey] || role.defaultHash;
+    // Sin API no existe ninguna credencial verificable en el cliente: no se
+    // compara contra nada y no se autentica.
+    if (!apiEnabled()) {
+      return { ok: false, locked: false, remaining: 0, message: "Autenticación remota no disponible." };
+    }
 
-    if (digestsEqual(inputHash, expected)) {
+    const res = await ArkikApi.admin.login(roleId, String(pin == null ? "" : pin).trim());
+
+    if (res.ok) {
       this.clearLockState();
-      return { ok: true };
+      return { ok: true, expiresAt: res.data ? res.data.expiresAt : null };
     }
 
-    this._data.attempts = (this._data.attempts || 0) + 1;
-    if (this._data.attempts >= ADMIN_CONFIG.maxAttempts) {
-      const level = this._data.lockoutLevel || 0;
-      const base = ADMIN_CONFIG.lockoutMs || 300000;
-      const max = ADMIN_CONFIG.maxLockoutMs || 3600000;
-      const wait = Math.min(base * Math.pow(2, level), max);
-      this._data.lockoutUntil = now + wait;
-      this._data.lockoutLevel = level + 1;
+    // Cuenta bloqueada por el servidor (429 + retryAfterMs): espejo local para
+    // que la cuenta regresiva se muestre en el mismo intento que la dispara.
+    if (res.code === "locked") {
+      const waitMs = Number(res.retryAfterMs) > 0
+        ? Number(res.retryAfterMs)
+        : (ADMIN_CONFIG.lockoutMs || 300000);
       this._data.attempts = 0;
+      this._data.lockoutUntil = now + waitMs;
+      this._data.lockoutLevel = (this._data.lockoutLevel || 0) + 1;
       this.persist();
-      // El bloqueo se reporta en el mismo intento que lo dispara: la UI muestra
-      // la cuenta regresiva de inmediato, sin un envío extra "a ciegas".
-      return { ok: false, locked: true, waitMs: wait, remaining: 0 };
+      return { ok: false, locked: true, waitMs: waitMs, remaining: 0 };
     }
-    this.persist();
-    return { ok: false, locked: false, remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - this._data.attempts) };
+
+    // Credencial rechazada: el servidor ya contó el intento; aquí solo se
+    // refleja para los diagnósticos locales.
+    if (res.code === "unauthorized" || res.status === 401) {
+      this._data.attempts = (this._data.attempts || 0) + 1;
+      if (this._data.attempts >= ADMIN_CONFIG.maxAttempts) {
+        const level = this._data.lockoutLevel || 0;
+        const base = ADMIN_CONFIG.lockoutMs || 300000;
+        const max = ADMIN_CONFIG.maxLockoutMs || 3600000;
+        const wait = Math.min(base * Math.pow(2, level), max);
+        this._data.lockoutUntil = now + wait;
+        this._data.lockoutLevel = level + 1;
+        this._data.attempts = 0;
+        this.persist();
+        return { ok: false, locked: true, waitMs: wait, remaining: 0 };
+      }
+      this.persist();
+      return { ok: false, locked: false, remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - this._data.attempts) };
+    }
+
+    // Cualquier otro veredicto (rate_limited por IP, timeout, red caída, 503)
+    // NO es un fallo de credenciales: no se consume ningún intento y se
+    // propaga el mensaje del servidor para que la UI lo muestre tal cual.
+    return {
+      ok: false,
+      locked: false,
+      remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - (this._data.attempts || 0)),
+      message: res.message
+    };
   }
 };
 
@@ -2087,6 +2280,35 @@ function timeToNumber(hhmm) {
 }
 
 /**
+ * Versión pura de la regla de bloqueo a partir de una lista de horas
+ * reservadas ("HH:MM"). Espejo exacto de computeBlockedTimes y de
+ * buildBlockedTimes del servidor (api/_lib/logic.js):
+ * - 0 horas: ningún slot bloqueado.
+ * - 1 hora:  se bloquea la franja [T-5h, T+5h] (inclusive).
+ * - 2+:      el día está agotado (todas las horas bloqueadas).
+ * @param {string[]} bookedTimes
+ * @returns {Set<string>}
+ */
+function blockedTimesFromBookedTimes(bookedTimes) {
+  const blocked = new Set();
+  const times = Array.isArray(bookedTimes) ? bookedTimes : [];
+  if (times.length >= 2) {
+    TimeSlots.forEach(t => blocked.add(t));
+    return blocked;
+  }
+  if (times.length === 1) {
+    const t = timeToNumber(times[0]);
+    if (t !== null) {
+      TimeSlots.forEach(slot => {
+        const s = timeToNumber(slot);
+        if (s >= t - TIME_BUFFER_HOURS && s <= t + TIME_BUFFER_HOURS) blocked.add(slot);
+      });
+    }
+  }
+  return blocked;
+}
+
+/**
  * Calcula qué horas quedan bloqueadas para un día según sus reservas.
  * - 0 reservas: todas las horas habilitadas.
  * - 1 reserva: se bloquean las horas dentro de [T-5h, T+5h].
@@ -2094,6 +2316,10 @@ function timeToNumber(hhmm) {
  * Devuelve un Set con los strings "HH:MM" bloqueados.
  */
 function computeBlockedTimes(iso) {
+  // Remote-first: la capacidad del día viene del servidor (detail/capacity).
+  if (apiEnabled()) {
+    return blockedTimesFromBookedTimes(AvailabilityManager.bookedTimesFor(iso));
+  }
   const blocked = new Set();
   const bookings = BookingStore.getBookingsForDate(iso);
 
@@ -2154,7 +2380,9 @@ function validateSlotAvailability(dateISO, timeSlot) {
     return fail("soldout", "Fecha agotada (capacidad completa de 2 eventos).");
   }
 
-  if (BookingStore.countForDate(dateISO) >= DEFAULT_MAX_EVENTS_PER_DAY) {
+  // Capacidad del día: el servidor manda (remainingSlots de detail/capacity)
+  // y el conteo local solo queda como estimación heredada.
+  if (AvailabilityManager.remainingSlots(dateISO) <= 0) {
     return fail("day_full", "Este día ya no tiene cupos disponibles.");
   }
 
@@ -2195,14 +2423,19 @@ function renderTimeSelector() {
   const blocked = computeBlockedTimes(cart.selectedDate);
   const selected = cart.selectedTime;
   const bookings = BookingStore.getBookingsForDate(cart.selectedDate);
+  // Con la API activa la nota se basa en las horas del servidor; el listado
+  // local solo sirve en modo heredado (o como estimación sin cobertura).
+  const serverTimes = apiEnabled() ? AvailabilityManager.bookedTimesFor(cart.selectedDate) : null;
+  const noteCount = serverTimes ? serverTimes.length : bookings.length;
 
   // Nota contextual de disponibilidad (0, 1 o 2 eventos).
   const noteEl = document.getElementById("time-availability-note");
   if (noteEl) {
-    if (bookings.length === 0) {
+    if (noteCount === 0) {
       noteEl.textContent = "2 cupos libres — todas las horas disponibles";
-    } else if (bookings.length === 1) {
-      noteEl.textContent = `1 cupo libre · margen logístico de 5h respecto al evento de las ${bookings[0].selectedTime || "--:--"}`;
+    } else if (noteCount === 1) {
+      const firstTime = serverTimes ? serverTimes[0] : (bookings[0] && bookings[0].selectedTime);
+      noteEl.textContent = `1 cupo libre · margen logístico de 5h respecto al evento de las ${firstTime || "--:--"}`;
     } else {
       noteEl.textContent = "Día agotado (máx. 2 eventos)";
     }
@@ -2380,6 +2613,35 @@ const CalendarModule = {
 
     grid.innerHTML = cells;
     this.renderSummary();
+    this._fetchVisibleRange();
+  },
+
+  // Remote-first: en segundo plano descarga el rango exacto visible en la
+  // grilla (máx. 42 celdas, dentro del límite de 92 días del servidor) para
+  // que cupos del mes y chips de hora salgan del servidor. El dedupe por
+  // ventana de AvailabilityManager hace que una re-render sea gratis.
+  _fetchVisibleRange() {
+    if (!apiEnabled() || !this.viewDate) return;
+    const y = this.viewDate.getFullYear();
+    const m = this.viewDate.getMonth();
+    const firstDayOfWeek = (new Date(y, m, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const totalCells = firstDayOfWeek + daysInMonth;
+    const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    const from = isoOf(new Date(y, m, 1 - firstDayOfWeek));
+    const to = isoOf(new Date(y, m + 1, remainingCells));
+    AvailabilityManager.fetchMap(from, to)
+      .then((res) => {
+        if (!res || res.ok !== true || res.cached) return;
+        // Llegaron datos nuevos: repintar una vez. La re-render vuelve a
+        // llamar este método, pero el dedupe responde cached:true y ahí
+        // corta la recursión.
+        this.render();
+        if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof renderTimeSelector === "function") {
+          renderTimeSelector();
+        }
+      })
+      .catch(() => { /* el fallo de red ya lo reporta CloudSync */ });
   },
 
   getDayState(iso, nowISO, minISO, maxISO) {
@@ -2513,7 +2775,12 @@ function isNonGamLocation(province, canton) {
 }
 
 // ---- Auditoría del Sistema (Rol IT) ----
-
+//
+// NOTA (split de auditoría): este registro es SOLO local (telemetría de UI
+// del portal IT: logins del portal, cambios de galería/precios/reset). La
+// auditoría autoritativa de reservas, disponibilidad y autenticación vive en
+// el servidor y se consulta con GET /api/admin/audit; no se construye otra
+// UI para ella, la vista de auditoría IT sigue operando sobre este registro.
 const AuditLog = {
   load() {
     const data = safeParse(STORAGE_KEYS.audit, null);
@@ -2828,6 +3095,11 @@ const AdminModule = {
       this.ownerFilter = "todas";
       this.periodFilter = "total";
       this.openPortal();
+      // El servidor ya emitió la cookie de sesión: se aprovecha ese mismo
+      // contexto para traer reservas, disponibilidad y tarifarios.
+      BookingStore.hydrate(true).catch(function () {});
+      AvailabilityManager.fetchMap().catch(function () {});
+      PriceManager.loadRemote().catch(function () {});
       showToast(`Autenticado como ${ADMIN_CONFIG.roles[this.role].label}.`, "success");
       return;
     }
@@ -2837,7 +3109,9 @@ const AdminModule = {
       return;
     }
     await authJitterDelay();
-    this.showAuthError("Credenciales inválidas o no autorizadas.");
+    // `message` solo llega para veredictos que NO son de credenciales
+    // (rate limit por IP, red caída, API deshabilitada): se muestra tal cual.
+    this.showAuthError(result.message || "Credenciales inválidas o no autorizadas.");
     if (pin) {
       pin.value = "";
       pin.focus();
@@ -2958,17 +3232,42 @@ const AdminModule = {
     } catch (err) { return false; }
   },
 
-  restoreSession() {
+  /**
+   * Reabre el portal si el caché de sesión de la pestaña sigue íntegro.
+   * Con la API activa, además se contrasta con el servidor:
+   *  - 401 / `unauthorized`  -> la cookie caducó: se cierra la sesión local.
+   *  - red caída o timeout   -> degrada al caché (el portal abre con datos
+   *    locales; cada mutación volverá a validar contra el servidor).
+   */
+  async restoreSession() {
     if (!this.verifySessionIntegrity()) return;
+    let data = null;
     try {
-      const data = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.session));
-      ADMIN_SESSION.role = data.role;
-      ADMIN_SESSION.token = data.token;
-      ADMIN_SESSION.createdAt = data.createdAt;
-      ADMIN_SESSION.lastActivity = data.lastActivity;
-      this.role = data.role;
-      this.openPortal();
-    } catch (err) { /* noop */ }
+      data = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.session));
+    } catch (err) { return; }
+    if (!data) return;
+
+    if (apiEnabled()) {
+      const res = await ArkikApi.admin.session();
+      if (res.ok === false && (res.code === "unauthorized" || res.status === 401)) {
+        // Sesión del servidor revocada o expirada: no se reabre el portal.
+        this.clearSession();
+        this.resetLockoutState();
+        return;
+      }
+    }
+
+    ADMIN_SESSION.role = data.role;
+    ADMIN_SESSION.token = data.token;
+    ADMIN_SESSION.createdAt = data.createdAt;
+    ADMIN_SESSION.lastActivity = data.lastActivity;
+    this.role = data.role;
+    this.openPortal();
+    // Los datos del portal salen del caché inmediatamente y se revalidan
+    // en segundo plano contra el servidor.
+    BookingStore.hydrate(true).catch(function () {});
+    AvailabilityManager.fetchMap().catch(function () {});
+    PriceManager.loadRemote().catch(function () {});
   },
 
   startIntegrityMonitor() {
@@ -2992,6 +3291,10 @@ const AdminModule = {
   },
 
   terminateSession() {
+    // Logout en el servidor (fire-and-forget): borra la cookie HttpOnly.
+    // Aunque la red falle, la sesión local ya se destruye aquí y el cookie
+    // caducará por sí solo en el servidor.
+    if (apiEnabled()) ArkikApi.admin.logout().catch(function () {});
     this.clearInactivityTimer();
     this.clearIntegrityMonitor();
     this.clearSession();
@@ -3459,7 +3762,7 @@ const AdminModule = {
     ModalController.close("adminRescheduleModal");
   },
 
-  confirmReschedule() {
+  async confirmReschedule() {
     const code = this.reschedCode;
     const booking = code ? BookingStore.get(code) : null;
     if (!booking) return;
@@ -3491,7 +3794,22 @@ const AdminModule = {
       showToast("Capacidad completa ese día.", "error");
       return;
     }
-    BookingStore.updateDate(code, newIso);
+    // El servidor vuelve a validar todo (cupo, ventana y reglas) y devuelve la
+    // fila autoritativa; sin su confirmación no se anuncia la reprogramación.
+    const res = await BookingStore.updateDate(code, newIso, booking.selectedTime);
+    if (!res.ok) {
+      const errCode = (res.error && res.error.code) || res.code || "";
+      if (errCode === "day_full" || errCode === "slot_taken" || errCode === "blackout") {
+        this.closeRescheduleModal();
+        showSlotConflictAlert(res.message || "Esa fecha ya no está disponible.");
+      } else {
+        showToast(res.message || "No se pudo reprogramar la reserva.", "error");
+      }
+      // La lista se repinta con el estado real del servidor.
+      this.renderOwner();
+      return;
+    }
+    AvailabilityManager.fetchDetail(newIso).catch(function () {});
     showToast(`Reserva ${code} reprogramada para el ${formatDisplayDate(newIso)}.`, "success");
     this.closeRescheduleModal();
     this.renderOwner();
@@ -4158,7 +4476,9 @@ function bookingCard(b) {
   if (b.status === "confirmada") {
     actions.push(`<button type="button" data-action="complete" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Marcar Realizada</button>`);
   }
-  if (b.voucherImage) {
+  // El listado nunca trae la imagen (solo `hasVoucher`): con el caché local
+  // la tarjeta la muestra al instante y, si no, el clic la baja del servidor.
+  if (b.voucherImage || b.hasVoucher) {
     actions.push(`<button type="button" data-action="view" class="bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-purple-200 rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 transition-all">👁️ Ver Comprobante SINPE</button>`);
   }
   if (b.status === "pendiente" || b.status === "confirmada") {
@@ -4190,7 +4510,7 @@ return `
       <div class="admin-booking-col">
         <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Cliente / Empresa</p>
         <p class="text-base font-bold text-white tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
-        ${b.voucherImage
+        ${b.voucherImage || b.hasVoucher
       ? ""
       : `<p class="mt-2 text-[10px] text-amber-300/70">⚠️ comprobante SINPE no adjuntado</p>`}
       </div>
@@ -5287,7 +5607,7 @@ function downloadJsonFile(payload, filename) {
  *  3. Descarga Pre-Factura VALIDADA (PDF) y Expediente (JSON) automáticamente.
  *  4. Abre el Modal Ejecutivo con CTA a Google Drive y WhatsApp.
  */
-function validateBankPayment(b) {
+async function validateBankPayment(b) {
   if (!b) {
     showToast("Reserva no encontrada.", "error");
     return;
@@ -5297,27 +5617,37 @@ function validateBankPayment(b) {
     return;
   }
 
-  BookingStore.updateStatus(b.code, "confirmada");
-  showToast(`Depósito bancario validado. Reserva ${b.code} CONFIRMADA.`, "success");
+  // El cambio de estado vive en el servidor: sin su OK no se descarga nada
+  // ni se anuncia la confirmación (evita pre-facturas de una reserva que la
+  // base de datos rechazó).
+  const res = await BookingStore.updateStatus(b.code, "confirmada");
+  if (!res.ok) {
+    showToast("No se pudo confirmar la reserva. Intente de nuevo.", "error");
+    return;
+  }
+  // `_absorb` reemplaza el objeto dentro del store: el `b` del llamador queda
+  // obsoleto, así que de aquí en adelante se usa la fila devuelta.
+  const confirmed = res.booking || b;
+  showToast(`Depósito bancario validado. Reserva ${confirmed.code} CONFIRMADA.`, "success");
 
   // 1) Descarga automática de la Pre-Factura VALIDADA (PDF alta resolución).
-  const pdfContainer = buildExecutiveInvoiceHtml(b);
-  saveExecutiveInvoicePDF(pdfContainer, `PreFactura_${b.code}_VALIDADA.pdf`)
+  const pdfContainer = buildExecutiveInvoiceHtml(confirmed);
+  saveExecutiveInvoicePDF(pdfContainer, `PreFactura_${confirmed.code}_VALIDADA.pdf`)
     .then(() => showToast("Pre-Factura validada descargada.", "success"))
     .catch(() => {
       console.warn("PDF validado fallback:", "se genera impresión");
-      try { printFallback(pdfContainer.innerHTML, `PreFactura_${b.code}_VALIDADA`); } catch (e) { /* noop */ }
+      try { printFallback(pdfContainer.innerHTML, `PreFactura_${confirmed.code}_VALIDADA`); } catch (e) { /* noop */ }
     });
 
   // 2) Descarga automática del Expediente JSON (auditoría de respaldo).
   try {
-    downloadJsonFile(buildBookingExpediente(b), `Expediente_${b.code}.json`);
+    downloadJsonFile(buildBookingExpediente(confirmed), `Expediente_${confirmed.code}.json`);
   } catch (e) {
     console.warn("Expediente JSON no pudo descargarse:", e);
   }
 
   // 3) Abre el Modal Ejecutivo de respaldo a Google Drive + confirmación WhatsApp.
-  openBankValidationModal(b);
+  openBankValidationModal(confirmed);
 
   AdminModule.renderOwner();
 }
@@ -5357,13 +5687,19 @@ function closeBankValidationModal() {
 // ============================================================
 
 /**
- * Abre el drawer de previsualización con los datos completos de una reserva
+ * Abre el drawer de previsualización con los datos completos de una reserva.
+ * El listado no transporta la imagen del comprobante: si la base de datos
+ * indica que existe (`hasVoucher`), se baja ahora para mostrarla aquí.
  */
-function openRackPreview(code) {
+async function openRackPreview(code) {
   const booking = BookingStore.get(code);
   if (!booking) {
     showToast("Reserva no encontrada.", "error");
     return;
+  }
+
+  if (!booking.voucherImage && booking.hasVoucher) {
+    await resolveVoucherImage(booking);
   }
 
   const service = CATALOG_SERVICES.find(s => s.id === booking.serviceId);
@@ -5444,6 +5780,10 @@ function openRackPreview(code) {
         <div class="p-4 rounded-xl bg-white/5 border border-emerald-500/30">
           <p class="text-[10px] font-bold tracking-widest text-emerald-300/70 uppercase mb-2">Comprobante SINPE Adjunto ✅</p>
           <img src="${booking.voucherImage}" alt="Comprobante SINPE" class="rounded-lg max-h-48 object-contain border border-emerald-500/30 cursor-pointer hover:opacity-80 transition-opacity" onclick="closeRackPreview(); AdminModule.openVoucherPreview('${booking.voucherImage}')" style="cursor:pointer;">
+        </div>` : booking.hasVoucher ? `
+        <div class="p-4 rounded-xl bg-white/5 border border-amber-500/30">
+          <p class="text-[10px] font-bold tracking-widest text-amber-300/70 uppercase mb-2">Comprobante SINPE no disponible ⚠️</p>
+          <p class="text-sm text-amber-300">La base de datos registra un comprobante, pero no se pudo cargar en este momento (sin conexión o sesión expirada).</p>
         </div>` : `
         <div class="p-4 rounded-xl bg-white/5 border border-amber-500/30">
           <p class="text-[10px] font-bold tracking-widest text-amber-300/70 uppercase mb-2">Comprobante SINPE Pendiente ⚠️</p>
@@ -6609,7 +6949,12 @@ function initApp() {
   initHeroStringsEffect();
   window.addEventListener("hashchange", handleHashRoute);
   handleHashRoute();
-  AdminModule.restoreSession();
+  // Remote-first boot: la primera pintura sale del caché local y, en paralelo,
+  // se revalidan precios, disponibilidad y (si hay sesión) reservas. Nada de
+  // esto bloquea el render ni tira una excepción si la API está caída.
+  PriceManager.loadPublic().catch(function () {});
+  CloudSync.refresh("boot").catch(function () {});
+  AdminModule.restoreSession().catch(function () {});
 }
 
 // ============================================================
@@ -7285,7 +7630,7 @@ function setupEventListeners() {
   // --- Admin: Acciones sobre reservas (Propietario) ---
   const bookingsList = document.getElementById("admin-bookings-list");
   if (bookingsList) {
-    bookingsList.addEventListener("click", (e) => {
+    bookingsList.addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-action]");
       if (!btn || btn.disabled) return;
       const row = btn.closest("[data-id]");
@@ -7300,25 +7645,31 @@ function setupEventListeners() {
         return;
       }
       if (action === "confirm") {
-        validateBankPayment(booking);
+        // El PDF y el modal salen solo tras el OK del servidor.
+        await validateBankPayment(booking);
         return;
       }
       if (action === "complete") {
-        BookingStore.updateStatus(booking.code, "realizada");
-        showToast(`Reserva ${booking.code} marcada como realizada.`, "success");
-      } else if (action === "cancel") {
-        BookingStore.updateStatus(booking.code, "cancelada");
-        showToast(`Reserva ${booking.code} cancelada. Cupo del calendario liberado.`, "info");
-        // Aviso de rechazo/cancelación por WhatsApp (especificación Owner Deck)
-        const firstName = String(booking.clientName).split(" ")[0];
-        const rejectMsg = `Hola ${firstName}, le informamos que la reserva ${booking.code} (${formatDisplayDate(booking.selectedDate)}) fue cancelada o rechazada. Si tiene dudas puede escribirnos. Lamentamos el inconveniente. — Arkik Productions`;
-        window.open(whatsappClientUrl(booking, rejectMsg), "_blank", "noopener");
-      } else if (action === "view") {
-        if (booking.voucherImage) {
-          AdminModule.openVoucherPreview(booking.voucherImage);
-          return;
+        const res = await BookingStore.updateStatus(booking.code, "realizada");
+        if (!res.ok) {
+          showToast(res.message || `No se pudo marcar la reserva ${booking.code}.`, "error");
+        } else {
+          showToast(`Reserva ${booking.code} marcada como realizada.`, "success");
         }
-        showToast("Esta reserva no tiene comprobante SINPE adjunto.", "error");
+      } else if (action === "cancel") {
+        const res = await BookingStore.updateStatus(booking.code, "cancelada");
+        if (!res.ok) {
+          showToast(res.message || `No se pudo cancelar la reserva ${booking.code}.`, "error");
+        } else {
+          showToast(`Reserva ${booking.code} cancelada. Cupo del calendario liberado.`, "info");
+          // Aviso de rechazo/cancelación por WhatsApp (especificación Owner Deck)
+          const firstName = String(booking.clientName).split(" ")[0];
+          const rejectMsg = `Hola ${firstName}, le informamos que la reserva ${booking.code} (${formatDisplayDate(booking.selectedDate)}) fue cancelada o rechazada. Si tiene dudas puede escribirnos. Lamentamos el inconveniente. — Arkik Productions`;
+          window.open(whatsappClientUrl(booking, rejectMsg), "_blank", "noopener");
+        }
+      } else if (action === "view") {
+        const image = await resolveVoucherImage(booking);
+        if (image) AdminModule.openVoucherPreview(image);
         return;
       } else if (action === "voucher") {
         downloadBookingVoucher(booking);
@@ -7353,7 +7704,7 @@ function setupEventListeners() {
   // --- Admin IT: Pestañas, Disponibilidad, Precios y Respaldo ---
   const itView = document.getElementById("admin-it-view");
   if (itView) {
-    itView.addEventListener("click", (e) => {
+    itView.addEventListener("click", async (e) => {
       const tab = e.target.closest("[data-it-tab]");
       if (tab) {
         AdminModule.setItTab(tab.getAttribute("data-it-tab"));
@@ -7408,11 +7759,23 @@ function setupEventListeners() {
         const cursor = new Date(startISO);
         const end = endISO || startISO;
         let appliedCount = 0;
+        let firstError = null;
         while (cursor <= end) {
           const iso = isoOf(cursor);
-          AvailabilityManager.set(iso, state, reason);
+          const res = await AvailabilityManager.set(iso, state, reason);
+          if (!res.ok) {
+            // Sin OK del servidor no hay mutación local (set ya no tocó el
+            // caché): se reporta y se detiene el resto del rango.
+            firstError = res.error || res;
+            break;
+          }
           appliedCount += 1;
           cursor.setDate(cursor.getDate() + 1);
+        }
+        if (firstError) {
+          showToast(firstError.message || "No se pudo actualizar la disponibilidad.", "error");
+          AdminModule.renderIT();
+          return;
         }
         const verb = state === "available"
           ? `Desbloqueado(s) ${appliedCount} fecha(s) (${from}${to ? " → " + to : ""}).`
@@ -7427,7 +7790,12 @@ function setupEventListeners() {
       const removeBtn = e.target.closest("[data-avail-remove]");
       if (removeBtn) {
         const iso = removeBtn.getAttribute("data-avail-remove");
-        AvailabilityManager.set(iso, "available");
+        const res = await AvailabilityManager.clear(iso);
+        if (!res.ok) {
+          showToast((res.error && res.error.message) || res.message || "No se pudo eliminar el bloqueo.", "error");
+          AdminModule.renderIT();
+          return;
+        }
         AuditLog.recordEvent("block", `Fecha desbloqueada: ${iso}.`);
         showToast("Bloqueo manual eliminado.", "success");
         AdminModule.renderIT();
@@ -7435,6 +7803,9 @@ function setupEventListeners() {
       }
 
       if (e.target.closest("#admin-save-prices")) {
+        // Snapshot ANTES de mutar: si el PUT falla, persistRemote restaura
+        // el estado anterior y no se pinta el éxito.
+        const priceSnapshot = PriceManager.snapshot();
         document.querySelectorAll("[data-price]").forEach(input => {
           const key = input.getAttribute("data-price");
           const val = Number(input.value) || 0;
@@ -7461,21 +7832,26 @@ function setupEventListeners() {
           }
         }
 
+        const savedPrices = await PriceManager.persistRemote(priceSnapshot);
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
         AdminModule.renderIT();
+        if (!savedPrices.ok) return; // persistRemote hizo rollback + toast
         AuditLog.recordEvent("price", "Tarifas y configuración aplicadas en lote.");
         showToast("Precios y configuración actualizados en tiempo real.", "success");
         return;
       }
 
       if (e.target.closest("#admin-reset-prices")) {
+        const priceSnapshot = PriceManager.snapshot();
         PriceManager.reset();
         StorageEngine.setConfig("extraHourMultiplier", 0.50);
         StorageEngine.setConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE);
+        const savedPrices = await PriceManager.persistRemote(priceSnapshot);
         updateSummaryPrices();
         renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
         AdminModule.renderIT();
+        if (!savedPrices.ok) return; // persistRemote hizo rollback + toast
         AuditLog.recordEvent("price", "Tarifas restauradas a los valores de fábrica.");
         showToast("Precios restaurados a los originales.", "success");
         return;
@@ -7896,8 +8272,11 @@ function generateSQLBackup(payload) {
 /**
  * Persistencia en vivo de la suite IT: lee los inputs actuales de la matriz
  * y los guarda con recálculo global (catálogo + resumen) sin recargar.
+ * Con la API activa el lote completo viaja en UN solo PUT y, si el servidor
+ * lo rechaza, persistRemote restaura el snapshot previo (rollback).
  */
-function persistITLiveInputs() {
+async function persistITLiveInputs() {
+  const priceSnapshot = PriceManager.snapshot();
   const inputs = document.querySelectorAll("#admin-it-prices [data-price]");
   let changed = 0;
   inputs.forEach(input => {
@@ -7910,19 +8289,30 @@ function persistITLiveInputs() {
     }
     changed += 1;
   });
+  let ratesChanged = false;
   const multInput = document.getElementById("admin-extra-multiplier");
   if (multInput) {
     const val = parseFloat(multInput.value);
-    if (Number.isFinite(val) && val > 0) StorageEngine.setConfig("extraHourMultiplier", val);
+    if (Number.isFinite(val) && val > 0) {
+      StorageEngine.setConfig("extraHourMultiplier", val);
+      ratesChanged = true;
+    }
   }
   const travelInput = document.getElementById("admin-travel-rate");
   if (travelInput) {
     const val = parseFloat(travelInput.value);
-    if (Number.isFinite(val) && val >= 0) StorageEngine.setConfig("travelSurchargeRate", val / 100);
+    if (Number.isFinite(val) && val >= 0) {
+      StorageEngine.setConfig("travelSurchargeRate", val / 100);
+      ratesChanged = true;
+    }
   }
-  if (changed > 0) {
-    AuditLog.recordEvent("price", `Tarifas persistidas en tiempo real (${changed} campos).`);
-    showToast("Tarifas persistidas y catálogo recalibrado en tiempo real.", "info");
+  if (changed > 0 || ratesChanged) {
+    const saved = await PriceManager.persistRemote(priceSnapshot);
+    if (!saved.ok) return; // rollback + toast de error ya los hizo persistRemote
+    if (changed > 0) {
+      AuditLog.recordEvent("price", `Tarifas persistidas en tiempo real (${changed} campos).`);
+      showToast("Tarifas persistidas y catálogo recalibrado en tiempo real.", "info");
+    }
   }
 }
 
@@ -8219,8 +8609,9 @@ function selectNextAvailableDate() {
     const override = AvailabilityManager.get(iso);
     if (override === "soldout" || override === "disabled") continue;
 
-    const booked = BookingStore.countForDate(iso);
-    if (DEFAULT_MAX_EVENTS_PER_DAY - booked >= 1) {
+    // Cupos restantes: el servidor manda; el conteo local solo es la
+    // estimación heredada cuando aún no hay datos remotos del día.
+    if (AvailabilityManager.remainingSlots(iso) >= 1) {
       foundISO = iso;
       break;
     }
@@ -9034,21 +9425,27 @@ const ClientThrottler = {
 };
 
 // Revalidación en vivo contra la nube justo antes del envío: cierra la
-// ventana de los 8 s de polling. Espera (breve) cualquier sync en curso,
-// lanza un pull acotado y devuelve true si la nube respondió a tiempo.
+// ventana de los 8 s de polling con la lectura que más importa — el detalle
+// AUTORITATIVO del día elegido (estado, cupos y turnos ya tomados).
+// Espera (breve) cualquier sync en curso y resuelve dentro del tiempo tope.
 async function preSubmitCloudRefresh(maxWaitMs) {
   try {
     if (typeof CloudSync === "undefined" || !CloudSync._enabled) return false;
+    if (!apiEnabled()) return true; // modo local: no hay nada que revalidar
     const cap = Number(maxWaitMs) || 3000;
     const t0 = Date.now();
     while (CloudSync._busy && Date.now() - t0 < Math.min(1500, cap)) {
       await new Promise(function (r) { setTimeout(r, 100); });
     }
     if (CloudSync._busy) return false;
-    const pull = CloudSync.sync("presubmit");
+    const day = typeof cart !== "undefined" && cart ? cart.selectedDate : null;
+    const pull = day
+      ? AvailabilityManager.fetchDetail(day)
+      : AvailabilityManager.hydrate(true);
     const timeout = new Promise(function (r) { setTimeout(function () { r("timeout"); }, cap); });
     const result = await Promise.race([pull, timeout]);
-    return result === true;
+    if (result === "timeout") return false;
+    return !(result && result.ok === false);
   } catch (err) {
     console.warn("[Arkik] preSubmitCloudRefresh:", err);
     return false;
@@ -9058,6 +9455,86 @@ async function preSubmitCloudRefresh(maxWaitMs) {
 // ============================================================
 // 16. FINALIZACIÓN DE RESERVA & MENSAJES WHATSAPP
 // ============================================================
+
+/**
+ * Clave de idempotencia POR CADENA DE INTENCIÓN (header X-Idempotency-Key).
+ * Se genera UNA vez por intento de reserva y vive en sessionStorage
+ * ('arkik_idem_v1') hasta que el servidor confirma la creación: si la red
+ * cae y el visitante reintenta —incluso tras recargar la página— el POST
+ * devuelve la reserva ya creada en vez de duplicarla. Solo se borra tras el
+ * éxito del servidor. Formato exigido: [A-Za-z0-9_-]{8,64}.
+ */
+function idempotencyKeyFor() {
+  const storageKey = "arkik_idem_v1";
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (raw && /^[A-Za-z0-9_-]{8,64}$/.test(raw)) return raw;
+    let key;
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      key = crypto.randomUUID();
+    } else {
+      key = "idem-" + Date.now().toString(36) + "-" +
+        Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+    }
+    sessionStorage.setItem(storageKey, key);
+    return key;
+  } catch (err) {
+    return "idem-fb-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+}
+
+// Borra la clave de idempotencia: SOLO tras éxito del servidor (un fallo la
+// conserva para que el reintento reutilice la misma clave).
+function clearIdempotencyKey() {
+  try { sessionStorage.removeItem("arkik_idem_v1"); } catch (err) { /* noop */ }
+}
+
+/**
+ * Mapea el fallo de POST /api/bookings a la UX del contrato. Nunca lanza.
+ *  - network/service_unavailable → toast de conexión (sin perder el paso)
+ *  - day_full/slot_taken/blackout/soldout → alerta de conflicto + paso 2
+ *  - rate_limited → mensaje estilo ClientThrottler (usa retryAfterMs)
+ *  - validation_error → toast de datos inválidos (+ details[0].message)
+ *  - min_notice/horizon → mensaje exacto del servidor
+ */
+function handleBookingCreateFailure(res) {
+  const code = (res && res.code) || "";
+  const error = (res && res.error) || null;
+  const message = (error && error.message) || (res && res.message) ||
+    "No se pudo registrar la reserva. Intente nuevamente.";
+  const details = (res && res.details) || (error && error.details) || null;
+
+  if (code === "network" || code === "service_unavailable") {
+    showToast("No fue posible registrar la reserva. Comprueba tu conexión e inténtalo nuevamente.", "error");
+    return;
+  }
+  if (code === "day_full" || code === "slot_taken" || code === "blackout" || code === "soldout") {
+    showSlotConflictAlert(message);
+    goToStep(2);
+    return;
+  }
+  if (code === "rate_limited") {
+    const retryMs = Number(res && res.retryAfterMs) > 0 ? Number(res.retryAfterMs) : 60000;
+    if (retryMs < 60000) {
+      showToast(`Espere ${Math.ceil(retryMs / 1000)} segundos antes de reintentar.`, "error");
+    } else {
+      showToast(`Demasiados envíos de reserva. Vuelva a intentarlo en ${Math.ceil(retryMs / 60000)} min.`, "error");
+    }
+    return;
+  }
+  if (code === "validation_error") {
+    const extra = Array.isArray(details) && details[0] && details[0].message
+      ? " " + details[0].message
+      : "";
+    showToast("Datos de reserva inválidos. Revise los campos marcados." + extra, "error");
+    return;
+  }
+  if (code === "min_notice" || code === "horizon") {
+    showToast(message, "error");
+    return;
+  }
+  showToast(message, "error");
+}
 
 async function submitStaticBooking() {
   if (cart.isSubmitting) return;
@@ -9167,13 +9644,16 @@ async function submitStaticBooking() {
 
   // (10) Generación del voucher (interna, sin cambios de criterio).
   cart.createdBooking = null;
+  // Declarado fuera del bloque try para que el catch también pueda
+  // anunciar el código cuando solo falló la pintura del voucher.
+  let bookingCode = "";
 
-  setTimeout(() => {
       try {
         cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
 
-        // Código único criptográfico (ARK-XXXXXXXX)
-        const bookingCode = generateBookingCode();
+        // Código provisorio (ARK-XXXXXXXX): solo lo consume el modo local.
+        // Con la API activa el código definitivo lo genera el servidor.
+        bookingCode = generateBookingCode();
 
         const extrasList = [];
         if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
@@ -9189,6 +9669,66 @@ async function submitStaticBooking() {
         const service = cart.selectedService;
         const setupDisplay = service ? service.setup_display : "2h antes";
         const teardownDisplay = service ? service.teardown_display : "1h después";
+
+        const record = {
+          code: bookingCode,
+          createdAt: new Date().toISOString(),
+          status: "pendiente", // Inicia siempre como Pendiente de Aprobación
+          clientName: cart.clientName,
+          clientPhone: cart.clientPhone,
+          clientEmail: cart.clientEmail,
+          eventType: cart.eventType,
+          serviceId: service.id,
+          serviceName: service.name,
+          setupDisplay: setupDisplay,
+          teardownDisplay: teardownDisplay,
+          selectedDate: cart.selectedDate,
+          selectedTime: cart.selectedTime,
+          voucherImage: cart.voucherImage,
+          province: cart.province,
+          canton: cart.canton,
+          address: cart.address,
+          extras: {
+            extraHoursCount: cart.extraHoursCount,
+            djHoursCount: cart.djHoursCount,
+            subwoofersCount: cart.subwoofersCount,
+            extraHoursTotal: cart.extraHoursTotal,
+            djTotal: cart.djTotal,
+            subwoofersTotal: cart.subwoofersTotal
+          },
+          subtotal: cart.subtotal,
+          travelSurcharge: cart.travelSurcharge,
+          granTotal: cart.granTotal,
+          deposit50Amount: cart.deposit50Amount,
+          remainingBalance: cart.remainingBalance,
+          sinpeRef: cart.sinpeRef
+        };
+
+        // Creación en la fuente de verdad: código, montos, cupo e idempotencia
+        // se resuelven en el servidor (POST /api/bookings). El servidor ya
+        // valida cupo/horario dentro de la transacción, así que no hace falta
+        // revalidar localmente después de construir el registro.
+        if (btn) {
+          btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Guardando…';
+        }
+        const saved = await BookingStore.add(record, idempotencyKeyFor());
+        if (!saved.ok) {
+          handleBookingCreateFailure(saved);
+          return;
+        }
+
+        const created = saved.booking;
+        bookingCode = created.code || bookingCode;
+
+        if (saved.source === "remote") {
+          // Lo que se imprime en el voucher es lo que calculó la base de datos.
+          if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
+          if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
+          if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
+          if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
+          if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
+        }
+        cart.createdBooking = created;
 
         const rawMsg =
           `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
@@ -9226,52 +9766,6 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
         const encodedMsg = encodeURIComponent(rawMsg);
         const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
 
-        // Registro persistente en almacén local
-        const record = {
-          code: bookingCode,
-          createdAt: new Date().toISOString(),
-          status: "pendiente", // Inicia siempre como Pendiente de Aprobación
-          clientName: cart.clientName,
-          clientPhone: cart.clientPhone,
-          clientEmail: cart.clientEmail,
-          eventType: cart.eventType,
-          serviceId: service.id,
-          serviceName: service.name,
-          setupDisplay: setupDisplay,
-          teardownDisplay: teardownDisplay,
-          selectedDate: cart.selectedDate,
-          selectedTime: cart.selectedTime,
-          voucherImage: cart.voucherImage,
-          province: cart.province,
-          canton: cart.canton,
-          address: cart.address,
-          extras: {
-            extraHoursCount: cart.extraHoursCount,
-            djHoursCount: cart.djHoursCount,
-            subwoofersCount: cart.subwoofersCount,
-            extraHoursTotal: cart.extraHoursTotal,
-            djTotal: cart.djTotal,
-            subwoofersTotal: cart.subwoofersTotal
-          },
-          subtotal: cart.subtotal,
-          travelSurcharge: cart.travelSurcharge,
-          granTotal: cart.granTotal,
-          deposit50Amount: cart.deposit50Amount,
-          remainingBalance: cart.remainingBalance,
-          sinpeRef: cart.sinpeRef
-        };
-
-        // Segunda barrera de concurrencia: el turno pudo haberse tomado
-        // mientras se construía el voucher (delay de 200ms).
-        const lateCheck = validateSlotAvailability(record.selectedDate, record.selectedTime);
-        if (!lateCheck.ok) {
-          showSlotConflictAlert(lateCheck.message);
-          return;
-        }
-
-        BookingStore.add(record);
-        cart.createdBooking = record;
-
         // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
         document.getElementById("confirm-booking-code").textContent = bookingCode;
         const badgeEl = document.getElementById("confirm-booking-badge");
@@ -9298,15 +9792,23 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
         if (waBtn) waBtn.href = whatsappUrl;
 
         cart.clearStoredState();
+        // Cadena de idempotencia consumida: solo ahora se libera, para que un
+        // reintento posterior (si el servidor nunca confirmó) reuse la clave.
+        clearIdempotencyKey();
 
         goToStep(4);
-        showToast("¡Voucher y enlace de WhatsApp generados con éxito!", "success");
+        showToast(`Reserva registrada con el código ${bookingCode}.`, "success");
+        // Fire-and-forget: refresca el cupo del día elegido y agenda la
+        // revalidación de las vistas abiertas.
+        AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
+        CloudSync.notify("bookings");
       } catch (err) {
         console.error("Booking submission failed:", err);
         if (cart.createdBooking) {
           // La reserva ya quedó registrada: solo falló la pintura del voucher.
           try { goToStep(4); } catch (err2) { /* noop */ }
-          showToast("Reserva registrada correctamente.", "success");
+          clearIdempotencyKey();
+          showToast(`Reserva registrada con el código ${cart.createdBooking.code || bookingCode}.`, "success");
         } else {
           showToast("No se pudo generar la reserva. Revise los datos e intente nuevamente.", "error");
         }
@@ -9314,7 +9816,6 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
         // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
         releaseLock();
       }
-    }, 200);
 }
 
 function finalizeVoucher() {
