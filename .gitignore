@@ -6,3 +6,19 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Dependencias
+node_modules/
+
+# Entornos — NUNCA committear secretos
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Vercel
+.vercel
+
+# Salida de herramientas
+coverage/
+*.tsbuildinfo
