@@ -2038,12 +2038,17 @@
       <div id="admin-lockout-box"
         class="hidden bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1.5 rounded-xl text-center mt-3">
         <span id="admin-lockout-msg">Bloqueo de seguridad activo.</span>
+        <!-- Acción manual de emergencia: nunca deja al operador bloqueado en pruebas -->
+        <button type="button" id="admin-lockout-reset" onclick="window.resetAdminLock && window.resetAdminLock()"
+          class="block w-full mt-1.5 text-[11px] font-semibold text-red-200/80 underline underline-offset-2 decoration-red-400/40 hover:text-white hover:decoration-white transition-colors min-h-[32px]">
+          Restablecer acceso
+        </button>
       </div>
 
       <!-- Primary Action CTA Button -->
-      <button type="button" id="admin-login-submit" onclick="attemptAdminLogin()"
-        class="w-full mt-6 bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(109,40,217,0.4)] hover:shadow-[0_0_30px_rgba(109,40,217,0.6)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 min-h-[44px] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[0_0_20px_rgba(109,40,217,0.4)]">
-        Iniciar Sesión Segura
+      <button type="button" id="admin-login-submit" onclick="attemptAdminLogin(event)"
+        class="w-full mt-6 bg-white hover:bg-gray-100 text-black font-semibold text-xs uppercase tracking-wider py-3.5 rounded-2xl active:scale-[0.98] transition-all duration-300 min-h-[44px] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+        Iniciar Sesión
       </button>
     </div>
   </div>

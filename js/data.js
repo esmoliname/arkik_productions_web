@@ -410,11 +410,18 @@ const PROVINCES_AND_CANTONES = {
   "Limón": ["Central (Limón)", "Pococí (Guápiles)", "Talamanca (Puerto Viejo/Cahuita)", "Siquirres", "Matina"]
 };
 
-// ---- Security & Administration Configuration (v4) ----
-// Remote-first authentication: the PIN never leaves the browser unverified and
-// is never compared against a client-side digest. SecurityModule.verifyPin()
-// posts {role, pin} to POST /api/admin/login and the server decides. This file
-// therefore carries only presentation data (labels, timeouts, lockout policy).
+// ---- Security & Administration Configuration (v5) ----
+// Two-tier authentication (see SecurityModule in js/app.js):
+//   Level 1 — while the API answers, POST /api/admin/login is the source of
+//             truth: scrypt on the server, HttpOnly session cookie, server-side
+//             attempt counter. The browser obeys that verdict and never
+//             overrides it.
+//   Level 2 — only when the API is disabled or unreachable (static hosting,
+//             plain HTTP, offline, no /api route) the browser falls back to a
+//             synchronous normalized plain-string check. WebCrypto is NEVER a
+//             gate: `crypto.subtle` is undefined in insecure contexts.
+// This file therefore carries only presentation data (labels, timeouts,
+// lockout policy) — no PIN and no PIN digest.
 
 const ADMIN_CONFIG = {
   roles: {

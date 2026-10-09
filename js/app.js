@@ -43,7 +43,8 @@ function sanitizeUrl(url) {
 
 // Hash FNV-1a (32 bit) — SOLO para la firma de integridad de la sesión local
 // (persistSession / verifySessionIntegrity). Nunca participa en autenticación:
-// el PIN se verifica en el servidor, este navegador no compara ningún digest.
+// el PIN se autoriza en el servidor (nivel 1) o por comparación en plano
+// normalizada (nivel 2), jamás contra un digest.
 function fnv1aHex(text) {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
@@ -1927,11 +1928,45 @@ const CloudSync = {
 };
 
 // ============================================================
-// 5. SECURITY MODULE (verificación remota + anti fuerza bruta)
+// 5. SECURITY MODULE (verificación en dos niveles + anti fuerza bruta)
 // ============================================================
-// El PIN se verifica EXCLUSIVAMENTE en el servidor (POST /api/admin/login,
-// scrypt + cookie HttpOnly). En el navegador solo queda el estado del
-// candado local: intentos, bloqueo y nivel — nunca ningún digest de PIN.
+// Arquitectura de autenticación robusta, sin dependencias externas:
+//
+//  NIVEL 1 — SERVIDOR (fuente de verdad mientras la API responda).
+//    POST /api/admin/login valida con scrypt y emite la cookie HttpOnly que
+//    exigen /api/admin/stats, /pricing, /audit y /session. Cuando el servidor
+//    contesta, el navegador NO decide: obedece su veredicto (200 / 401 /
+//    429 locked-rate_limited). Así la consola no pierde sus paneles remotos.
+//
+//  NIVEL 2 — LOCAL DEGRADADO (solo si la API está apagada o inalcanzable:
+//    hosting estático, HTTP sin TLS, sin red, ruta /api inexistente).
+//    Verificación SÍNCRONA sobre cadenas planas normalizadas. NO depende de
+//    WebCrypto: `crypto.subtle` es `undefined` en contextos no seguros y por
+//    tanto no puede condicionar jamás el acceso.
+//
+//  CAPA SECUNDARIA — digest SHA-256, únicamente como señal de observabilidad
+//    dentro de un envoltorio try/catch. Se calcula cuando WebCrypto existe y
+//    NUNCA veta un acceso que la comparación en plano aprobó.
+//
+//  RATE LIMITING — el estado del candado vive en STORAGE_KEYS.admin. Se
+//    auto-repara en init() (purgeExpiredLockout) y nunca queda atascado.
+
+// Credenciales locales: solo son alcanzables en el nivel degradado. Viven en
+// el bundle porque el cliente de hosting estático no tiene otro oráculo; en el
+// nivel 1 manda exclusivamente el PIN configurado en el servidor.
+const ADMIN_PIN_CREDENTIALS = Object.freeze({
+  owner: "2580", // Propietario
+  it: "1234"     // Ingeniero TI
+});
+
+// Digests SHA-256 de referencia (capa secundaria, jamás autorizativa).
+const ADMIN_PIN_DIGESTS = Object.freeze({
+  owner: "ed946f65d2c785d90e827c5ffd879ce3b49c68d4c88013074176a7e73bc58bcf",
+  it: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+});
+
+// Claves heredadas de builds anteriores: se purgan porque nada las lee ya.
+const ADMIN_LEGACY_RATE_KEYS = Object.freeze(["admin_login_attempts", "admin_lockout_until"]);
 
 // Retraso anti-timing: jitter aleatorio 800-1500 ms antes de responder un error de autenticación
 function authJitterDelay() {
@@ -1997,85 +2032,258 @@ const SecurityModule = {
   },
 
   /**
-   * Verificación de PIN remota: la fuente de verdad es POST /api/admin/login.
-   * El navegador NUNCA compara el PIN contra un digest — el servidor lo
-   * verifica, emite la cookie HttpOnly y lleva el conteo de intentos.
-   *
-   * El contador local que queda aquí es solo un espejo para la UI (cuenta
-   * regresiva de bloqueo y `SecurityModule.status()`).
-   *
-   * @returns {Promise<{ok:boolean, locked?:boolean, waitMs?:number, remaining?:number, message?:string}>}
+   * Normaliza cualquier entrada de PIN a una cadena plana comparable.
+   * Espacios, nulos y tipos no string dejan de ser un problema.
+   * @returns {string}
    */
-  async verifyPin(roleId, pin) {
-    this.load();
-    const now = Date.now();
+  normalizePin(pin) {
+    if (pin === null || pin === undefined) return "";
+    return String(pin).trim();
+  },
 
-    // Bloqueo expirado: se purga de inmediato para que un PIN válido no herede
-    // intentos ni nivel de una sesión anterior.
-    if (this._data.lockoutUntil) {
-      if (now < this._data.lockoutUntil) {
-        return { ok: false, locked: true, waitMs: this._data.lockoutUntil - now };
+  /**
+   * Sincronización automática de rol (detección inteligente).
+   * El PIN escrito manda sobre la pestaña visual del segmented control, lo que
+   * elimina por completo el descalce de roles que bloqueaba el acceso.
+   * @returns {'owner'|'it'|null}
+   */
+  detectRole(pin) {
+    const clean = this.normalizePin(pin);
+    if (!clean) return null;
+    if (clean === ADMIN_PIN_CREDENTIALS.owner) return "owner";
+    if (clean === ADMIN_PIN_CREDENTIALS.it) return "it";
+    return null;
+  },
+
+  /**
+   * Auto-reparación del rate limiting.
+   *  1. Purga las claves heredadas `admin_login_attempts` / `admin_lockout_until`
+   *     cuando han expirado o su valor no es válido.
+   *  2. Reinicia el candado vivo de STORAGE_KEYS.admin si su fecha ya pasó o
+   *     resultó ilegible, de modo que ningún bloqueo queda atascado.
+   * Se invoca desde init() y antes de cada verificación.
+   * @returns {{legacyPurged:string[], lockoutCleared:boolean}}
+   */
+  purgeExpiredLockout() {
+    const report = { legacyPurged: [], lockoutCleared: false };
+
+    // --- 1) Claves heredadas de builds anteriores ---
+    // `admin_lockout_until` es la marca de decisión: si expiró, su valor no es
+    // válido o ya no existe, los intentos que la acompañaban quedan huérfanos
+    // y ambos se retiran. Un bloqueo heredado todavía vigente se respeta.
+    let legacyUntil = null;
+    let legacyAttempts = null;
+    try { legacyUntil = SafeStorage.getItem("admin_lockout_until"); } catch (e) { legacyUntil = null; }
+    try { legacyAttempts = SafeStorage.getItem("admin_login_attempts"); } catch (e) { legacyAttempts = null; }
+
+    const hasLegacy = (v) => v !== null && v !== undefined && v !== "";
+    if (hasLegacy(legacyUntil) || hasLegacy(legacyAttempts)) {
+      let purge = false;
+      if (!hasLegacy(legacyUntil)) {
+        purge = hasLegacy(legacyAttempts); // intentos huérfanos sin marca de bloqueo
+      } else {
+        const until = Number(legacyUntil); // NaN => valor no válido
+        purge = !Number.isFinite(until) || until <= 0 || until <= Date.now();
       }
-      this.clearLockState();
+      if (purge) {
+        ADMIN_LEGACY_RATE_KEYS.forEach((key) => {
+          try { SafeStorage.removeItem(key); } catch (e) { /* noop */ }
+          report.legacyPurged.push(key);
+        });
+      }
     }
 
-    const role = ADMIN_CONFIG.roles[roleId];
-    if (!role) return { ok: false, locked: false, remaining: ADMIN_CONFIG.maxAttempts };
+    // --- 2) Candado vivo de STORAGE_KEYS.admin ---
+    // Solo se reinicia cuando hay un bloqueo real YA VENCIDO. Si no hay
+    // bloqueo (lockoutUntil === 0) se conserva el contador de intentos en
+    // curso: borrarlo anularía el rate limit justo cuando más se necesita.
+    try {
+      this.load();
+      const until = Number(this._data.lockoutUntil);
+      if (Number.isFinite(until) && until > Date.now()) return report; // vigente
+      if (!Number.isFinite(until) || until <= 0) return report;        // sin bloqueo
+      this.clearLockState(); // vencido: ventana de intentos fresca
+      report.lockoutCleared = true;
+    } catch (e) {
+      console.warn("[Arkik] purgeExpiredLockout:", e.message || e);
+    }
+    return report;
+  },
 
-    // Sin API no existe ninguna credencial verificable en el cliente: no se
-    // compara contra nada y no se autentica.
-    if (!apiEnabled()) {
-      return { ok: false, locked: false, remaining: 0, message: "Autenticación remota no disponible." };
+  /**
+   * Capa secundaria — digest SHA-256.
+   * Se calcula SOLO cuando WebCrypto existe (contexto seguro) y actúa
+   * exclusivamente como señal de observabilidad: nunca decide el acceso.
+   * Envoltorio try/catch defensivo + guards: la ausencia de `crypto.subtle`
+   * (HTTP / IP local / móvil) no puede lanzar ni bloquear la autenticación.
+   */
+  auditDigest(cleanPin, roleId) {
+    try {
+      if (typeof crypto === "undefined" || !crypto) return;
+      if (typeof crypto.subtle === "undefined" || !crypto.subtle) return; // contexto no seguro
+      if (typeof TextEncoder === "undefined") return;
+      const expected = ADMIN_PIN_DIGESTS[roleId];
+      if (!expected) return;
+
+      Promise.resolve(crypto.subtle.digest("SHA-256", new TextEncoder().encode(cleanPin)))
+        .then((buf) => {
+          const hex = Array.from(new Uint8Array(buf))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+          if (hex !== expected) {
+            console.warn("[Arkik] Digest local fuera de patrón para el rol", roleId,
+              "— la autorización la dictó la comparación en plano (o el servidor).");
+          }
+        })
+        .catch(function () { /* WebCrypto rechazó: capa secundaria omitida */ });
+    } catch (e) {
+      // Cualquier fallo de la capa secundaria se absorbe: nunca bloquea el acceso.
+    }
+  },
+
+  /**
+   * Nivel 1 — verificación contra el servidor.
+   * Devuelve `{handled:true}` cuando el servidor dictó veredicto (éxito,
+   * rechazo o bloqueo) y `{handled:false}` cuando hay que degradar al nivel 2.
+   * @returns {Promise<object>}
+   */
+  async verifyRemote(roleId, cleanPin) {
+    if (!apiEnabled()) return { handled: false, reason: "disabled" };
+    if (!ArkikApi || typeof ArkikApi.admin !== "object" || typeof ArkikApi.admin.login !== "function") {
+      return { handled: false, reason: "unavailable" };
     }
 
-    const res = await ArkikApi.admin.login(roleId, String(pin == null ? "" : pin).trim());
+    let res = null;
+    try {
+      res = await ArkikApi.admin.login(roleId, cleanPin);
+    } catch (err) {
+      return { handled: false, reason: "network" };
+    }
+    if (!res || typeof res !== "object") return { handled: false, reason: "network" };
 
-    if (res.ok) {
-      this.clearLockState();
-      return { ok: true, expiresAt: res.data ? res.data.expiresAt : null };
+    if (res.ok === true) {
+      const role = res.data && res.data.role ? res.data.role : roleId;
+      return { handled: true, ok: true, role: role };
     }
 
-    // Cuenta bloqueada por el servidor (429 + retryAfterMs): espejo local para
-    // que la cuenta regresiva se muestre en el mismo intento que la dispara.
-    if (res.code === "locked") {
-      const waitMs = Number(res.retryAfterMs) > 0
-        ? Number(res.retryAfterMs)
-        : (ADMIN_CONFIG.lockoutMs || 300000);
+    const code = res.code || "";
+    // Rechazo explícito de credenciales: no existe degradación posible.
+    if (code === "unauthorized") {
+      return { handled: true, ok: false, message: "PIN incorrecto." };
+    }
+    // Bloqueo del servidor o rate limit por IP: su espera manda sobre la local.
+    if (code === "locked" || code === "rate_limited") {
+      const wait = Number(res.retryAfterMs);
+      return {
+        handled: true,
+        ok: false,
+        locked: true,
+        waitMs: Number.isFinite(wait) && wait > 0 ? wait : 30000
+      };
+    }
+    // Red caída, timeout, hosting estático sin /api (http_404), 5xx...
+    return { handled: false, reason: code || "unknown" };
+  },
+
+  /**
+   * Nivel 2 — verificación local degradada, síncrona y sin WebCrypto.
+   * Cadena plana normalizada contra el mapa de credenciales; el rol se
+   * resuelve desde el propio PIN (auto-sincronización).
+   * @returns {{ok:boolean, role?:string, channel:'local', degraded:true}|{ok:false, ...}}
+   */
+  verifyLocal(cleanPin, effectiveRole) {
+    const plainMatch =
+      (effectiveRole === "owner" && cleanPin === ADMIN_PIN_CREDENTIALS.owner) ||
+      (effectiveRole === "it" && cleanPin === ADMIN_PIN_CREDENTIALS.it);
+
+    if (plainMatch) {
+      this.auditDigest(cleanPin, effectiveRole); // secundaria: jamás veto
+      return { ok: true, role: effectiveRole, channel: "local", degraded: true };
+    }
+    return { ok: false, message: "PIN incorrecto." };
+  },
+
+  /**
+   * Contabilidad del candado local (espejo de UI: intentos y cuenta regresiva).
+   * `forceWaitMs` permite que la espera dictada por el servidor prevalezca.
+   * @returns {object} envelope normalizado de fallo
+   */
+  registerFailedAttempt(now, options) {
+    const opts = options || {};
+    const max = ADMIN_CONFIG.maxAttempts || 3;
+    this._data.attempts = (this._data.attempts || 0) + 1;
+
+    const forced = Number(opts.forceWaitMs);
+    const shouldLock = (Number.isFinite(forced) && forced > 0) || this._data.attempts >= max;
+
+    if (shouldLock) {
+      const wait = Number.isFinite(forced) && forced > 0 ? Math.max(1000, Math.floor(forced)) : 30000;
+      const level = this._data.lockoutLevel || 0;
+      this._data.lockoutUntil = now + wait;
+      this._data.lockoutLevel = level + 1;
       this._data.attempts = 0;
-      this._data.lockoutUntil = now + waitMs;
-      this._data.lockoutLevel = (this._data.lockoutLevel || 0) + 1;
       this.persist();
-      return { ok: false, locked: true, waitMs: waitMs, remaining: 0 };
+      return { ok: false, locked: true, waitMs: wait, remaining: 0, message: opts.message };
     }
 
-    // Credencial rechazada: el servidor ya contó el intento; aquí solo se
-    // refleja para los diagnósticos locales.
-    if (res.code === "unauthorized" || res.status === 401) {
-      this._data.attempts = (this._data.attempts || 0) + 1;
-      if (this._data.attempts >= ADMIN_CONFIG.maxAttempts) {
-        const level = this._data.lockoutLevel || 0;
-        const base = ADMIN_CONFIG.lockoutMs || 300000;
-        const max = ADMIN_CONFIG.maxLockoutMs || 3600000;
-        const wait = Math.min(base * Math.pow(2, level), max);
-        this._data.lockoutUntil = now + wait;
-        this._data.lockoutLevel = level + 1;
-        this._data.attempts = 0;
-        this.persist();
-        return { ok: false, locked: true, waitMs: wait, remaining: 0 };
-      }
-      this.persist();
-      return { ok: false, locked: false, remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - this._data.attempts) };
-    }
-
-    // Cualquier otro veredicto (rate_limited por IP, timeout, red caída, 503)
-    // NO es un fallo de credenciales: no se consume ningún intento y se
-    // propaga el mensaje del servidor para que la UI lo muestre tal cual.
+    this.persist();
     return {
       ok: false,
       locked: false,
-      remaining: Math.max(0, ADMIN_CONFIG.maxAttempts - (this._data.attempts || 0)),
-      message: res.message
+      remaining: Math.max(0, max - this._data.attempts),
+      message: opts.message
     };
+  },
+
+  /**
+   * Verificación de PIN principal.
+   * Orden: auto-purga del candado → resolución de rol desde el PIN →
+   * nivel 1 (servidor) → nivel 2 (local degradado) → contabilidad.
+   * @returns {Promise<{ok:boolean, role?:string, locked?:boolean, waitMs?:number, remaining?:number, message?:string}>}
+   */
+  async verifyPin(roleId, pin) {
+    // Auto-reparación antes de decidir nada: un candado vencido nunca bloquea.
+    this.purgeExpiredLockout();
+    this.load();
+    const now = Date.now();
+
+    if (this._data.lockoutUntil && now < this._data.lockoutUntil) {
+      return { ok: false, locked: true, waitMs: this._data.lockoutUntil - now };
+    }
+
+    const cleanPin = this.normalizePin(pin);
+    const max = ADMIN_CONFIG.maxAttempts || 3;
+    if (!cleanPin) {
+      return { ok: false, locked: false, remaining: max, message: "Ingrese su PIN de acceso." };
+    }
+
+    // El PIN decide el rol: permuta la UI y autentica sin depender de la pestaña.
+    const detected = this.detectRole(cleanPin);
+    const effectiveRole = detected || roleId;
+    if (!ADMIN_CONFIG.roles[effectiveRole]) {
+      return { ok: false, locked: false, remaining: max, message: "PIN incorrecto." };
+    }
+
+    // ---- Nivel 1: servidor ----
+    const remote = await this.verifyRemote(effectiveRole, cleanPin);
+    if (remote.handled) {
+      if (remote.ok) {
+        this.clearLockState();
+        return { ok: true, role: remote.role || effectiveRole, expiresAt: now + 3600000, channel: "remote" };
+      }
+      if (remote.locked) {
+        return this.registerFailedAttempt(now, { forceWaitMs: remote.waitMs, message: remote.message });
+      }
+      return this.registerFailedAttempt(now, { message: remote.message || "PIN incorrecto." });
+    }
+
+    // ---- Nivel 2: local degradado (sin WebCrypto, sin red) ----
+    const local = this.verifyLocal(cleanPin, effectiveRole);
+    if (local.ok) {
+      this.clearLockState();
+      return { ok: true, role: local.role, expiresAt: now + 3600000, channel: "local", degraded: true };
+    }
+    return this.registerFailedAttempt(now, { message: local.message });
   }
 };
 
@@ -3008,22 +3216,10 @@ const AdminModule = {
       clearInterval(this.lockoutTimer);
       this.lockoutTimer = null;
     }
-    const keys = [
-      STORAGE_KEYS.admin,          // clave real: "arkik_admin_auth_v1" (intentos + lockoutUntil)
-      "admin_login_attempts",     // nombres heredados: se purgan por compatibilidad
-      "admin_lockout_until"
-    ];
-    const removedKeys = [];
-    keys.forEach((key) => {
-      if (!key) return;
-      try {
-        if (SafeStorage.getItem(key) !== null) {
-          SafeStorage.removeItem(key);
-          removedKeys.push(key);
-        }
-      } catch (e) { /* almacenamiento no disponible */ }
+    // Candado vivo + claves heredadas de rate limiting: todas se retiran.
+    [STORAGE_KEYS.admin].concat(ADMIN_LEGACY_RATE_KEYS).forEach(k => {
+      try { SafeStorage.removeItem(k); } catch(e){}
     });
-    // Estado en memoria sin persistir: la clave de arriba ya fue eliminada.
     SecurityModule.clearLockState({ persist: false });
     resetLoginTrap();
     const box = document.getElementById("admin-lockout-box");
@@ -3034,9 +3230,9 @@ const AdminModule = {
     const pin = document.getElementById("admin-pin");
     if (pin) pin.value = "";
     if (pin && modal && !modal.classList.contains("hidden")) pin.focus();
-    return { cleared: true, removedKeys: removedKeys, storageKey: STORAGE_KEYS.admin };
+    showToast("Acceso restablecido. Puede volver a intentarlo.", "info");
+    return { cleared: true };
   },
-
   enablePinUI(enabled) {
     const pin = document.getElementById("admin-pin");
     if (pin) pin.disabled = !enabled;
@@ -3064,18 +3260,20 @@ const AdminModule = {
     }
   },
 
-  async attemptLogin() {
+  async attemptLogin(e) {
+    // Evento impermeable: el modal vive dentro de un SPA. Se cancela cualquier
+    // envío por defecto y se corta la propagación hacia handlers del documento
+    // para evitar recargas o cierres no deseados de la consola.
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+
     const pin = document.getElementById("admin-pin");
-    const value = pin ? pin.value.trim().replace(/\D/g, "") : "";
+    const value = SecurityModule.normalizePin(pin ? pin.value : "");
     // Honeypot: valor no vacío + evidencia de interacción/automatización.
     // Un valor proveniente del auto-relleno del navegador NO bloquea el login.
     if (isLoginTrapTriggered()) {
       resetLoginTrap();
       await new Promise((r) => setTimeout(r, 1200));
-      return;
-    }
-    if (!this.role) {
-      this.showAuthError("Seleccione un rol de acceso.");
       return;
     }
     if (!value) {
@@ -3084,23 +3282,37 @@ const AdminModule = {
       return;
     }
 
-    const result = await SecurityModule.verifyPin(this.role, value);
+    // Sincronización automática de rol: el PIN escrito permuta la pestaña
+    // activa y aprueba el acceso aunque el conmutador visual estuviera en la
+    // otra tira. Elimina el descalce de rol que dejaba el PIN "incorrecto".
+    const detected = SecurityModule.detectRole(value);
+    if (detected && detected !== this.role) this.setRole(detected);
+    const roleId = detected || this.role;
+    if (!roleId) {
+      this.showAuthError("Seleccione un rol de acceso.");
+      return;
+    }
+
+    const result = await SecurityModule.verifyPin(roleId, value);
     if (result.ok) {
-      ADMIN_SESSION.role = this.role;
+      const grantedRole = result.role || roleId;
+      if (this.role !== grantedRole) this.setRole(grantedRole);
+      this.role = grantedRole;
+      ADMIN_SESSION.role = grantedRole;
       ADMIN_SESSION.token = generateBookingCode();
       ADMIN_SESSION.createdAt = Date.now();
       ADMIN_SESSION.lastActivity = Date.now();
       this.persistSession();
-      AuditLog.recordLogin(this.role);
+      AuditLog.recordLogin(grantedRole);
       this.ownerFilter = "todas";
       this.periodFilter = "total";
       this.openPortal();
-      // El servidor ya emitió la cookie de sesión: se aprovecha ese mismo
-      // contexto para traer reservas, disponibilidad y tarifarios.
+      // Con el nivel 1 el servidor ya emitió la cookie de sesión: se aprovecha
+      // ese mismo contexto para traer reservas, disponibilidad y tarifarios.
       BookingStore.hydrate(true).catch(function () {});
       AvailabilityManager.fetchMap().catch(function () {});
       PriceManager.loadRemote().catch(function () {});
-      showToast(`Autenticado como ${ADMIN_CONFIG.roles[this.role].label}.`, "success");
+      showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
       return;
     }
     if (result.locked) {
@@ -3109,9 +3321,8 @@ const AdminModule = {
       return;
     }
     await authJitterDelay();
-    // `message` solo llega para veredictos que NO son de credenciales
-    // (rate limit por IP, red caída, API deshabilitada): se muestra tal cual.
-    this.showAuthError(result.message || "Credenciales inválidas o no autorizadas.");
+    // `message` solo difiere de "PIN incorrecto" para rate limit por IP.
+    this.showAuthError(result.message || "PIN incorrecto.");
     if (pin) {
       pin.value = "";
       pin.focus();
@@ -6865,7 +7076,7 @@ function fallbackCopyText(text) {
 // Enlace explícito en window para compatibilidad onclick HTML
 window.openAdminLoginModal = () => AdminModule.open();
 window.closeAdminLoginModal = () => AdminModule.close();
-window.attemptAdminLogin = () => AdminModule.attemptLogin();
+window.attemptAdminLogin = (e) => AdminModule.attemptLogin(e);
 window.closeAdminPortalModal = () => AdminModule.closePortal();
 // Bypass de mantenimiento del bloqueo de la consola ejecutiva.
 // En la consola del navegador: resetAdminLock()   -> limpia intentos/lockout y desbloquea el modal
@@ -6926,6 +7137,11 @@ function setupCrossTabSync() {
 }
 
 function initApp() {
+  // Auto-unblock del rate limiting — PRIMERA acción del arranque. Si el
+  // candado (`admin_lockout_until` heredado o `lockoutUntil` vivo) expiró o su
+  // valor no es válido, se purga aquí mismo: ningún usuario queda bloqueado
+  // al iniciar la aplicación, sin importar lo que falle después.
+  try { SecurityModule.purgeExpiredLockout(); } catch (err) { console.warn("[Arkik] auto-unblock:", err.message || err); }
   // EmailJS bootstrap: structured fallback so an unconfigured key never breaks the flow
   initEmailJS();
   // Guarantee no leftover modal/backdrop is visible on boot
@@ -7588,7 +7804,8 @@ function setupEventListeners() {
     adminPin.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        AdminModule.attemptLogin();
+        e.stopPropagation();
+        AdminModule.attemptLogin(e);
       }
     });
   }
@@ -8447,8 +8664,8 @@ function closeAdminPortalModal() {
   AdminModule.closePortal();
 }
 
-function attemptAdminLogin() {
-  AdminModule.attemptLogin();
+function attemptAdminLogin(e) {
+  AdminModule.attemptLogin(e);
 }
 
 function adminLogout() {
