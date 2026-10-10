@@ -52,7 +52,7 @@ const API_CONFIG = {
 // Demo catalog: when true, StorageEngine._healSeedData() re-plants the sample
 // bookings/availability/price seeds into an empty or corrupted localStorage.
 // Production keeps this false: the server owns the data.
-const SEED_MODE = false;
+const SEED_MODE = true;
 
 // ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
 const CLIENT_GUARD_CONFIG = {

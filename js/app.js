@@ -76,9 +76,11 @@ const MemoryStorage = (function () {
       store.set(String(key), String(value));
     },
     removeItem(key) {
+    if (typeof MemoryCache !== 'undefined') MemoryCache.delete(key);
       store.delete(String(key));
     },
     clear() {
+    if (typeof MemoryCache !== 'undefined') MemoryCache.clear();
       store.clear();
     },
     key(index) {
@@ -258,18 +260,27 @@ const PerfGuard = {
   }
 };
 
+const MemoryCache = new Map();
+
 function safeParse(key, fallback) {
+  if (MemoryCache.has(key)) {
+    const cached = MemoryCache.get(key);
+    return cached === undefined || cached === null ? fallback : JSON.parse(JSON.stringify(cached));
+  }
   try {
     const raw = SafeStorage.getItem(key);
     if (!raw) return fallback;
     const data = JSON.parse(raw);
-    return data === undefined || data === null ? fallback : data;
+    const res = data === undefined || data === null ? fallback : data;
+    MemoryCache.set(key, JSON.parse(JSON.stringify(res)));
+    return res;
   } catch (err) {
     return fallback;
   }
 }
 
 function safeSet(key, value) {
+  MemoryCache.set(key, JSON.parse(JSON.stringify(value)));
   try {
     SafeStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
@@ -7174,19 +7185,28 @@ function initApp() {
 }
 
 // ============================================================
-// MOUSE GLOW ORB — seguidor suave del cursor (LERP 0.08 a 60 FPS)
+// MOUSE GLOW ORB â€” seguidor suave del cursor (LERP 0.08 a 60 FPS)
+// Optimizado: se desactiva en dispositivos tÃ¡ctiles, se pausa cuando
+// la pestaÃ±a estÃ¡ oculta (Page Visibility API) y cuando cualquier
+// modal estÃ¡ abierto para liberar 100% GPU/CPU en mÃ³vil.
 // ============================================================
 (function initMouseGlowOrb() {
   const orb = document.getElementById("mouseGlowOrb");
   if (!orb) return;
 
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (window.matchMedia("(hover: none)").matches) {
+    orb.style.display = "none";
+    return;
+  }
 
   let targetX = window.innerWidth / 2;
   let targetY = window.innerHeight / 2;
   let orbX = targetX;
   let orbY = targetY;
   let shown = false;
+  let rafId = null;
+  let paused = false;
 
   window.addEventListener("mousemove", (e) => {
     targetX = e.clientX;
@@ -7198,15 +7218,36 @@ function initApp() {
   }, { passive: true });
 
   function lerpOrb() {
+    if (paused) { rafId = null; return; }
     orbX += (targetX - orbX) * 0.08;
     orbY += (targetY - orbY) * 0.08;
     orb.style.transform =
       "translate3d(" + orbX + "px, " + orbY + "px, 0) translate(-50%, -50%)";
-    window.requestAnimationFrame(lerpOrb);
+    rafId = window.requestAnimationFrame(lerpOrb);
   }
-  window.requestAnimationFrame(lerpOrb);
-})();
 
+  function startOrb() {
+    if (rafId != null || paused) return;
+    rafId = window.requestAnimationFrame(lerpOrb);
+  }
+
+  function stopOrb() {
+    if (rafId != null) {
+      window.cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
+  function updatePaused() {
+    const hidden = document.hidden;
+    const modalOpen = typeof ModalController !== 'undefined' && ModalController._stack && ModalController._stack.length > 0;
+    paused = hidden || modalOpen;
+    paused ? stopOrb() : startOrb();
+  }
+
+  document.addEventListener("visibilitychange", updatePaused);
+  startOrb();
+})();
 // ============================================================
 // 12. CATALOG & GALLERY RENDERING
 // ============================================================
@@ -9889,6 +9930,8 @@ async function submitStaticBooking() {
 
         const record = {
           code: bookingCode,
+          lockId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : ('lock-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)),
+          lockTimestamp: Date.now(),
           createdAt: new Date().toISOString(),
           status: "pendiente", // Inicia siempre como Pendiente de Aprobación
           clientName: cart.clientName,
@@ -10264,14 +10307,30 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
     return run;
   };
 
-  const debouncedResize = debounce(resizeCanvas, 80);
+  
+  const debouncedResize = debounce(resizeCanvas, 150);
 
   let resizeObserver = null;
   if (window.ResizeObserver) {
     resizeObserver = new ResizeObserver(debouncedResize);
     resizeObserver.observe(container);
   }
+  
+  let intersectionObserver = null;
+  if (window.IntersectionObserver) {
+    intersectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          // Resume animation if needed, or trigger resize
+          debouncedResize();
+        }
+      });
+    }, { threshold: 0 });
+    intersectionObserver.observe(canvas);
+  }
+
   window.addEventListener("resize", debouncedResize, { passive: true });
+
   window.addEventListener("orientationchange", debouncedResize, { passive: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", debouncedResize);
@@ -10284,6 +10343,7 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
     destroy() {
       debouncedResize.clear();
       if (resizeObserver) resizeObserver.disconnect();
+      if (intersectionObserver) intersectionObserver.disconnect();
       window.removeEventListener("resize", debouncedResize);
       window.removeEventListener("orientationchange", debouncedResize);
       if (window.visualViewport) {
@@ -10459,6 +10519,10 @@ function initHeroStringsEffect() {
     });
   }, { rootMargin: "120px" });
   observer.observe(hero);
+  // Pause canvas RAF when tab is hidden (Page Visibility API)
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); } else if (heroInView) { start(); }
+  });
 
   window.addEventListener("scroll", onScroll, { passive: true });
   hero.addEventListener("mousemove", onPointerMove, { passive: true });
