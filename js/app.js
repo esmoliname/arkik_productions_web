@@ -4521,6 +4521,7 @@ const AdminModule = {
 
     modal.classList.remove("hidden");
     modal.classList.add("flex");
+    syncModalAnimationState();
   },
 
   closeMediaModal() {
@@ -4529,6 +4530,7 @@ const AdminModule = {
       modal.classList.add("hidden");
       modal.classList.remove("flex");
     }
+    syncModalAnimationState();
   },
 
   saveMediaItem() {
@@ -7042,12 +7044,31 @@ const AnimationRegistry = {
   }
 };
 
+// Sincronizador autoritativo del estado "hay un overlay abierto?".
+// Deriva la respuesta del DOM (ModalController.isAnyOpen) en lugar de fiarse
+// del contador manual open/close, que es muy fácil de desbalancear: un modal
+// abierto sin su trackModal(true) correspondiente dejaba los bucles RAF del
+// canvas corriendo detrás de una superposición a pantalla completa.
+function syncModalAnimationState() {
+  const anyOpen = typeof ModalController !== "undefined"
+    && typeof ModalController.isAnyOpen === "function"
+    && ModalController.isAnyOpen();
+
+  if (anyOpen && !AnimationRegistry.paused) AnimationRegistry.pauseAll();
+  else if (!anyOpen && AnimationRegistry.paused) AnimationRegistry.resumeAll();
+
+  // Los motores fuera del registro (mouse glow orb) se suscriben a este evento.
+  try {
+    document.dispatchEvent(new CustomEvent("arkik:modal-state", { detail: { open: anyOpen } }));
+  } catch (err) { /* CustomEvent no disponible: el orb degrada a visibilitychange */ }
+}
+
+// Compatibilidad: los call sites legados siguen invocando trackModal(open).
 let modalCounter = 0;
 
 function trackModal(open) {
   modalCounter = Math.max(0, modalCounter + (open ? 1 : -1));
-  if (modalCounter === 1 && !AnimationRegistry.paused) AnimationRegistry.pauseAll();
-  else if (modalCounter === 0 && AnimationRegistry.paused) AnimationRegistry.resumeAll();
+  syncModalAnimationState();
 }
 
 // ---- Helpers Globales de Interfaz & Clipboard ----
@@ -7239,13 +7260,20 @@ function initApp() {
   }
 
   function updatePaused() {
-    const hidden = document.hidden;
-    const modalOpen = typeof ModalController !== 'undefined' && ModalController._stack && ModalController._stack.length > 0;
+    const hidden = !!document.hidden;
+    // ModalController vive más abajo en el archivo: se consulta por nombre en
+    // tiempo de ejecución (nunca en evaluación) para no tocar su TDZ.
+    const modalOpen = typeof ModalController !== "undefined"
+      && typeof ModalController.isAnyOpen === "function"
+      && ModalController.isAnyOpen();
     paused = hidden || modalOpen;
     paused ? stopOrb() : startOrb();
   }
 
   document.addEventListener("visibilitychange", updatePaused);
+  // Cambios de estado de cualquier modal (reserva, login, portal, lightbox...)
+  // disparan syncModalAnimationState(), que emite este evento.
+  document.addEventListener("arkik:modal-state", updatePaused);
   startOrb();
 })();
 // ============================================================
@@ -8622,6 +8650,7 @@ function openExecutiveModal() {
   modal.classList.remove("hidden");
   modal.classList.add("flex");
   document.body.style.overflow = "hidden";
+  syncModalAnimationState();
 }
 
 function closeExecutiveModal() {
@@ -8630,6 +8659,7 @@ function closeExecutiveModal() {
   modal.classList.add("hidden");
   modal.classList.remove("flex");
   document.body.style.overflow = "";
+  syncModalAnimationState();
 }
 
 function openBrandModal() {
@@ -8638,6 +8668,7 @@ function openBrandModal() {
   modal.classList.remove("hidden");
   modal.classList.add("flex");
   document.body.style.overflow = "hidden";
+  syncModalAnimationState();
 }
 
 function closeBrandModal() {
@@ -8646,6 +8677,7 @@ function closeBrandModal() {
   modal.classList.add("hidden");
   modal.classList.remove("flex");
   document.body.style.overflow = "";
+  syncModalAnimationState();
 }
 
 function openPoliciesModal() {
@@ -8654,6 +8686,7 @@ function openPoliciesModal() {
   modal.classList.remove("hidden");
   modal.classList.add("flex");
   document.body.style.overflow = "hidden";
+  syncModalAnimationState();
 }
 
 function closePoliciesModal() {
@@ -8667,6 +8700,7 @@ function closePoliciesModal() {
   if (!bookingModal || !bookingModal.classList.contains("flex")) {
     document.body.style.overflow = "";
   }
+  syncModalAnimationState();
 }
 
 function openProfileLightbox() {
@@ -8675,6 +8709,7 @@ function openProfileLightbox() {
   lightbox.classList.remove("hidden");
   lightbox.classList.add("flex");
   document.body.style.overflow = "hidden";
+  syncModalAnimationState();
 }
 
 function closeProfileLightbox() {
@@ -8683,6 +8718,7 @@ function closeProfileLightbox() {
   lightbox.classList.add("hidden");
   lightbox.classList.remove("flex");
   document.body.style.overflow = "";
+  syncModalAnimationState();
 }
 
 function openAdminLoginModal() {
@@ -8722,12 +8758,24 @@ function adminLogout() {
 const ModalController = {
   _ids: ['booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
 
+  // Inventario completo de overlays: los 8 modales pre-montados más los que
+  // alternan sus propias clases (media admin, executive, brand, políticas,
+  // profile lightbox y el estudio RAG). Si ALGUNO está abierto, las
+  // animaciones de fondo deben estar en pausa.
+  _overlayIds: [
+    'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal',
+    'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal',
+    'execReportPreviewModal', 'adminMediaModal', 'executive-modal', 'brand-modal',
+    'modal-politicas', 'profile-lightbox', 'ragStudioView'
+  ],
+
   open(modalId) {
     const modal = document.getElementById(modalId);
     if (!modal) return;
     modal.classList.remove('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
     modal.classList.add('flex', 'opacity-100', 'pointer-events-auto', 'visible');
     document.body.style.overflow = 'hidden';
+    syncModalAnimationState();
   },
 
   close(modalId) {
@@ -8741,6 +8789,7 @@ const ModalController = {
     if (anyOpen.length === 0) {
       document.body.style.overflow = '';
     }
+    syncModalAnimationState();
   },
 
   closeAll() {
@@ -8750,6 +8799,12 @@ const ModalController = {
   isOpen(modalId) {
     const modal = document.getElementById(modalId);
     return modal ? !modal.classList.contains('hidden') : false;
+  },
+
+  // Fuente única de verdad: ¿hay algún overlay visible ahora mismo?
+  // Usada por syncModalAnimationState() para pausar/reanudar los bucles RAF.
+  isAnyOpen() {
+    return this._overlayIds.some((id) => this.isOpen(id));
   }
 };
 
@@ -9540,6 +9595,9 @@ async function compressImage(file) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
+  // Contexto 2D no disponible (canvas deshabilitado o memoria agotada):
+  // se lanza un error tipado que handleVoucherUpload convierte en toast.
+  if (!ctx) throw new Error("El navegador no permitió procesar la imagen del comprobante.");
   ctx.drawImage(img, 0, 0, width, height);
 
   return canvas.toDataURL("image/jpeg", VOUCHER_JPEG_QUALITY);
@@ -10503,6 +10561,11 @@ function initHeroStringsEffect() {
 
   function start() {
     if (rafId != null || reducedMotion) return;
+    // AnimationRegistry.resumeAll() (cierre de un modal) invoca start() a
+    // ciegas. El gate de visibilidad VIVE aquí: sin él, cerrar un modal con
+    // el hero fuera de pantalla deja un requestAnimationFrame corriendo para
+    // siempre, ya que IntersectionObserver no vuelve a emitir ningún evento.
+    if (!heroInView || document.hidden) return;
     rafId = requestAnimationFrame(tick);
   }
 
@@ -10512,13 +10575,19 @@ function initHeroStringsEffect() {
     rafId = null;
   }
 
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      heroInView = entry.isIntersecting;
-      heroInView ? start() : stop();
-    });
-  }, { rootMargin: "120px" });
-  observer.observe(hero);
+  if (typeof window.IntersectionObserver === "function") {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        heroInView = entry.isIntersecting;
+        heroInView ? start() : stop();
+      });
+    }, { rootMargin: "120px" });
+    observer.observe(hero);
+  } else {
+    // Navegador sin IntersectionObserver: se asume "visible" para que el
+    // arranque no dependa de un observer que jamás emitirá su callback inicial.
+    heroInView = true;
+  }
   // Pause canvas RAF when tab is hidden (Page Visibility API)
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) { stop(); } else if (heroInView) { start(); }
@@ -11613,6 +11682,7 @@ const RAGStudio = {
     this._bind();
     const search = document.getElementById("rag-studio-search");
     if (search) search.focus();
+    syncModalAnimationState();
   },
 
   close() {
@@ -11627,6 +11697,7 @@ const RAGStudio = {
       this._returnFocus.focus();
       this._returnFocus = null;
     }
+    syncModalAnimationState();
   },
 
   _bind() {
