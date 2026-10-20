@@ -12146,4 +12146,53 @@ window.openExecutiveReportPreviewModal = openExecutiveReportPreviewModal;
 window.closeExecutiveReportPreviewModal = closeExecutiveReportPreviewModal;
 window.exportExecutiveReportPDF = exportExecutiveReportPDF;
 
+// ============================================================
+// 3D SPATIAL PARALLAX & TILT LOGIC (Proceso Transparente)
+// ============================================================
+function initProcess3DStage() {
+  const stage = document.getElementById('process-3d-stage');
+  const cards = document.querySelectorAll('.liquid-3d-card');
+
+  if (stage && cards.length > 0) {
+    stage.addEventListener('mousemove', (e) => {
+      const rect = stage.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      cards.forEach((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const cardX = e.clientX - cardRect.left;
+        const cardY = e.clientY - cardRect.top;
+
+        card.style.setProperty('--mouse-x', `${cardX}px`);
+        card.style.setProperty('--mouse-y', `${cardY}px`);
+
+        // Subtle 3D Tilt calculation
+        const centerX = cardRect.width / 2;
+        const centerY = cardRect.height / 2;
+        const rotateX = ((cardY - centerY) / centerY) * -8;
+        const rotateY = ((cardX - centerX) / centerX) * 8;
+
+        // Apply hardware-accelerated 3D tilt on desktop (only if hover enabled)
+        if (window.matchMedia('(hover: hover)').matches) {
+          card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
+        }
+      });
+    });
+
+    stage.addEventListener('mouseleave', () => {
+      cards.forEach((card) => {
+        card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
+      });
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initProcess3DStage);
+} else {
+  initProcess3DStage();
+}
+
+
 

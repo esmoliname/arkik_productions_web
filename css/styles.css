@@ -7256,3 +7256,60 @@ body.rack-preview-open {
 .orb-float-reverse {
   will-change: transform, opacity;
 }
+
+/* ============================================================
+   3D SPATIAL GLASSMORPHISM & DYNAMIC GLARE (Proceso Transparente)
+   ============================================================ */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.liquid-3d-card {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.liquid-3d-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1.5rem;
+  background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.12), transparent 40%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.liquid-3d-card:hover::before {
+  opacity: 1;
+}
+
+@keyframes laserFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-laser-flow {
+  background-size: 200% 200%;
+  animation: laserFlow 4s ease infinite;
+}
+
+@keyframes travelBead {
+  0% { left: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+.traveling-bead {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3.5rem;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #ffffff 0%, rgba(236, 72, 153, 0.9) 35%, rgba(168, 85, 247, 0.7) 65%, transparent 100%);
+  filter: drop-shadow(0 0 10px #ec4899) drop-shadow(0 0 18px #a855f7);
+  animation: travelBead 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
