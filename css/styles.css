@@ -7165,28 +7165,29 @@ body.rack-preview-open {
   .rag-row-btn:active { transform: none; }
 }
 /* ============================================================
-   MOBILE GPU MEMORY GUARD — iOS / Android (<= 768px)
-   `will-change` persistente y filtros `backdrop-filter` caros agotan la
-   textura de la GPU durante el scroll rápido (pantalla negra / crash del
-   renderizador). En viewports móviles se desactivan por completo.
+   MOBILE GPU MEMORY GUARD & SCROLL OPTIMIZATION — iOS / Android (<= 768px)
+   Eliminates WebKit / Chrome Mobile GPU context crashes ("black screen on scroll").
+   Intelligently disables backdrop-filter and heavy multi-layered glow shadows
+   during active scrolling, and restricts will-change strictly to moving elements.
    ============================================================ */
 @media (max-width: 768px) {
-  /* Capas GPU permanentes sobre contenedores estáticos: no aportan nada. */
+  /* Static elements MUST NOT consume persistent GPU memory layers */
   .gpu,
   .glass-panel,
   .benefit-card,
   .admin-booking-row,
   .gallery-card,
   .catalog-card__img,
-  .modal-card,
   .modal-sheet-panel,
   .modal-premounted,
   .slot-conflict-card,
-  .fintech-login-panel {
+  .fintech-login-panel,
+  .esencia-inner-card,
+  .pricing-card {
     will-change: auto !important;
   }
 
-  /* Blur de backdrop: cada uno es una textura de tamaño completo. */
+  /* Baseline mobile glass: lightweight solid fallbacks preventing GPU thrashing */
   .backdrop-blur-sm,
   .backdrop-blur-md,
   .backdrop-blur-xl,
@@ -7196,12 +7197,62 @@ body.rack-preview-open {
     backdrop-filter: none !important;
   }
 
-  /* Scrims de modal / pantalla completa: sin blur se compensa con un fondo
-     opaco para conservar la legibilidad del contenido encima.
-     (Solo los scrims: las tarjetas glass conservan su propio background.) */
+  /* Scrims and cards on mobile use crisp semi-opaque solid backgrounds instead of blur passes */
   [class*="bg-black/85"].backdrop-blur-md,
   [class*="bg-black/80"].backdrop-blur-md,
-  [class*="bg-black/70"].backdrop-blur-md {
+  [class*="bg-black/70"].backdrop-blur-md,
+  [class*="bg-[#080511]/95"],
+  [class*="bg-[#0c081a]/95"] {
     background-color: rgba(10, 6, 24, 0.96) !important;
   }
+
+  .esencia-inner-card {
+    background: rgba(18, 12, 34, 0.92) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  /* RAPID TOUCH-SCROLLING MODE: completely disable blur and heavy glow shadows */
+  body.is-scrolling [class*="backdrop-blur"],
+  body.is-scrolling .esencia-inner-card,
+  body.is-scrolling .modal-overlay,
+  body.is-scrolling .modal-card,
+  body.is-scrolling .bg-glow-purple,
+  body.is-scrolling .bg-glow-indigo,
+  body.is-scrolling .bg-glow-pink,
+  body.is-scrolling [class*="shadow-[0_0_"],
+  body.is-scrolling [class*="shadow-[0_25px_"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Multi-layered glow backdrops simplified to lightweight non-blurry radial fills */
+  .bg-glow-purple,
+  .bg-glow-indigo,
+  .bg-glow-pink {
+    filter: none !important;
+    opacity: 0.45;
+  }
+}
+
+/* Hardware acceleration STRICTLY applied to active moving containers */
+#heroStringsCanvas,
+.canvas-wrap,
+.modal-overlay,
+.modal-card,
+.toast-item,
+.orb-float,
+.orb-float-reverse {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+}
+
+/* will-change strictly on active dynamic elements */
+.modal-overlay.flex,
+.toast-item,
+.orb-float,
+.orb-float-reverse {
+  will-change: transform, opacity;
 }

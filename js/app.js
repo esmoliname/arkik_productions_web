@@ -229,11 +229,22 @@ const PerfGuard = {
   init() {
     if (typeof window === "undefined" || !window.addEventListener) return;
     const self = this;
-    window.addEventListener("scroll", function () {
+    const onScrollActivity = function () {
       self._active = true;
+      if (document.body && !document.body.classList.contains("is-scrolling")) {
+        document.body.classList.add("is-scrolling");
+      }
       if (self._idleTimer) clearTimeout(self._idleTimer);
-      self._idleTimer = setTimeout(function () { self._active = false; }, 150);
-    }, { passive: true, capture: true });
+      self._idleTimer = setTimeout(function () {
+        self._active = false;
+        if (document.body) {
+          document.body.classList.remove("is-scrolling");
+        }
+      }, 120);
+    };
+
+    window.addEventListener("scroll", onScrollActivity, { passive: true, capture: true });
+    window.addEventListener("touchmove", onScrollActivity, { passive: true, capture: true });
   },
   isMobile() {
     return typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768;
@@ -1249,7 +1260,7 @@ const AvailabilityManager = {
           }
         } else {
           this._blocked = {};
-          this._capacity = {};
+          this._capacity = this._capacity || {};
           this._scope = { kind: "full" };
         }
 
@@ -1582,7 +1593,24 @@ const BookingStore = {
     if (booking.voucherImage) payload.voucherImage = booking.voucherImage;
 
     const res = await ArkikApi.createBooking(payload, idempotencyKey);
-    if (!res.ok) return apiFailure(res);
+    if (!res.ok) {
+      // Conflicto de turno / capacidad superada: delegar de inmediato a la alerta de conflicto
+      if (res.code === "day_full" || res.code === "slot_taken" || res.code === "blackout" || res.code === "soldout" || res.status === 409) {
+        return apiFailure(res);
+      }
+      // Caída de red / modo degradado offline: proteger la transacción sin errores fatales
+      if (res.code === "network" || res.status === 0 || !ArkikApi.isOnline()) {
+        console.warn("[Arkik] Conexión caída al enviar reserva. Activando persistencia local degradada.");
+        booking.updatedAt = booking.updatedAt || new Date().toISOString();
+        booking.isOfflineDegraded = true;
+        this._enqueueOfflineBooking(booking, idempotencyKey, payload);
+        this._data.unshift(booking);
+        this.persist();
+        CloudSync.notify("bookings");
+        return { ok: true, booking: booking, source: "local", degraded: true };
+      }
+      return apiFailure(res);
+    }
 
     const created = res.data && res.data.booking ? res.data.booking : null;
     if (!created) return apiError("invalid_response", "Respuesta inesperada del servidor.");
@@ -1592,8 +1620,59 @@ const BookingStore = {
     if (booking.voucherImage && !created.voucherImage) created.voucherImage = booking.voucherImage;
     this._data.unshift(created);
     this.persist();
-    CloudSync.notify("bookings");
+    CloudSync.notify("bookings", { code: created.code, date: created.selectedDate });
     return { ok: true, booking: created, source: "remote" };
+  },
+
+  _enqueueOfflineBooking(booking, idempotencyKey, payload) {
+    try {
+      const q = safeParse(STORAGE_KEYS.offlineQueue, []);
+      const queue = Array.isArray(q) ? q : [];
+      queue.push({
+        idempotencyKey: idempotencyKey,
+        bookingCode: booking.code,
+        payload: payload,
+        queuedAt: Date.now()
+      });
+      safeSet(STORAGE_KEYS.offlineQueue, queue);
+    } catch (e) {
+      console.warn("[Arkik] _enqueueOfflineBooking error:", e);
+    }
+  },
+
+  async syncOfflineQueue() {
+    if (!apiEnabled() || !ArkikApi.isOnline()) return { synced: 0 };
+    let queue = safeParse(STORAGE_KEYS.offlineQueue, []);
+    if (!Array.isArray(queue) || queue.length === 0) return { synced: 0 };
+    let synced = 0;
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        const res = await ArkikApi.createBooking(item.payload, item.idempotencyKey);
+        if (res && res.ok && res.data && res.data.booking) {
+          synced++;
+          const serverBooking = res.data.booking;
+          const local = this.get(item.bookingCode);
+          if (local) {
+            Object.assign(local, serverBooking, { isOfflineDegraded: false });
+          } else {
+            this._data.unshift(serverBooking);
+          }
+        } else if (res && (res.code === "day_full" || res.code === "slot_taken" || res.status === 409)) {
+          console.warn("[Arkik] Conflicto al sincronizar reserva offline diferida:", res.message);
+        } else {
+          remaining.push(item);
+        }
+      } catch (err) {
+        remaining.push(item);
+      }
+    }
+    safeSet(STORAGE_KEYS.offlineQueue, remaining);
+    if (synced > 0) {
+      this.persist();
+      CloudSync.notify("bookings");
+    }
+    return { synced: synced, remaining: remaining.length };
   },
 
   get(code) {
@@ -1713,6 +1792,7 @@ const CloudSync = {
   _lastError: null,
   _lastSyncAt: 0,
   _netToastAt: 0,
+  _channel: null,
 
   /* ---------------- Ciclo de vida ---------------- */
 
@@ -1727,6 +1807,7 @@ const CloudSync = {
       this.sync("boot").catch(function () {});
       this._startTimer();
       this._bindVisibility();
+      this._bindBroadcast();
       console.info("[Arkik] CloudSync activo · driver=arkik-api");
     } catch (err) {
       this._enabled = false;
@@ -1751,36 +1832,96 @@ const CloudSync = {
       pending: this._busy || this._queued,
       lastSyncAt: this._lastSyncAt ? new Date(this._lastSyncAt).toISOString() : null,
       lastError: this._lastError,
-      pollIntervalMs: Number(cfg.pollIntervalMs) || 8000
+      pollIntervalMs: Number(cfg.pollIntervalMs) || 5000
     };
   },
 
 
   /* ---------------- Ciclo de sincronización ---------------- */
 
+  _bindBroadcast() {
+    if (typeof window === "undefined") return;
+    const self = this;
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        this._channel = new BroadcastChannel("arkik_realtime_sync");
+        this._channel.onmessage = function (ev) {
+          if (ev && ev.data && ev.data.type) {
+            self.refresh("broadcast_" + ev.data.type).catch(function () {});
+          }
+        };
+      } catch (e) {
+        /* BroadcastChannel no disponible */
+      }
+    }
+
+    window.addEventListener("storage", function (e) {
+      if (!e || !e.key) return;
+      if (e.key === STORAGE_KEYS.bookings || e.key === STORAGE_KEYS.availability || e.key === STORAGE_KEYS.syncMeta) {
+        self.refresh("storage").catch(function () {});
+      }
+    }, { passive: true });
+
+    window.addEventListener("online", function () {
+      if (typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
+        BookingStore.syncOfflineQueue().catch(function () {});
+      }
+      self.refresh("online").catch(function () {});
+    }, { passive: true });
+
+    window.addEventListener("focus", function () {
+      self.refresh("focus").catch(function () {});
+    }, { passive: true });
+  },
+
+  broadcast(type, payload) {
+    if (this._channel) {
+      try {
+        this._channel.postMessage(Object.assign({ type: type }, payload || {}));
+      } catch (e) { /* noop */ }
+    }
+  },
+
   // Llamado por los stores después de una escritura. En modo remoto la
-  // escritura ya llegó al servidor: esto solo agenda una revalidación para
-  // que las vistas abiertas vuelvan a leer la fuente de verdad.
-  notify(domain) {
+  // escritura ya llegó al servidor: esto emite broadcast instantáneo y agenda
+  // revalidación rápida para todas las vistas abiertas.
+  notify(domain, payload) {
     if (!this._enabled) return;
     this._dirty = true;
+    this.broadcast(domain || "change", payload);
     if (this._debounce) clearTimeout(this._debounce);
     const self = this;
     this._debounce = setTimeout(function () {
       self._debounce = null;
       self.refresh(domain || "notify").catch(function () {});
-    }, 600);
+    }, 400);
   },
 
-  // API pública histórica (preSubmitCloudRefresh y los diagnósticos de
-  // consola la usan): en remote-first "sincronizar" == revalidar contra /api.
+  // API pública histórica: en remote-first "sincronizar" == revalidar contra /api.
   async sync(reason) {
     return this.refresh(reason);
   },
 
+  _getActiveVisibleRange() {
+    let baseDate = new Date();
+    if (typeof CalendarModule !== "undefined" && CalendarModule.viewDate) {
+      baseDate = CalendarModule.viewDate;
+    } else if (typeof AdminModule !== "undefined" && AdminModule.calCursor) {
+      const parts = String(AdminModule.calCursor).split("-").map(Number);
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        baseDate = new Date(parts[0], parts[1] - 1, 1);
+      }
+    }
+    const y = baseDate.getFullYear();
+    const m = baseDate.getMonth();
+    const from = isoOf(new Date(y, m, -6));
+    const to = isoOf(new Date(y, m + 1, 14));
+    return { from: from, to: to };
+  },
+
   /**
-   * Pull: revalida disponibilidad (y reservas, si hay sesión de admin) contra
-   * el servidor y refresca la UI. Nunca lanza.
+   * Pull: revalida disponibilidad en la ventana del mes y reservas contra
+   * el servidor y refresca la UI en tiempo real. Nunca lanza.
    * @param {string} reason diagnóstico ("boot", "poll", "presubmit", ...)
    * @returns {Promise<boolean>} true si el servidor respondió a tiempo.
    */
@@ -1792,34 +1933,37 @@ const CloudSync = {
       let ok = true;
       let failCode = null;
 
-      // 1) Disponibilidad: mapa completo (estados) + ventana con capacidad.
-      const blocked = await AvailabilityManager.hydrate(true);
-      if (blocked && blocked.ok === false) {
+      // 1) Disponibilidad: siempre traer el rango visible con cupos completos (capacity)
+      const range = this._getActiveVisibleRange();
+      const capacityRes = await AvailabilityManager.fetchMap(range.from, range.to, true);
+      if (capacityRes && capacityRes.ok === false) {
         ok = false;
-        failCode = blocked.code || "network";
+        failCode = capacityRes.code || "network";
       }
 
+      // Si el cliente tiene un día seleccionado en el cotizador, asegurar su detalle atómico
       if (ok && typeof cart !== "undefined" && cart && cart.selectedDate) {
-        // Cupos del día elegido: cierra la ventana del polling justo antes
-        // de comprometer el turno en el paso 4.
-        const window = this._windowAround(cart.selectedDate, 7);
-        const capacity = await AvailabilityManager.fetchMap(window.from, window.to, true);
-        if (capacity && capacity.ok === false) {
+        const detailRes = await AvailabilityManager.fetchDetail(cart.selectedDate);
+        if (detailRes && detailRes.ok === false) {
           ok = false;
-          failCode = capacity.code || "network";
+          failCode = detailRes.code || "network";
         }
       }
 
-      // 2) Reservas: solo con sesión de admin viva (GET /api/bookings la exige).
+      // 2) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa
       if (ok && this._adminSessionActive()) {
         const bookings = await BookingStore.hydrate(true);
         if (bookings && bookings.ok === false) {
-          // 401 durante una sesión activa: el portal sigue usable con el caché.
           if (bookings.code !== "unauthorized") {
             ok = false;
             failCode = bookings.code || "network";
           }
         }
+      }
+
+      // 3) Reconciliar cola offline si la conexión responde
+      if (ok && typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
+        BookingStore.syncOfflineQueue().catch(function () {});
       }
 
       this._lastSyncAt = Date.now();
@@ -1828,9 +1972,8 @@ const CloudSync = {
         this._dirty = false;
         this._refreshUI();
       } else if (failCode === "network" && Date.now() - this._netToastAt > 30000 && typeof showToast === "function") {
-        // Solo fallos reales de red; nunca prometer que "los datos están seguros".
         this._netToastAt = Date.now();
-        showToast("Sin conexión con el servidor. Los datos podrían no estar actualizados.", "info");
+        showToast("Sin conexión con el servidor. Operando en modo local resiliente.", "info");
       }
       return ok;
     } catch (err) {
@@ -1867,9 +2010,7 @@ const CloudSync = {
     return this.refresh("all");
   },
 
-  // API pública — push: en remote-first no hay documento local que subir
-  // (cada mutación ya fue confirmada por el servidor), así que fuerza una
-  // revalidación completa.
+  // API pública — push: fuerza una revalidación completa.
   async push() {
     if (!this._enabled) return false;
     this._dirty = true;
@@ -1877,21 +2018,34 @@ const CloudSync = {
     return this.refresh("all");
   },
 
-
   _startTimer() {
     const cfg = typeof API_CONFIG !== "undefined" && API_CONFIG ? API_CONFIG : {};
-    const every = Math.max(4000, Number(cfg.pollIntervalMs) || 8000);
     const self = this;
     this._stopTimer();
-    this._timer = setInterval(function () {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        self.sync("poll").catch(function () {});
-      }
-    }, every);
+
+    const getInterval = () => {
+      const adminActive = self._adminSessionActive();
+      if (adminActive) return Math.max(3000, Number(cfg.adminPollIntervalMs) || 3500);
+      return Math.max(4000, Number(cfg.pollIntervalMs) || 5000);
+    };
+
+    const scheduleNext = () => {
+      self._timer = setTimeout(() => {
+        if (typeof document !== "undefined" && document.visibilityState === "visible") {
+          self.sync("poll").finally(() => {
+            if (self._timer) scheduleNext();
+          });
+        } else {
+          scheduleNext();
+        }
+      }, getInterval());
+    };
+
+    scheduleNext();
   },
 
   _stopTimer() {
-    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    if (this._timer) { clearTimeout(this._timer); clearInterval(this._timer); this._timer = null; }
   },
 
   _bindVisibility() {
@@ -2917,6 +3071,16 @@ const CalendarModule = {
     // "Continuar a Ubicación & Datos" SOLO se habilita cuando hay fecha Y hora.
     updateStep2ContinueState();
 
+    // Revalidación inmediata contra la nube: refresca disponibilidad atómica del día
+    if (apiEnabled()) {
+      AvailabilityManager.fetchDetail(iso).then((res) => {
+        if (res && res.ok && this.selectedDate === iso) {
+          renderTimeSelector();
+          this.renderSummary();
+        }
+      }).catch(function () {});
+    }
+
     // Renderizar chips de hora disponibles para el día (0, 1 o 2 eventos).
     showToast("Fecha seleccionada. Elija la hora del evento.", "success");
   },
@@ -3863,7 +4027,10 @@ const AdminModule = {
     if (manual === "disabled" || manual === "soldout") {
       return { key: "blocked", label: "Bloqueado", dot: "cal-dot--purple" };
     }
-    const count = Math.min(DEFAULT_MAX_EVENTS_PER_DAY, BookingStore.getBookingsForDate(iso).length);
+    const localBookings = BookingStore.getBookingsForDate(iso).length;
+    const remaining = AvailabilityManager.remainingSlots(iso);
+    const occupied = Math.max(localBookings, DEFAULT_MAX_EVENTS_PER_DAY - remaining);
+    const count = Math.min(DEFAULT_MAX_EVENTS_PER_DAY, occupied);
     if (count === 0) return { key: "libre", label: "Libre", dot: "cal-dot--green" };
     if (count === 1) return { key: "parcial", label: "Parcial", dot: "cal-dot--yellow" };
     return { key: "agotado", label: "Agotado", dot: "cal-dot--red" };
@@ -7221,6 +7388,12 @@ function initApp() {
     return;
   }
 
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (isTouchDevice) {
+    if (orb) orb.style.display = "none";
+    return;
+  }
+
   let targetX = window.innerWidth / 2;
   let targetY = window.innerHeight / 2;
   let orbX = targetX;
@@ -7236,12 +7409,22 @@ function initApp() {
       shown = true;
       orb.style.opacity = "1";
     }
+    startOrb();
   }, { passive: true });
 
   function lerpOrb() {
     if (paused) { rafId = null; return; }
-    orbX += (targetX - orbX) * 0.08;
-    orbY += (targetY - orbY) * 0.08;
+    const dx = targetX - orbX;
+    const dy = targetY - orbY;
+    if (Math.abs(dx) < 0.15 && Math.abs(dy) < 0.15) {
+      orbX = targetX;
+      orbY = targetY;
+      orb.style.transform = "translate3d(" + orbX + "px, " + orbY + "px, 0) translate(-50%, -50%)";
+      rafId = null;
+      return;
+    }
+    orbX += dx * 0.08;
+    orbY += dy * 0.08;
     orb.style.transform =
       "translate3d(" + orbX + "px, " + orbY + "px, 0) translate(-50%, -50%)";
     rafId = window.requestAnimationFrame(lerpOrb);
@@ -9826,6 +10009,15 @@ function handleBookingCreateFailure(res) {
   }
   if (code === "day_full" || code === "slot_taken" || code === "blackout" || code === "soldout") {
     showSlotConflictAlert(message);
+    if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+      AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+        if (typeof renderTimeSelector === "function") renderTimeSelector();
+      }).catch(function () {});
+      AvailabilityManager.hydrate(true).catch(function () {});
+    }
+    if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+      CalendarModule.render();
+    }
     goToStep(2);
     return;
   }
@@ -10048,6 +10240,15 @@ async function submitStaticBooking() {
         }
         cart.createdBooking = created;
 
+        const offlineBadge = document.getElementById("confirm-offline-badge");
+        if (offlineBadge) {
+          if (saved.degraded) {
+            offlineBadge.classList.remove("hidden");
+          } else {
+            offlineBadge.classList.add("hidden");
+          }
+        }
+
         const rawMsg =
           `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
 ----------------------------------------
@@ -10119,7 +10320,7 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
         // Fire-and-forget: refresca el cupo del día elegido y agenda la
         // revalidación de las vistas abiertas.
         AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
-        CloudSync.notify("bookings");
+        CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
       } catch (err) {
         console.error("Booking submission failed:", err);
         if (cart.createdBooking) {
@@ -10198,17 +10399,25 @@ function showSlotConflictAlert(detail) {
   const modal = document.getElementById("slotConflictModal");
   const detailEl = document.getElementById("slot-conflict-detail");
 
-  // El título ya dice "acaba de ser reservado": el detalle solo aporta
-  // información distinta (día completo, bloqueo, etc.).
   if (detailEl) {
     const reason = (detail || "").trim();
     if (reason && !/acaba de ser reservado/i.test(reason)) {
       detailEl.textContent = reason;
       detailEl.classList.remove("hidden");
     } else {
-      detailEl.textContent = "";
-      detailEl.classList.add("hidden");
+      detailEl.textContent = "El horario seleccionado acaba de ser ocupado concurrentemente por otro cliente. El calendario ha sido actualizado.";
+      detailEl.classList.remove("hidden");
     }
+  }
+
+  // Refrescar disponibilidad de inmediato para reflejar el bloqueo en la grilla y en los chips
+  if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+    AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+      if (typeof renderTimeSelector === "function") renderTimeSelector();
+    }).catch(function () {});
+  }
+  if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+    CalendarModule.render();
   }
 
   if (!modal) {
@@ -10231,6 +10440,14 @@ function hideSlotConflictAlert() {
   ModalController.close("slotConflictModal");
   try {
     resetSelectedTime();
+    if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+      AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+        if (typeof renderTimeSelector === "function") renderTimeSelector();
+      }).catch(function () {});
+    }
+    if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+      CalendarModule.render();
+    }
     goToStep(2);
     showToast("Seleccione otra fecha u horario disponible.", "info");
   } catch (err) {
@@ -10468,15 +10685,23 @@ function initHeroStringsEffect() {
     buildStrings();
   });
 
+  let scrollTicking = false;
   function onScroll() {
-    const now = performance.now();
-    const sy = window.scrollY || 0;
-    const dt = Math.max(1, now - lastScrollAt);
-    const velocity = Math.abs(sy - lastScrollY) / dt;
-    lastScrollY = sy;
-    lastScrollAt = now;
-    if (!heroInView || velocity <= 0.4) return;
-    scrollEnergy = Math.min(1, scrollEnergy + Math.min(0.5, velocity * 0.004));
+    if (!heroInView) return;
+    if (scrollTicking) return;
+    scrollTicking = true;
+    requestAnimationFrame(() => {
+      scrollTicking = false;
+      if (!heroInView) return;
+      const now = performance.now();
+      const sy = window.scrollY || 0;
+      const dt = Math.max(1, now - lastScrollAt);
+      const velocity = Math.abs(sy - lastScrollY) / dt;
+      lastScrollY = sy;
+      lastScrollAt = now;
+      if (velocity <= 0.4) return;
+      scrollEnergy = Math.min(1, scrollEnergy + Math.min(0.5, velocity * 0.004));
+    });
   }
 
   function onPointerMove(e) {
@@ -10579,9 +10804,14 @@ function initHeroStringsEffect() {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         heroInView = entry.isIntersecting;
-        heroInView ? start() : stop();
+        if (heroInView) {
+          start();
+        } else {
+          stop();
+          ctx.clearRect(0, 0, logicalW, logicalH);
+        }
       });
-    }, { rootMargin: "120px" });
+    }, { rootMargin: "0px", threshold: 0 });
     observer.observe(hero);
   } else {
     // Navegador sin IntersectionObserver: se asume "visible" para que el

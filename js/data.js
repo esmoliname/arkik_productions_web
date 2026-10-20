@@ -45,7 +45,8 @@ const EMAILJS_CONFIG = {
 const API_CONFIG = {
   enabled: true,
   baseUrl: "",
-  pollIntervalMs: 8000,
+  pollIntervalMs: 5000,
+  adminPollIntervalMs: 3500,
   timeoutMs: 8000
 };
 
@@ -56,9 +57,9 @@ const SEED_MODE = true;
 
 // ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
 const CLIENT_GUARD_CONFIG = {
-  maxSubmitAttempts: 3,          // intentos de reserva por ventana
+  maxSubmitAttempts: 5,          // intentos de reserva por ventana
   submitWindowMs: 5 * 60 * 1000, // ventana: 5 minutos
-  submitLockMs: 3000,            // bloqueo mínimo del botón tras cada toque
+  submitLockMs: 1500,            // bloqueo mínimo del botón tras cada toque
   preSubmitPullTimeoutMs: 3000   // tope del pull de nube antes de validar
 };
 
@@ -461,7 +462,8 @@ const STORAGE_KEYS = {
   customConfig: "arkik_custom_config_v1",
   admin: ADMIN_CONFIG.storageKey,
   session: "arkik_admin_session_v1",
-  audit: "arkik_audit_v1"
+  audit: "arkik_audit_v1",
+  offlineQueue: "arkik_pending_sync_v1"
 };
 
 // Capacidad diaria máxima de eventos

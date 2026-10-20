@@ -40,7 +40,9 @@
 
   // "" (same origin) or an absolute origin, never a trailing slash.
   function baseUrl() {
-    return String(config().baseUrl || "").replace(/\/+$/, "");
+    const cfg = config();
+    const raw = cfg.baseUrl || cfg.apiUrl || cfg.supabaseUrl || "";
+    return String(raw).replace(/\/+$/, "");
   }
 
   function url(path, query) {
@@ -234,6 +236,10 @@
       },
       getPricing: function () { return request("GET", "/api/admin/pricing"); },
       putPricing: function (payload) { return request("PUT", "/api/admin/pricing", payload); }
+    },
+
+    isOnline: function () {
+      return typeof navigator === "undefined" || navigator.onLine !== false;
     },
 
     dataOf: dataOf
