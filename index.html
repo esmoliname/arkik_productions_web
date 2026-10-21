@@ -531,59 +531,80 @@
           </p>
         </div>
 
-        <div id="process-3d-stage" class="relative max-w-7xl mx-auto px-4 py-8">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
-            <!-- Step 1 -->
+        <div id="process-stepper-stage" class="relative max-w-7xl mx-auto px-4 py-8">
+          <!-- Horizontal Interactive Timeline Spine (Desktop) -->
+          <div class="hidden lg:block absolute top-[4.5rem] left-[10%] right-[10%] h-[2px] bg-gradient-to-r from-purple-600 via-fuchsia-500 to-indigo-500 opacity-30 z-0 animate-pulse-slow pointer-events-none" aria-hidden="true"></div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
+            <!-- Step 1: Selección & Formato -->
             <div
-              class="relative z-10 glass-panel rounded-3xl p-6 sm:p-7 shadow-[0_15px_35px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group hover:border-purple-500/50 flex flex-col justify-between">
+              class="process-step-card relative z-10 bg-[#090514]/90 backdrop-blur-xl border border-white/10 hover:border-purple-500/40 rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] hover:shadow-[0_20px_40px_rgba(168,85,247,0.18)] group min-h-[260px]">
               <div>
-                <span
-                  class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 border border-purple-400/40 flex items-center justify-center text-purple-300 font-extrabold text-lg shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_0_20px_rgba(168,85,247,0.3)] group-hover:scale-110 group-hover:bg-purple-500 group-hover:text-white transition-all duration-300 mb-4">1</span>
-                <h3 class="text-lg font-bold text-white mb-2">Selección &amp; Extras</h3>
-                <p class="text-xs text-gray-400 leading-relaxed">Elige tu formato (2h) y suma horas adicionales (50% base), DJ o subwoofers.</p>
+                <div class="flex items-center justify-between mb-4">
+                  <span
+                    class="w-11 h-11 rounded-2xl bg-purple-950/60 border border-purple-400/30 text-purple-300 flex items-center justify-center font-mono font-bold text-base shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-300 transition-colors">01</span>
+                  <span class="text-[10px] font-semibold text-purple-300/70 tracking-wider uppercase font-mono">Paso 1</span>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2 tracking-tight group-hover:text-purple-200 transition-colors">Selección &amp; Formato</h3>
+                <p class="text-xs text-gray-400 leading-relaxed">2 horas base de show en vivo, personalización con extras (horas adicionales, DJ o subwoofers) y músicos profesionales.</p>
+              </div>
+              <div class="pt-4 border-t border-white/5 mt-4 flex items-center text-[11px] font-medium text-purple-400/80">
+                <span>Catálogo en vivo</span>
               </div>
             </div>
 
-            <!-- Step 2 -->
+            <!-- Step 2: Ubicación & Viáticos -->
             <div
-              class="relative z-10 glass-panel rounded-3xl p-6 sm:p-7 shadow-[0_15px_35px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group hover:border-purple-500/50 flex flex-col justify-between">
+              class="process-step-card relative z-10 bg-[#090514]/90 backdrop-blur-xl border border-white/10 hover:border-purple-500/40 rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] hover:shadow-[0_20px_40px_rgba(168,85,247,0.18)] group min-h-[260px]">
               <div>
-                <span
-                  class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 border border-purple-400/40 flex items-center justify-center text-purple-300 font-extrabold text-lg shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_0_20px_rgba(168,85,247,0.3)] group-hover:scale-110 group-hover:bg-purple-500 group-hover:text-white transition-all duration-300 mb-4">2</span>
-                <h3 class="text-lg font-bold text-white mb-2">Ubicación &amp; Viáticos</h3>
-                <p class="text-xs text-gray-400 leading-relaxed">Ingresa tu cantón y provincia. Si es fuera del GAM, se calcula un 12% automático de transporte.</p>
+                <div class="flex items-center justify-between mb-4">
+                  <span
+                    class="w-11 h-11 rounded-2xl bg-purple-950/60 border border-purple-400/30 text-purple-300 flex items-center justify-center font-mono font-bold text-base shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-300 transition-colors">02</span>
+                  <span class="text-[10px] font-semibold text-purple-300/70 tracking-wider uppercase font-mono">Paso 2</span>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2 tracking-tight group-hover:text-purple-200 transition-colors">Ubicación &amp; Viáticos</h3>
+                <p class="text-xs text-gray-400 leading-relaxed">Cálculo transparente automático: cobertura total en GAM ₡0 vs +12% de logística de transporte para eventos en provincias fuera del GAM.</p>
+              </div>
+              <div class="pt-4 border-t border-white/5 mt-4 flex items-center text-[11px] font-medium text-emerald-400/80">
+                <span>Tarifa GAM ₡0</span>
               </div>
             </div>
 
-            <!-- Step 3 -->
+            <!-- Step 3: Anticipo 50% SINPE Móvil -->
             <div
-              class="relative z-10 glass-panel rounded-3xl p-6 sm:p-7 shadow-[0_15px_35px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group hover:border-purple-500/50 flex flex-col justify-between">
+              class="process-step-card relative z-10 bg-[#090514]/90 backdrop-blur-xl border border-white/10 hover:border-purple-500/40 rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] hover:shadow-[0_20px_40px_rgba(168,85,247,0.18)] group min-h-[260px]">
               <div>
-                <span
-                  class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 border border-purple-400/40 flex items-center justify-center text-purple-300 font-extrabold text-lg shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_0_20px_rgba(168,85,247,0.3)] group-hover:scale-110 group-hover:bg-purple-500 group-hover:text-white transition-all duration-300 mb-4">3</span>
-                <h3 class="text-lg font-bold text-white mb-2">SINPE 50% Adelanto</h3>
-                <p class="text-xs text-gray-400 leading-relaxed">Transfiere el 50% del total al +506 6227-4984 (Juan José Ramírez Chaves) e ingresa la referencia.</p>
+                <div class="flex items-center justify-between mb-4">
+                  <span
+                    class="w-11 h-11 rounded-2xl bg-purple-950/60 border border-purple-400/30 text-purple-300 flex items-center justify-center font-mono font-bold text-base shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-300 transition-colors">03</span>
+                  <span class="text-[10px] font-semibold text-purple-300/70 tracking-wider uppercase font-mono">Paso 3</span>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2 tracking-tight group-hover:text-purple-200 transition-colors">Anticipo 50% SINPE Móvil</h3>
+                <p class="text-xs text-gray-400 leading-relaxed">Depósito de bloqueo al <strong class="text-white">+506 6227-4984</strong> a nombre de <span class="text-purple-200 font-medium">Juan José Ramírez Chaves</span> para congelar la fecha en agenda.</p>
               </div>
-              <div class="pt-3">
-                <button type="button" onclick="navigator.clipboard.writeText('6227-4984').then(() => { if (typeof showToast === 'function') showToast('Número SINPE copiado: 6227-4984', 'success'); });" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-500/10 hover:bg-purple-500/25 text-purple-300 border border-purple-400/30 hover:border-purple-400/60 transition-all duration-300 shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:shadow-[0_0_18px_rgba(168,85,247,0.35)] cursor-pointer w-fit group/btn">
-                  <svg class="w-3.5 h-3.5 text-purple-400 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+              <div class="pt-4 border-t border-white/5 mt-4">
+                <button type="button" onclick="navigator.clipboard.writeText('6227-4984').then(() => { if (typeof showToast === 'function') showToast('Número SINPE copiado: 6227-4984 (Juan José Ramírez)', 'success'); });" class="inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs font-semibold bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 hover:border-purple-400/60 transition-all duration-300 shadow-[0_0_15px_rgba(168,85,247,0.2)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)] cursor-pointer w-full justify-center group/btn active:scale-95">
+                  <svg class="w-4 h-4 text-purple-300 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
                   <span>Copiar SINPE</span>
                 </button>
               </div>
             </div>
 
-            <!-- Step 4 -->
+            <!-- Step 4: Confirmación & Contrato -->
             <div
-              class="relative z-10 glass-panel rounded-3xl p-6 sm:p-7 shadow-[0_15px_35px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group hover:border-purple-500/50 flex flex-col justify-between">
+              class="process-step-card relative z-10 bg-[#090514]/90 backdrop-blur-xl border border-white/10 hover:border-purple-500/40 rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] hover:shadow-[0_20px_40px_rgba(168,85,247,0.18)] group min-h-[260px]">
               <div>
-                <span
-                  class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 border border-purple-400/40 flex items-center justify-center text-purple-300 font-extrabold text-lg shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_0_20px_rgba(168,85,247,0.3)] group-hover:scale-110 group-hover:bg-purple-500 group-hover:text-white transition-all duration-300 mb-4">4</span>
-                <h3 class="text-lg font-bold text-white mb-2">Voucher WhatsApp</h3>
-                <p class="text-xs text-gray-400 leading-relaxed">Abre WhatsApp con el desglose completo del contrato para confirmar con el equipo.</p>
+                <div class="flex items-center justify-between mb-4">
+                  <span
+                    class="w-11 h-11 rounded-2xl bg-purple-950/60 border border-purple-400/30 text-purple-300 flex items-center justify-center font-mono font-bold text-base shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-300 transition-colors">04</span>
+                  <span class="text-[10px] font-semibold text-purple-300/70 tracking-wider uppercase font-mono">Paso 4</span>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2 tracking-tight group-hover:text-purple-200 transition-colors">Confirmación &amp; Contrato</h3>
+                <p class="text-xs text-gray-400 leading-relaxed">Apertura directa a WhatsApp con el desglose formal prellenado para emisión de comprobante y confirmación final inmediata.</p>
               </div>
-              <div class="pt-3">
-                <a href="https://wa.me/50662274984?text=Hola%20Arkik%20Productions%2C%20quisiera%20confirmar%20mi%20reserva" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:shadow-[0_0_18px_rgba(16,185,129,0.35)] cursor-pointer w-fit group/btn">
-                  <svg class="w-3.5 h-3.5 text-emerald-400 group-hover/btn:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>
+              <div class="pt-4 border-t border-white/5 mt-4">
+                <a href="https://wa.me/50662274984?text=Hola%20Arkik%20Productions%2C%20quisiera%20confirmar%20mi%20reserva" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] cursor-pointer w-full justify-center group/btn active:scale-95">
+                  <svg class="w-4 h-4 text-emerald-300 group-hover/btn:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>
                   <span>Abrir WhatsApp</span>
                 </a>
               </div>

@@ -723,24 +723,20 @@ input[type="submit"],
 }
 
 /* ── Elite Gallery: 3D Liquid Glass Cards + Cinema Filter Bar ── */
-#gallery-grid {
-  perspective: 1000px;
-}
-
 .gallery-card {
   position: relative;
-  transform-style: preserve-3d;
   border: 1px solid rgba(168, 85, 247, 0.25);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.5s ease, border-color 0.5s ease;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.35s ease;
+  will-change: transform;
 }
 
 .gallery-card:hover {
   z-index: 5;
-  transform: translate3d(0, -8px, 0) rotateX(2.5deg) rotateY(-2.5deg) scale(1.01);
+  transform: translateY(-6px);
   box-shadow: 0 20px 50px rgba(168, 85, 247, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   border-color: rgba(236, 72, 153, 0.55);
 }
@@ -5298,7 +5294,6 @@ select.ark-input:active {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-  transform-style: preserve-3d;
 }
 
 .footer-sinpe-card:hover {
@@ -7256,5 +7251,52 @@ body.rack-preview-open {
 }
 
 /* ============================================================
-   PERFORMANCE OPTIMIZED DARK GLASSMORPHISM
-   ============================================================ */
+   EXECUTIVE STEPPER & AUDIO PRODUCTION PROGRESSION (Proceso)
+   ============================================================ */
+.process-step-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1),
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+  will-change: transform;
+}
+
+.process-step-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.4), transparent);
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.process-step-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 1.5rem;
+  background: radial-gradient(400px circle at 50% 0%, rgba(168, 85, 247, 0.12), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.process-step-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.7), 0 0 25px rgba(168, 85, 247, 0.2);
+}
+
+.process-step-card:hover::before {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent, rgba(236, 72, 153, 0.7), transparent);
+}
+
+.process-step-card:hover::after {
+  opacity: 1;
+}
