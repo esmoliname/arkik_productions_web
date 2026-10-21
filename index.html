@@ -62,11 +62,11 @@
     }
   </script>
 
-  <!-- Google Fonts: Inter & Plus Jakarta Sans (Precision Executive Typography) -->
+  <!-- Google Fonts: Inter, Plus Jakarta Sans, Cinzel & Manrope (Precision Executive Typography) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
 
   <!-- Custom Styles -->
@@ -2172,75 +2172,66 @@
     class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
     <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
 
-      <div
-        class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-6 border-b border-white/10 bg-purple-950/40">
-        <div class="min-w-0">
-          <span
-            class="text-[10px] font-bold tracking-[0.2em] uppercase text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full border border-fuchsia-500/20 inline-block mb-1">Sistema
-            de Operaciones
-            Ejecutivas</span>
-          <h3 id="admin-modal-title"
-            class="text-xl md:text-2xl font-extrabold tracking-tight text-white drop-shadow-sm font-heading">Panel de
-            Control
-            de Arkik Productions</h3>
+      <!-- Admin Executive Status & Control Bar -->
+      <header id="admin-header-bar"
+        class="w-full bg-[#080512]/90 backdrop-blur-2xl border-b border-purple-500/20 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 relative z-20 shadow-[0_10px_30px_rgba(0,0,0,0.5)] admin-glass-bar shrink-0">
+        
+        <!-- Sección Izquierda (Identidad y Título) -->
+        <div class="flex items-center gap-3.5 min-w-0 self-start md:self-auto">
+          <!-- Isotipo o icono sutil de seguridad corporativa (candado/escudo elegante en SVG con brillo cian suave) -->
+          <div class="w-10 h-10 rounded-xl bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)] shrink-0 relative group">
+            <div class="absolute inset-0 rounded-xl bg-cyan-400/10 blur-sm -z-10 group-hover:bg-cyan-400/20 transition-all"></div>
+            <svg class="w-5 h-5 drop-shadow-[0_0_8px_rgba(6,182,212,0.7)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <h3 id="admin-modal-title" class="font-['Cinzel'] text-white font-bold text-lg tracking-wider drop-shadow-sm">ARKIK EXECUTIVE CORE</h3>
+              <span id="admin-role-badge" class="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 shadow-[0_0_10px_rgba(168,85,247,0.2)]">Propietario</span>
+            </div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <p class="font-['Manrope'] text-xs text-purple-300 font-medium tracking-widest uppercase">Sistema de Control Operativo &amp; Finanzas en Tiempo Real</p>
+              <span class="text-white/20 hidden xl:inline">·</span>
+              <span id="admin-user-name" class="text-slate-300 font-medium text-xs hidden xl:inline truncate">Juan José Ramírez</span>
+            </div>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2 flex-shrink-0 justify-end">
+
+        <!-- Sección Central (Indicador de Sesión Activa con Pulso Vivo) -->
+        <div class="flex items-center justify-center shrink-0">
+          <div class="px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+            <span id="admin-role-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span id="admin-session-timer" class="admin-session-timer">Sesión Activa · Expira en 15:00</span>
+          </div>
+        </div>
+
+        <!-- Sección Derecha (Acciones Rápidas del Admin) -->
+        <div class="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
           <button type="button" id="btn-open-rag-studio" onclick="openRagStudio()"
             aria-label="Abrir Centro Analítico a pantalla completa"
-            class="btn-analytics-launch px-4 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-purple-500/50 text-white font-heading font-semibold text-xs tracking-wider uppercase flex items-center gap-2">
-            <span>Centro Analítico ↗</span>
+            class="btn-analytics-launch px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-purple-500/40 text-purple-200 font-semibold text-xs tracking-wide flex items-center gap-1.5 transition-all shadow-sm">
+            <span>Analítica ↗</span>
           </button>
-          <button type="button" onclick="adminLogout()" aria-label="Cerrar sesión"
-            class="admin-logout-btn px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-semibold flex items-center gap-2 shadow-lg shadow-red-950/30">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <button type="button" onclick="adminLogout()" aria-label="Bloquear / Cerrar Sesión"
+            class="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-200 text-xs font-semibold flex items-center gap-2 transition-all duration-300 shadow-[0_0_15px_rgba(244,63,94,0.15)] group">
+            <svg class="w-3.5 h-3.5 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
             </svg>
-            <span>Cerrar Sesión</span>
+            <span>Bloquear / Cerrar Sesión</span>
           </button>
           <button type="button" id="admin-portal-close" onclick="closeAdminPortalModal()"
             aria-label="Cerrar panel de control"
-            class="admin-glass-close w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all active:scale-90">
+            class="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white transition-all active:scale-95 shadow-sm">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
           </button>
         </div>
-      </div>
 
-      <!-- Obsidian Glass: tarjeta de estado de sesión (identidad + seguridad) -->
-      <div class="shrink-0 px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0f0c1a]">
-        <div id="adminSessionInfo"
-          class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 backdrop-blur-md">
-          <!-- Identidad: pulso en vivo + rol + nombre + sello de memoria -->
-          <div class="flex items-center gap-2.5 min-w-0 flex-1">
-            <span id="admin-role-dot" class="admin-live-dot relative flex h-2.5 w-2.5 shrink-0 text-emerald-500">
-              <span class="absolute inline-flex h-full w-full rounded-full bg-current opacity-75 animate-ping"></span>
-              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-current"></span>
-            </span>
-            <span id="admin-role-badge"
-              class="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-md shrink-0">Propietario</span>
-            <span id="admin-user-name" class="text-white font-bold text-sm tracking-wide truncate">Juan José
-              Ramírez</span>
-            <span class="text-slate-400 text-xs hidden sm:inline-flex items-center gap-1 font-mono shrink-0">
-              <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M8 11V7a4 4 0 118 0v4m-9 0h10a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6a2 2 0 012-2z"></path>
-              </svg>
-              Sesión autenticada</span>
-          </div>
-          <!-- Temporizador de sesión -->
-          <span
-            class="admin-timer-pill bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-xs px-3 py-1 rounded-full flex items-center gap-1.5 shadow-[0_0_12px_rgba(245,158,11,0.15)] shrink-0">
-            <svg class="admin-timer-pulse w-3.5 h-3.5 shrink-0 animate-pulse" fill="none" stroke="currentColor"
-              viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <span id="admin-session-timer" class="admin-session-timer"></span>
-          </span>
-        </div>
-      </div>
+      </header>
 
       <!-- Cuerpo scrolleable interno: único scroll del portal (headers fijos arriba) -->
       <div id="admin-scroll-body" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar admin-scroll-body">

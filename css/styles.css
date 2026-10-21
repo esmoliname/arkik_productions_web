@@ -1850,6 +1850,23 @@ footer > .max-w-7xl {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
 }
 
+/* Barra de estado ejecutiva del portal administrativo (FinTech Dark Glass) */
+.admin-glass-bar {
+  background: linear-gradient(135deg, rgba(13, 9, 26, 0.95) 0%, rgba(8, 5, 18, 0.98) 100%);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+}
+
+.font-cinzel,
+[class*="font-['Cinzel']"] {
+  font-family: 'Cinzel', serif, ui-serif;
+}
+
+.font-manrope,
+[class*="font-['Manrope']"] {
+  font-family: 'Manrope', 'Plus Jakarta Sans', sans-serif;
+}
+
 /* Viewports muy bajos (landscape móvil): nunca exceder el overlay con padding */
 @media (max-height: 520px) {
   .admin-modal-card {

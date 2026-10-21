@@ -3550,7 +3550,7 @@ const AdminModule = {
     const pad = n => String(n).padStart(2, "0");
     const tick = () => {
       const remain = Math.max(0, this.sessionDeadline - Date.now());
-      if (timerEl) timerEl.textContent = `Sesión expira en ${pad(Math.floor(remain / 60000))}:${pad(Math.floor(remain % 60000 / 1000))}`;
+      if (timerEl) timerEl.textContent = `Sesión Activa · Expira en ${pad(Math.floor(remain / 60000))}:${pad(Math.floor(remain % 60000 / 1000))}`;
       if (remain <= 0 && this.sessionTick) {
         clearInterval(this.sessionTick);
         this.sessionTick = null;
