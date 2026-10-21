@@ -451,18 +451,21 @@ html {
 .text-gradient-purple {
   background: linear-gradient(135deg, #c084fc 0%, #a855f7 50%, #e879f9 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .text-gradient-pink {
   background: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #fb7185 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .text-gradient-neon {
   background: linear-gradient(135deg, #ffffff 0%, #c084fc 50%, #fb923c 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
