@@ -11237,14 +11237,19 @@ const RAGConsole = {
     const s = ArkikRAGEngine.stats();
     const studio = document.getElementById("rag-studio-badge");
     if (studio) {
-      studio.textContent = `🟢 Index Synced: Live Sync · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+      studio.textContent = `🟢 Sincronizado en Tiempo Real · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
     }
-    // El panel embebido solo muestra el pulso; el conteo vive en el
-    // cuerpo de la tarjeta lanzadora.
+    // El panel embebido solo muestra el pulso bioluminiscente; no sobreescribir si ya tiene la estructura ejecutiva
     const pulse = document.getElementById("rag-index-badge");
-    if (pulse) pulse.textContent = "🟢 Index Synced";
+    if (pulse && !pulse.querySelector(".animate-pulse")) {
+      pulse.textContent = "🟢 Sincronizado en Tiempo Real";
+    }
     const launch = document.getElementById("rag-launch-count");
     if (launch) launch.textContent = String(s.count);
+    const counter = document.getElementById("rag-records-counter");
+    if (counter) {
+      counter.textContent = `${s.count} ${s.count === 1 ? "Registro Activo" : "Registros Activos"}`;
+    }
   },
 
   _renderPills() {
