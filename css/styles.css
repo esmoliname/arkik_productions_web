@@ -5899,14 +5899,15 @@ textarea:disabled,
 .rag-console {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   border-radius: 1.25rem;
-  background: rgba(10, 6, 20, 0.85);
+  background: rgba(10, 6, 20, 0.90);
+  background-image: linear-gradient(135deg, rgba(18, 8, 36, 0.6) 0%, rgba(10, 6, 20, 0.95) 100%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(168, 85, 247, 0.25);
+  border: 1px solid rgba(168, 85, 247, 0.20);
   box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -5928,11 +5929,11 @@ textarea:disabled,
 }
 
 .rag-sub {
-  margin: .2rem 0 0;
+  margin: .35rem 0 0;
   font-family: 'Inter', 'Manrope', ui-sans-serif, system-ui, sans-serif;
-  font-size: 12px;
-  color: #94a3b8;
-  line-height: 1.5;
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.625; /* leading-relaxed */
 }
 
 .rag-badge {
@@ -5953,14 +5954,14 @@ textarea:disabled,
 
 .rag-terminal {
   margin: 0;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
+  padding: 0.85rem 1.15rem;
+  border-radius: 0.75rem;
   font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.7;
-  color: #94a3b8;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11.5px;
+  line-height: 1.75; /* leading-relaxed */
+  color: #e2e8f0;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(168, 85, 247, 0.15);
 }
 
 /* --- Botones de acción interactivos (micro-estados táctiles) --- */
@@ -5968,28 +5969,31 @@ textarea:disabled,
 .btn-analytics-launch,
 .admin-logout-btn,
 #btn-open-rag-studio,
-#btnExportPDF {
-  transition: all 0.2s ease-out;
+#btnExportPDF,
+#btn-header-analytics {
+  transition: all 0.2s ease-out !important;
 }
 
 .rag-action:active,
 .btn-analytics-launch:active,
 .admin-logout-btn:active,
 #btn-open-rag-studio:active,
-#btnExportPDF:active {
-  transform: scale(0.95);
+#btnExportPDF:active,
+#btn-header-analytics:active {
+  transform: scale(0.95) !important;
 }
 
 .rag-action:hover,
 .btn-analytics-launch:hover,
 .admin-logout-btn:hover,
 #btn-open-rag-studio:hover,
-#btnExportPDF:hover {
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
+#btnExportPDF:hover,
+#btn-header-analytics:hover {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.25) !important;
 }
 
 .rag-action--primary:hover {
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.35);
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.35) !important;
 }
 
 /* ============================================================
