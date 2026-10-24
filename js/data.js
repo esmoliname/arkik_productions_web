@@ -449,6 +449,12 @@ const ADMIN_CONFIG = {
       label: "Ingeniero de TI",
       shortLabel: "Ingeniero TI",
       name: "Esteban Molina"
+    },
+    tech: {
+      id: "it",
+      label: "Ingeniero de TI",
+      shortLabel: "Ingeniero TI",
+      name: "Esteban Molina"
     }
   },
   maxAttempts: 3,
