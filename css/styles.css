@@ -5533,64 +5533,91 @@ textarea:disabled,
    toca app.js: todo se aplica vía overrides CSS con scope #catalog-grid.
    ════════════════════════════════════════════════════════════════ */
 
-/* ── #esencia: contenedores internos con halo magenta/violeta difuso ──
-   La sombra base (35px violeta) ya vive en las utilities del markup;
-   estas capas agregan el resplandor muy difuso detrás del contenedor. */
+/* ── #esencia: contenedores internos con halo elegante y fondo enriquecido ── */
 #esencia .esencia-inner-card {
   box-shadow:
+    0 20px 40px -15px rgba(0, 0, 0, 0.7),
     0 0 35px rgba(147, 51, 234, 0.15),
-    0 0 70px rgba(236, 72, 153, 0.13),
-    0 0 140px rgba(168, 85, 247, 0.10);
+    0 0 70px rgba(168, 85, 247, 0.10);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
-/* ── Tarjetas del catálogo: vidrio ahumado vibrante ──
-   Target = markup generado por renderCatalog: glass-panel + children. */
+/* ── Tarjetas del catálogo: dark glassmorphic de alta gama ──
+   Target = markup generado por renderCatalog: glass-panel + children.
+   bg-[#0a0514]/90 backdrop-blur-xl border border-white/10 */
 #catalog-grid .glass-panel {
-  background: rgba(14, 9, 29, 0.9);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(10, 5, 20, 0.90) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Resplandor superior sutil (gradiente púrpura sobre el media) */
+/* Resplandor ambiental dinámico sobre la tarjeta */
 #catalog-grid .glass-panel::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 45%;
-  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.10), transparent 100%);
+  height: 55%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(168, 85, 247, 0.15), transparent 75%);
   pointer-events: none;
   z-index: 2;
   border-radius: 1rem 1rem 0 0;
+  transition: background 0.3s ease, opacity 0.3s ease;
 }
 
+/* Hover: border-purple-500/50 y shadow-[0_0_30px_rgba(168,85,247,0.15)] */
 #catalog-grid .glass-panel:hover {
-  border-color: rgba(192, 132, 252, 0.7);
-  box-shadow: 0 0 30px rgba(168, 85, 247, 0.25);
-  transform: translateY(-4px);
+  border-color: rgba(168, 85, 247, 0.50) !important;
+  box-shadow:
+    0 0 30px rgba(168, 85, 247, 0.20),
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  transform: translateY(-6px) !important;
 }
 
-/* Título del servicio: blanco nítido, tracking apretado, mb-2 */
+#catalog-grid .glass-panel:hover::before {
+  background: radial-gradient(ellipse at 50% 0%, rgba(192, 132, 252, 0.28), transparent 80%);
+}
+
+/* Título del servicio: font-heading, font-bold, text-xl, text-white, tracking-wide */
 #catalog-grid .glass-panel h3 {
-  letter-spacing: -0.025em;
+  font-family: var(--font-heading, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif) !important;
+  font-weight: 700 !important;
+  font-size: 1.25rem !important; /* text-xl */
+  line-height: 1.75rem !important;
+  color: #ffffff !important;
+  letter-spacing: 0.025em !important; /* tracking-wide */
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7), 0 0 20px rgba(168, 85, 247, 0.25);
   margin-bottom: 0.5rem;
+  transition: color 0.25s ease, text-shadow 0.25s ease;
 }
 
-/* Descripción: slate-300, leading relaxed, mb-4 */
+#catalog-grid .glass-panel:hover h3 {
+  color: #f5f3ff !important;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9), 0 0 25px rgba(192, 132, 252, 0.45);
+}
+
+/* Descripción: text-slate-200, leading-relaxed */
 #catalog-grid .glass-panel .p-6 > p {
-  color: #cbd5e1;
+  color: #e2e8f0 !important; /* text-slate-200 */
   margin-bottom: 1rem;
-  font-size: 0.875rem;
-  line-height: 1.625;
+  font-size: 0.875rem !important;
+  line-height: 1.625 !important; /* leading-relaxed */
+  font-weight: 400 !important;
 }
 
-/* Lista de especificaciones / incluye: slate-200, xs → sm en desktop */
+/* Lista de especificaciones / incluye: slate-200 */
 #catalog-grid .glass-panel .space-y-2 > div {
-  color: #e2e8f0;
-  font-size: 0.75rem;
+  color: #e2e8f0 !important;
+  font-size: 0.8125rem;
+  line-height: 1.45;
 }
 @media (min-width: 640px) {
   #catalog-grid .glass-panel .space-y-2 > div {
@@ -5598,28 +5625,35 @@ textarea:disabled,
   }
 }
 
-/* Viñetas / íconos: reloj = cian brillante, check = púrpura brillante */
+/* Viñetas / íconos con acento nítido */
 #catalog-grid .glass-panel .space-y-2 .flex.items-center svg {
-  color: #22d3ee;
+  color: #38bdf8 !important; /* sky-400 */
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
 }
 #catalog-grid .glass-panel .space-y-2 .flex.items-start svg {
-  color: #c084fc;
+  color: #c084fc !important; /* purple-400 */
+  filter: drop-shadow(0 0 6px rgba(192, 132, 252, 0.4));
 }
 
-/* Bloque de precio: etiqueta púrpura uppercase, cifra blanca XL */
+/* Bloque de precio: etiqueta sutil, cifra text-emerald-400 font-mono font-bold text-lg (o 2xl) */
 #catalog-grid .glass-panel .flex.items-baseline > span:first-child {
-  color: rgba(216, 180, 254, 0.8);
+  color: #94a3b8 !important; /* slate-400 */
   text-transform: uppercase;
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em;
 }
+
 #catalog-grid .glass-panel .flex.items-baseline .text-gradient-purple {
-  background: none;
-  -webkit-text-fill-color: #ffffff;
-  color: #ffffff;
-  font-size: 1.25rem;
-  font-weight: 800;
-  letter-spacing: 0.025em;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  -webkit-text-fill-color: #34d399 !important; /* text-emerald-400 */
+  color: #34d399 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important; /* font-mono */
+  font-size: 1.35rem !important;
+  font-weight: 700 !important; /* font-bold */
+  letter-spacing: -0.01em !important;
+  text-shadow: 0 0 14px rgba(52, 211, 153, 0.40);
 }
 
 /* ============================================================
