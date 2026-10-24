@@ -605,19 +605,48 @@ html {
   overscroll-behavior: contain;
 }
 
-/* Modal Wrapper Viewport Constraints */
+/* Modal Wrapper Viewport Constraints & Permanent Darkening Protection */
+#bookingModal,
 #booking-modal {
+  position: fixed;
   inset: 0;
   z-index: 50;
   background-color: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  display: flex;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out;
+}
+
+#bookingModal.flex,
+#booking-modal.flex {
+  display: flex !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+#bookingModal.hidden,
+#booking-modal.hidden {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Canvas background engines (hero & footer) */
+#heroStringsCanvas,
+#footerParticlesCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* Modal Card Container */
@@ -2947,6 +2976,15 @@ select.ark-input:active {
   }
 }
 
+/* WhatsApp Button UI Structural Fix - Strip rogue pseudo-elements */
+.floating-wa-btn::before,
+.floating-wa-btn::after,
+.footer-wa-bar::before,
+.footer-wa-bar::after {
+  content: none !important;
+  display: none !important;
+}
+
 /* ---- Section Adaptive Vertical Spacing System ---- */
 .section-rhythm {
   padding-top: clamp(3rem, 6vw + 1rem, 6rem);
@@ -3318,24 +3356,47 @@ select.ark-input:active {
   position: relative;
 }
 
+.validate-field .field-dark {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
 .field-invalid {
-  border-color: rgba(239, 68, 68, 0.85) !important;
-  background: rgba(239, 68, 68, 0.10) !important;
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18) !important;
+  border-color: #ef4444 !important; /* border-red-500 */
+  background: rgba(239, 68, 68, 0.08) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35) !important;
 }
 
 .field-valid {
-  border-color: rgba(16, 185, 129, 0.7) !important;
-  background: rgba(16, 185, 129, 0.06) !important;
+  border-color: #34d399 !important; /* border-emerald-400 */
+  background: rgba(16, 185, 129, 0.08) !important;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.35) !important;
 }
 
 .field-error {
   display: block;
-  margin-top: 6px;
-  font-size: 11px;
+  margin-top: 5px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: #f87171;
+  color: #ef4444;
   line-height: 1.35;
+}
+
+.field-check-icon {
+  transition: opacity 0.2s ease;
+}
+
+/* Offscreen Accounting PDF Canvas for html2pdf.js */
+#invoice-print-container {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 800px;
+  padding: 40px;
+  background: #ffffff;
+  color: #000000;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  box-sizing: border-box;
+  z-index: -9999;
 }
 
 .field-shake {
@@ -4620,10 +4681,30 @@ select.ark-input:active {
   transform: scale(0.98);
 }
 .btn-cta-primary:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* ============================================================
+   ROBUST INTERACTIVE BUTTONS DISABLED STATES
+   ============================================================ */
+button:disabled,
+button[disabled],
+input:disabled,
+select:disabled,
+textarea:disabled,
+.btn-cta-primary:disabled,
+.btn-cta-secondary:disabled,
+.btn-exec:disabled,
+.tactile-btn:disabled,
+.extra-step-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 .btn-cta-secondary {
   background: transparent;
@@ -5788,9 +5869,11 @@ select.ark-input:active {
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   border-radius: 1.25rem;
-  background: rgba(10, 6, 20, 0.9);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.8);
+  background: rgba(10, 6, 20, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .rag-head {
@@ -5806,14 +5889,15 @@ select.ark-input:active {
   font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
   font-size: 1.25rem;
   font-weight: 700;
-  letter-spacing: -.01em;
+  letter-spacing: -.02em;
   color: #fff;
 }
 
 .rag-sub {
   margin: .2rem 0 0;
-  font-size: 11px;
-  color: #8b86a3;
+  font-family: 'Inter', 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  color: #94a3b8;
   line-height: 1.5;
 }
 

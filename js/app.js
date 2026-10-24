@@ -21,6 +21,32 @@ function sanitizeInput(str) {
 const sanitizeHTML = sanitizeInput; // alias para compatibilidad interna
 
 /**
+ * Allow-list for embedded voucher images: only base64 raster data-URLs.
+ * Anything else (javascript:, quotes, remote URLs) collapses to "" so the
+ * value can never break out of an attribute or inline handler.
+ */
+function safeImageDataUrl(value) {
+  const v = typeof value === "string" ? value.trim() : "";
+  return /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/]+=*$/.test(v) ? v : "";
+}
+
+/** Local timestamp (ms) for an event date (YYYY-MM-DD) + time (HH:MM); NaN if invalid. */
+function eventTimestamp(dateISO, timeHHMM) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateISO || ""));
+  const t = /^(\d{2}):(\d{2})$/.exec(String(timeHHMM || ""));
+  if (!m || !t) return NaN;
+  return new Date(+m[1], +m[2] - 1, +m[3], +t[1], +t[2]).getTime();
+}
+
+/** True when the event starts before now + minNoticeHours (includes past slots). */
+function isInsideNoticeWindow(dateISO, timeHHMM) {
+  const ts = eventTimestamp(dateISO, timeHHMM);
+  if (!Number.isFinite(ts)) return true;
+  const hours = (typeof LOGISTICS_CONFIG !== "undefined" && LOGISTICS_CONFIG.minNoticeHours) || 72;
+  return ts < Date.now() + hours * 3600 * 1000;
+}
+
+/**
  * Elimina cualquier etiqueta HTML del texto (defensa en profundidad).
  * Se aplica en cleanText() para que NINGÚN dato de usuario persistido
  * en el carrito contenga markup que luego pueda renderizarse por error.
@@ -514,26 +540,9 @@ function normalizeWaPhone(phone) {
 const BOOKING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 // Códigos únicos: ARK-XXXXXXXX (8 caracteres alfanuméricos en mayúsculas).
-// Un código duplicado rompe la búsqueda en el panel admin y en "mi reserva",
-// así que se garantiza unicidad contra el almacén antes de devolverlo.
+// Reemplaza Math.random() con crypto.randomUUID().split('-')[0].toUpperCase()
+// para garantizar resistencia a colisiones y unicidad criptográfica.
 function generateBookingCode() {
-  const A = BOOKING_CODE_ALPHABET;
-
-  const randomChars = (n) => {
-    try {
-      if (window.crypto && typeof window.crypto.getRandomValues === "function") {
-        const buf = new Uint32Array(n);
-        window.crypto.getRandomValues(buf);
-        return Array.from(buf, (v) => A[v % A.length]).join("");
-      }
-    } catch (err) {
-      /* fallback a Math.random */
-    }
-    let out = "";
-    for (let i = 0; i < n; i++) out += A.charAt(Math.floor(Math.random() * A.length));
-    return out;
-  };
-
   const isTaken = (code) => {
     try {
       const list = BookingStore.all();
@@ -544,14 +553,30 @@ function generateBookingCode() {
   };
 
   for (let attempt = 0; attempt < 64; attempt++) {
-    const code = `ARK-${randomChars(8)}`;
+    let suffix = "";
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        suffix = crypto.randomUUID().split("-")[0].toUpperCase();
+      }
+    } catch (err) {}
+    if (!suffix || suffix.length !== 8) {
+      if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+        const buf = new Uint8Array(4);
+        crypto.getRandomValues(buf);
+        suffix = Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+      } else {
+        suffix = Date.now().toString(16).slice(-8).toUpperCase();
+      }
+    }
+    const code = `ARK-${suffix}`;
     if (!isTaken(code)) return code;
   }
 
-  // Colisión tras 64 intentos (caso prácticamente imposible): marca temporal
-  // base36 + aleatorio para salir del bucle con un identificador válido.
   const stamp = Date.now().toString(36).toUpperCase().slice(-5).padStart(5, "0");
-  return `ARK-${stamp}${randomChars(3)}`;
+  const randPart = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+    ? crypto.randomUUID().split("-")[0].slice(0, 3).toUpperCase()
+    : "999";
+  return `ARK-${stamp}${randPart}`;
 }
 
 function formatCRC(n) {
@@ -1618,6 +1643,7 @@ const BookingStore = {
     // Display-only: the create response omits the image, but the visitor just
     // uploaded it, so the confirmation screen keeps showing it.
     if (booking.voucherImage && !created.voucherImage) created.voucherImage = booking.voucherImage;
+    if (booking.clientId && !created.clientId) created.clientId = booking.clientId;
     this._data.unshift(created);
     this.persist();
     CloudSync.notify("bookings", { code: created.code, date: created.selectedDate });
@@ -2116,19 +2142,9 @@ const CloudSync = {
 //  RATE LIMITING — el estado del candado vive en STORAGE_KEYS.admin. Se
 //    auto-repara en init() (purgeExpiredLockout) y nunca queda atascado.
 
-// Credenciales locales: solo son alcanzables en el nivel degradado. Viven en
-// el bundle porque el cliente de hosting estático no tiene otro oráculo; en el
-// nivel 1 manda exclusivamente el PIN configurado en el servidor.
-const ADMIN_PIN_CREDENTIALS = Object.freeze({
-  owner: "2580", // Propietario
-  it: "1234"     // Ingeniero TI
-});
-
-// Digests SHA-256 de referencia (capa secundaria, jamás autorizativa).
-const ADMIN_PIN_DIGESTS = Object.freeze({
-  owner: "ed946f65d2c785d90e827c5ffd879ce3b49c68d4c88013074176a7e73bc58bcf",
-  it: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
-});
+// Credenciales de administración: Las credenciales y sus hashes
+// se procesan y validan exclusivamente en el servidor (/api/admin/login).
+// CERO credenciales en el cliente: arquitectura zero-trust anti-tampering.
 
 // Claves heredadas de builds anteriores: se purgan porque nada las lee ya.
 const ADMIN_LEGACY_RATE_KEYS = Object.freeze(["admin_login_attempts", "admin_lockout_until"]);
@@ -2213,10 +2229,8 @@ const SecurityModule = {
    * @returns {'owner'|'it'|null}
    */
   detectRole(pin) {
-    const clean = this.normalizePin(pin);
-    if (!clean) return null;
-    if (clean === ADMIN_PIN_CREDENTIALS.owner) return "owner";
-    if (clean === ADMIN_PIN_CREDENTIALS.it) return "it";
+    // Zero-trust: la resolución de roles por PIN en claro fue removida del cliente.
+    // La asignación de permisos la valida y confirma exclusivamente el servidor.
     return null;
   },
 
@@ -2283,27 +2297,7 @@ const SecurityModule = {
    * (HTTP / IP local / móvil) no puede lanzar ni bloquear la autenticación.
    */
   auditDigest(cleanPin, roleId) {
-    try {
-      if (typeof crypto === "undefined" || !crypto) return;
-      if (typeof crypto.subtle === "undefined" || !crypto.subtle) return; // contexto no seguro
-      if (typeof TextEncoder === "undefined") return;
-      const expected = ADMIN_PIN_DIGESTS[roleId];
-      if (!expected) return;
-
-      Promise.resolve(crypto.subtle.digest("SHA-256", new TextEncoder().encode(cleanPin)))
-        .then((buf) => {
-          const hex = Array.from(new Uint8Array(buf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-          if (hex !== expected) {
-            console.warn("[Arkik] Digest local fuera de patrón para el rol", roleId,
-              "— la autorización la dictó la comparación en plano (o el servidor).");
-          }
-        })
-        .catch(function () { /* WebCrypto rechazó: capa secundaria omitida */ });
-    } catch (e) {
-      // Cualquier fallo de la capa secundaria se absorbe: nunca bloquea el acceso.
-    }
+    // Digests locales eliminados: la autenticación reside exclusivamente en el backend.
   },
 
   /**
@@ -2357,15 +2351,8 @@ const SecurityModule = {
    * @returns {{ok:boolean, role?:string, channel:'local', degraded:true}|{ok:false, ...}}
    */
   verifyLocal(cleanPin, effectiveRole) {
-    const plainMatch =
-      (effectiveRole === "owner" && cleanPin === ADMIN_PIN_CREDENTIALS.owner) ||
-      (effectiveRole === "it" && cleanPin === ADMIN_PIN_CREDENTIALS.it);
-
-    if (plainMatch) {
-      this.auditDigest(cleanPin, effectiveRole); // secundaria: jamás veto
-      return { ok: true, role: effectiveRole, channel: "local", degraded: true };
-    }
-    return { ok: false, message: "PIN incorrecto." };
+    // La autenticación local degradada fue retirada para prevenir ataques por suplantación local.
+    return { ok: false, message: "La autenticación administrativa requiere conexión con el servidor (/api/admin/login)." };
   },
 
   /**
@@ -2442,13 +2429,13 @@ const SecurityModule = {
       return this.registerFailedAttempt(now, { message: remote.message || "PIN incorrecto." });
     }
 
-    // ---- Nivel 2: local degradado (sin WebCrypto, sin red) ----
-    const local = this.verifyLocal(cleanPin, effectiveRole);
-    if (local.ok) {
-      this.clearLockState();
-      return { ok: true, role: local.role, expiresAt: now + 3600000, channel: "local", degraded: true };
-    }
-    return this.registerFailedAttempt(now, { message: local.message });
+    // Servidor inalcanzable o API inactiva: rechazo seguro (cero credenciales en el cliente)
+    return {
+      ok: false,
+      locked: false,
+      remaining: max,
+      message: "No fue posible conectar con el servidor de autenticación."
+    };
   }
 };
 
@@ -2467,6 +2454,7 @@ class CartState {
     this.clientName = "";
     this.clientPhone = "";
     this.clientEmail = "";
+    this.clientId = "";
     this.eventType = "Boda";
     this.selectedDate = "";
     this.selectedTime = ""; // Hora del evento (chip del selector de hora)
@@ -2548,6 +2536,7 @@ class CartState {
 
   serialize() {
     return {
+      currentStep: this.currentStep,
       serviceId: this.selectedService ? this.selectedService.id : null,
       extraHoursCount: this.extraHoursCount,
       djHoursCount: this.djHoursCount,
@@ -2557,6 +2546,7 @@ class CartState {
       clientName: this.clientName,
       clientPhone: this.clientPhone,
       clientEmail: this.clientEmail,
+      clientId: this.clientId,
       eventType: this.eventType,
       selectedDate: this.selectedDate,
       selectedTime: this.selectedTime,
@@ -2592,7 +2582,9 @@ class CartState {
       this.clientName = cleanText(data.clientName, 70);
       this.clientPhone = cleanText(data.clientPhone, 30);
       this.clientEmail = cleanText(data.clientEmail, 120);
+      this.clientId = cleanText(data.clientId, 30);
       this.eventType = cleanText(data.eventType, 40) || "Boda";
+      this.currentStep = clampInt(data.currentStep || 1, 1, 4);
       this.address = cleanText(data.address, 300);
       this.sinpeRef = cleanText(data.sinpeRef, 15);
 
@@ -2776,7 +2768,7 @@ function renderTimeSelector() {
   const wrap = document.getElementById("time-selector-wrap");
   if (!container) return;
 
-  // Limpieza estricta del contenedor antes de cada render (evita acumulación).
+  // Limpieza estricta del contenedor antes de cada render (detiene saturación de memoria).
   container.innerHTML = "";
 
   if (!cart.selectedDate) {
@@ -2814,8 +2806,23 @@ function renderTimeSelector() {
     }
   }
 
+  // Inyección reactiva de la tarjeta de hora seleccionada (DOM seguro sin innerHTML)
+  if (selected) {
+    const selectedBadge = document.createElement("div");
+    selectedBadge.className = "time-selected-card col-span-full mb-2 p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs font-semibold text-purple-300 text-center flex items-center justify-center gap-1.5 shadow-sm";
+    const span = document.createElement("span");
+    span.textContent = "✓ Hora seleccionada: ";
+    const strong = document.createElement("strong");
+    strong.className = "text-white";
+    strong.textContent = selected;
+    selectedBadge.appendChild(span);
+    selectedBadge.appendChild(strong);
+    container.appendChild(selectedBadge);
+  }
+
   TimeSlots.forEach(slot => {
-    const isBlocked = blocked.has(slot);
+    // Slots inside the 72h notice window (or already past) are never selectable.
+    const isBlocked = blocked.has(slot) || isInsideNoticeWindow(cart.selectedDate, slot);
     const isSelected = slot === selected;
     const chip = document.createElement("button");
     chip.type = "button";
@@ -2829,6 +2836,11 @@ function renderTimeSelector() {
     }
     container.appendChild(chip);
   });
+}
+
+const renderTimeSlots = renderTimeSelector;
+if (typeof window !== "undefined") {
+  window.renderTimeSlots = renderTimeSlots;
 }
 
 /**
@@ -2853,7 +2865,8 @@ function updateStep2ContinueState() {
   const continueBtn = document.getElementById("btn-continue-step-2") || document.getElementById("btn-continue-step");
   if (!continueBtn) return;
 
-  const ready = Boolean(cart.selectedDate && cart.selectedTime);
+  const ready = Boolean(cart.selectedDate && cart.selectedTime)
+    && !isInsideNoticeWindow(cart.selectedDate, cart.selectedTime);
   continueBtn.disabled = !ready;
   continueBtn.classList.toggle("opacity-40", !ready);
   continueBtn.classList.toggle("pointer-events-none", !ready);
@@ -2876,6 +2889,12 @@ const CalendarModule = {
   selectedDate: "",
 
   init() {
+    const { minISO } = this.getThresholds();
+    const bookingDateEl = document.getElementById("booking-date");
+    if (bookingDateEl) bookingDateEl.min = minISO;
+    const reschedDateEl = document.getElementById("admin-resched-date");
+    if (reschedDateEl) reschedDateEl.min = minISO;
+
     if (!cart.selectedDate) {
       this.viewDate = startOfMonth(new Date());
     } else {
@@ -3246,22 +3265,45 @@ function bindLoginTrap() {
   const trap = document.getElementById("login-website-trap");
   if (!trap || LOGIN_TRAP_STATE.bound) return;
   LOGIN_TRAP_STATE.bound = true;
-  // Una persona nunca alcanza este input (tabindex="-1", aria-hidden, fuera de
-  // pantalla): si recibe teclado o arrastre, es automatización.
+  if (!trap.hasAttribute("tabindex")) trap.setAttribute("tabindex", "-1");
+  if (!trap.hasAttribute("autocomplete")) trap.setAttribute("autocomplete", "off");
+  // Una persona nunca alcanza este input (tabindex="-1", aria-hidden, fuera de pantalla)
   ["keydown", "keypress", "paste", "drop"].forEach((evt) => {
-    trap.addEventListener(evt, () => { LOGIN_TRAP_STATE.interacted = true; }, true);
+    trap.addEventListener(evt, (e) => {
+      if (e && e.isTrusted === false) LOGIN_TRAP_STATE.synthetic = true;
+      LOGIN_TRAP_STATE.interacted = true;
+    }, true);
   });
   trap.addEventListener("input", (e) => {
-    // isTrusted === false => escritura programática (script), no auto-relleno.
+    // isTrusted === false => script/bot sintético, no autocompletado nativo
+    if (e && e.isTrusted === false) LOGIN_TRAP_STATE.synthetic = true;
+  }, true);
+  trap.addEventListener("change", (e) => {
     if (e && e.isTrusted === false) LOGIN_TRAP_STATE.synthetic = true;
   }, true);
 }
 
-function isLoginTrapTriggered() {
+function isLoginTrapTriggered(submitEvent) {
   const trap = document.getElementById("login-website-trap");
   if (!trap) return false;
-  if (String(trap.value || "").trim() === "") return false; // vacío -> nunca sospechoso
-  return LOGIN_TRAP_STATE.interacted || LOGIN_TRAP_STATE.synthetic;
+  const val = String(trap.value || "").trim();
+  if (!val) return false; // vacío -> nunca sospechoso
+
+  // Validación estricta de event.isTrusted:
+  // Si el evento de envío o la mutación fue sintética (isTrusted === false), abortar silenciosamente.
+  const isSyntheticSubmit = submitEvent && submitEvent.isTrusted === false;
+  if (LOGIN_TRAP_STATE.synthetic || isSyntheticSubmit) {
+    return true;
+  }
+
+  // Si el campo tiene contenido pero no hubo interacción por teclado (interacted === false),
+  // proviene de autocompletado nativo (Safari/Chrome/gestores de credenciales).
+  // En ese caso NO se aborta para evitar falsos positivos.
+  if (!LOGIN_TRAP_STATE.interacted) {
+    return false;
+  }
+
+  return true;
 }
 
 const AdminModule = {
@@ -3444,9 +3486,9 @@ const AdminModule = {
 
     const pin = document.getElementById("admin-pin");
     const value = SecurityModule.normalizePin(pin ? pin.value : "");
-    // Honeypot: valor no vacío + evidencia de interacción/automatización.
+    // Honeypot: valor no vacío + evidencia de interacción/automatización (isTrusted === false).
     // Un valor proveniente del auto-relleno del navegador NO bloquea el login.
-    if (isLoginTrapTriggered()) {
+    if (isLoginTrapTriggered(e)) {
       resetLoginTrap();
       await new Promise((r) => setTimeout(r, 1200));
       return;
@@ -3457,12 +3499,11 @@ const AdminModule = {
       return;
     }
 
-    // Sincronización automática de rol: el PIN escrito permuta la pestaña
-    // activa y aprueba el acceso aunque el conmutador visual estuviera en la
-    // otra tira. Elimina el descalce de rol que dejaba el PIN "incorrecto".
-    const detected = SecurityModule.detectRole(value);
+    // El rol se deriva del selector visual del modal o por defecto "owner";
+    // la autenticación definitiva se valida siempre en el servidor.
+    const detected = typeof SecurityModule.detectRole === "function" ? SecurityModule.detectRole(value) : null;
     if (detected && detected !== this.role) this.setRole(detected);
-    const roleId = detected || this.role;
+    const roleId = detected || this.role || "owner";
     if (!roleId) {
       this.showAuthError("Seleccione un rol de acceso.");
       return;
@@ -4867,76 +4908,77 @@ function bookingCard(b) {
   if (b.status === "confirmada") {
     actions.push(`<button type="button" data-action="complete" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Marcar Realizada</button>`);
   }
-  // El listado nunca trae la imagen (solo `hasVoucher`): con el caché local
+  // El listado nunca trae la imagen (solo hasVoucher): con el caché local
   // la tarjeta la muestra al instante y, si no, el clic la baja del servidor.
   if (b.voucherImage || b.hasVoucher) {
-    actions.push(`<button type="button" data-action="view" class="bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-purple-200 rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 transition-all">👁️ Ver Comprobante SINPE</button>`);
+    actions.push(`<button type="button" data-action="view" class="bg-purple-900/50 border border-purple-500/50 hover:bg-purple-800 transition-all rounded-lg px-4 py-2 flex items-center justify-center gap-2 text-purple-200 text-xs font-semibold">👁️ Ver Comprobante SINPE</button>`);
   }
   if (b.status === "pendiente" || b.status === "confirmada") {
     actions.push(`<button type="button" data-action="cancel" class="bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">❌ Rechazar / Cancelar</button>`);
   }
-  if (b.status !== "cancelada" && b.status !== "pendiente") {
-    actions.push(`<button type="button" data-action="voucher" class="bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 text-indigo-200 rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 transition-all">📄 Descargar Pre-Factura PDF</button>`);
+  if (b.status !== "cancelada") {
+    actions.push(`<button type="button" data-action="voucher" class="bg-blue-900/50 border border-blue-500/50 hover:bg-blue-800 text-blue-200 rounded-lg px-4 py-2 text-xs font-semibold flex items-center justify-center gap-2 transition-all">📄 Descargar Prefactura PDF</button>`);
   }
   actions.push(`<button type="button" data-action="whatsapp" class="col-span-1 sm:col-span-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all">💬 Notificar WhatsApp</button>`);
 
 return `
-  <div class="admin-booking-row rack-data-card bg-white/[0.03] border border-white/10 rounded-2xl p-5 sm:p-6 mb-4 shadow-xl transition-all hover:border-purple-500/30 hover:shadow-[0_0_25px_rgba(168,85,247,0.15)]" data-id="${b.code}">
+  <div class="admin-booking-row rack-data-card bg-[#0b0816]/95 border border-white/10 rounded-2xl p-5 sm:p-6 mb-4 shadow-xl transition-all hover:border-purple-500/30" data-id="${b.code}">
     <!-- Encabezado: código + estado + GAM/Viáticos + fecha/hora -->
     <div class="flex flex-wrap items-center gap-2 mb-4">
-      <span class="admin-booking-code font-mono text-xs font-bold text-purple-300 bg-purple-950/80 px-2.5 py-1 rounded-lg border border-purple-500/30">${b.code}</span>
+      <span class="admin-booking-code font-mono text-xs font-bold text-slate-200 bg-white/10 px-2.5 py-1 rounded-lg border border-white/15">${b.code}</span>
       <span class="px-2.5 py-1 rounded-lg text-xs font-medium border ${statusTone}">${statusLabel}</span>
       ${gamBadge}
-      <span class="text-xs font-semibold text-slate-300 flex items-center gap-1">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
+      <span class="text-xs font-semibold text-slate-200 flex items-center gap-1">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
       <button type="button" onclick="openRackPreview('${b.code}')"
-        class="ml-auto rack-preview-btn px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-purple-500/30 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[44px]"
+        class="ml-auto rack-preview-btn px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-purple-500/30 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[44px]"
         aria-label="Previsualizar detalles de la reserva ${b.code}">
         <span>👁️</span>
         <span>Previsualizar</span>
       </button>
     </div>
 
-    <div class="admin-booking-cols grid grid-cols-1 md:grid-cols-3 gap-3 my-4 py-3 border-y border-purple-900/40">
+    <div class="admin-booking-cols grid grid-cols-1 md:grid-cols-3 gap-3 my-4 py-3 border-y border-white/10">
       <!-- COL 1: Cliente / Empresa -->
       <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Cliente / Empresa</p>
-        <p class="text-base font-bold text-white tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Cliente / Empresa</p>
+        <p class="text-base font-bold text-slate-200 tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
+        ${b.clientId ? `<p class="text-xs text-slate-400 font-mono mt-0.5">ID: ${sanitizeInput(b.clientId)}</p>` : ""}
         ${b.voucherImage || b.hasVoucher
       ? ""
-      : `<p class="mt-2 text-[10px] text-amber-300/70">⚠️ comprobante SINPE no adjuntado</p>`}
+      : `<p class="mt-2 text-[10px] text-amber-300/80">⚠️ comprobante SINPE no adjuntado</p>`}
       </div>
 
       <!-- COL 2: Formato y Horarios -->
       <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Formato & Horarios</p>
-        <p class="text-sm sm:text-base font-bold text-white">${sanitizeInput(b.serviceName)}<span class="text-slate-400"> · ${sanitizeInput(b.eventType || "")}</span></p>
-        <p class="text-xs text-slate-400 mt-1 flex items-center gap-1">⏱️ Montaje ${sanitizeInput(setupDisplay)} · Desmontaje ${sanitizeInput(teardownDisplay)}</p>
-        <p class="text-xs text-slate-500 flex items-center gap-1">📍 ${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Formato & Horarios</p>
+        <p class="text-sm sm:text-base font-bold text-slate-200">${sanitizeInput(b.serviceName)}<span class="text-slate-400"> · ${sanitizeInput(b.eventType || "")}</span></p>
+        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1">⏱️ Montaje ${sanitizeInput(setupDisplay)} · Desmontaje ${sanitizeInput(teardownDisplay)}</p>
+        <p class="text-xs text-slate-300 flex items-center gap-1">📍 ${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
       </div>
 
       <!-- COL 3: Contacto y SINPE -->
       <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-purple-300/70 uppercase mb-1">Contacto & SINPE</p>
-        <p class="text-xs text-slate-300 flex items-center gap-1.5">💬 <span>${sanitizeInput(b.clientPhone)}</span></p>
-        <a href="${waLink}" target="_blank" rel="noopener" class="text-xs mt-0.5 font-semibold text-slate-300 hover:text-purple-300 transition-colors">💬 WhatsApp</a>
-        <p class="text-xs text-slate-300 mt-0.5 truncate flex items-center gap-1.5">✉️ <span>${sanitizeInput(b.clientEmail || "S/N")}</span></p>
-        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1.5">💳 <span>Ref. SINPE: <span class="font-bold text-slate-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></span></p>
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Contacto & SINPE</p>
+        <p class="text-xs text-slate-200 flex items-center gap-1.5">💬 <span>${sanitizeInput(b.clientPhone)}</span></p>
+        <a href="${waLink}" target="_blank" rel="noopener noreferrer" class="text-xs mt-0.5 font-semibold text-slate-200 hover:text-emerald-400 transition-colors">💬 WhatsApp</a>
+        <p class="text-xs text-slate-200 mt-0.5 truncate flex items-center gap-1.5">✉️ <span>${sanitizeInput(b.clientEmail || "S/N")}</span></p>
+        <p class="text-xs text-slate-200 mt-1 flex items-center gap-1.5">💳 <span>Ref. SINPE: <span class="font-bold text-white font-mono">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></span></p>
       </div>
     </div>
 
-    <!-- Mini-grid financiera 3 columnas: Gran Total / Adelanto / Saldo con tipografía monetaria -->
-    <div class="admin-booking-fin grid grid-cols-3 gap-2 bg-[#05020c]/80 p-3 rounded-xl border border-white/5">
+    <!-- Mini-grid financiera 3 columnas: Gran Total / Adelanto / Saldo con tipografía monetaria y fondo sobrio -->
+    <div class="admin-booking-fin grid grid-cols-3 gap-2 bg-[#05020c]/90 p-3 rounded-xl border border-white/5">
       <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Gran Total</p>
-        <p class="text-white font-mono font-bold text-lg sm:text-xl tabular-nums break-words">${formatCRC(b.granTotal)}</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Gran Total</p>
+        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.granTotal)}</p>
       </div>
       <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Adelanto SINPE</p>
-        <p class="text-emerald-400 font-mono font-semibold text-lg tabular-nums break-words">${formatCRC(b.deposit50Amount)}</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Adelanto SINPE (50%)</p>
+        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.deposit50Amount)}</p>
       </div>
       <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Saldo Pendiente</p>
-        <p class="text-amber-400 font-mono font-semibold text-lg tabular-nums break-words">${formatCRC(b.remainingBalance)}</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Saldo Pendiente</p>
+        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.remainingBalance)}</p>
       </div>
     </div>
 
@@ -5233,47 +5275,287 @@ async function preloadExecutiveImages(container) {
 }
 
 /**
- * Rasteriza a PDF de ALTA RESOLUCIÓN un contenedor de Pre-Factura, montándolo
- * dentro de un WRAPPER temporal invisible (left -9999px) para que la secuencia
- * completa de imágenes cargue dentro del DOM real. El contenedor en sí NUNCA
- * lleva offsets: se pasa al motor SIN el wrapper, porque html2pdf.js 0.10.1
- * clona profundamente el nodo fuente (cloneNode conserva estilos inline) dentro
- * de su propio contenedor en left:0. Si el nodo llevara left:-9999px, el clon
- * conservaría ese offset y html2canvas dibujaría el contenido fuera del canvas
- * → PDF EN BLANCO (causa raíz del bug reportado). El wrapper invisible queda
- * solo para ocultarlo del usuario; el motor rasteriza el contenedor estático.
+ * Genera la plantilla contable oficial en HTML para exportación a PDF A4.
+ * Cumple con encabezado corporativo (img/arkik_logo.jpg), cédula jurídica,
+ * desglose financiero, resumen de pagos SINPE y cláusulas con firmas.
  */
-async function saveExecutiveInvoicePDF(container, filename) {
-  if (!window.html2pdf) {
-    throw new Error("html2pdf no disponible");
+function buildAccountingInvoiceHtml(booking, statusOverride) {
+  const b = booking || (typeof cart !== "undefined" && cart.createdBooking) || {};
+  const rawCode = String(b.code || b.id || "00000000").replace(/^ARK-/, "");
+  const code = "ARK-" + rawCode;
+  const today = new Date().toLocaleDateString("es-CR", { year: "numeric", month: "long", day: "numeric" });
+  const timeNow = new Date().toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" });
+
+  const statusLabel = statusOverride || (
+    (b.status === "confirmada" || b.status === "realizada" || b.depositSettled)
+      ? "Validado"
+      : (b.status === "cancelada" ? "Cancelada" : "Pendiente de Aprobación")
+  );
+  const isValidated = statusLabel === "Validado" || b.status === "confirmada" || b.status === "realizada" || b.depositSettled;
+
+  const service = (typeof CATALOG_SERVICES !== "undefined" && Array.isArray(CATALOG_SERVICES))
+    ? CATALOG_SERVICES.find(s => s.id === b.serviceId)
+    : null;
+  const setupDisplay = service ? (service.setup_display || "2h antes") : (b.setupDisplay || "2h antes");
+  const teardownDisplay = service ? (service.teardown_display || "1h después") : (b.teardownDisplay || "1h después");
+
+  const basePrice = (typeof PriceManager !== "undefined" && service)
+    ? PriceManager.getServicePrice(service)
+    : (Number(b.basePrice) || (Number(b.granTotal) - (Number(b.travelSurcharge) || 0)) || 0);
+
+  const extras = b.extras || {};
+  let extrasRowsHtml = "";
+  if (extras.extraHoursCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="padding: 7px 12px; color: #334155;">• Horas Adicionales de Show (${extras.extraHoursCount} hr)</td>
+        <td style="padding: 7px 12px; text-align: right; font-weight: 700; font-family: ui-monospace, monospace; color: #1e293b;">${formatCRC(extras.extraHoursTotal)}</td>
+      </tr>`;
   }
+  if (extras.djHoursCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="padding: 7px 12px; color: #334155;">• Servicio de DJ en Recesos (${extras.djHoursCount} hr)</td>
+        <td style="padding: 7px 12px; text-align: right; font-weight: 700; font-family: ui-monospace, monospace; color: #1e293b;">${formatCRC(extras.djTotal)}</td>
+      </tr>`;
+  }
+  if (extras.subwoofersCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="padding: 7px 12px; color: #334155;">• Subwoofers Extra 18" (${extras.subwoofersCount} un)</td>
+        <td style="padding: 7px 12px; text-align: right; font-weight: 700; font-family: ui-monospace, monospace; color: #1e293b;">${formatCRC(extras.subwoofersTotal)}</td>
+      </tr>`;
+  }
+
+  const travelAmount = Number(b.travelSurcharge) || 0;
+  const isOutsideGam = (typeof isNonGamLocation === "function")
+    ? isNonGamLocation(b.province, b.canton)
+    : (travelAmount > 0);
+  const travelLabel = isOutsideGam
+    ? `Viáticos & Traslado — Fuera GAM (+12% · ${sanitizeInput(b.province || "CR")})`
+    : `Viáticos & Traslado — GAM (₡0 sin recargo)`;
+
+  const logoSrc = (typeof ArkikAssets !== "undefined" && ArkikAssets.getLogo()) || "img/arkik_logo.jpg";
+
+  return `
+    <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #0f172a; line-height: 1.45; background: #ffffff; padding: 0; box-sizing: border-box; width: 720px; margin: 0 auto;">
+      
+      <!-- 1. ENCABEZADO OFICIAL -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #6366f1; padding-bottom: 14px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <img src="${logoSrc}" alt="Arkik Productions" style="height: 60px; width: auto; max-width: 140px; object-fit: contain; border-radius: 8px; border: 1px solid #e2e8f0;" />
+          <div>
+            <h1 style="margin: 0; font-size: 21px; font-weight: 900; color: #1e1b4b; letter-spacing: -0.02em;">ARKIK PRODUCTIONS</h1>
+            <p style="margin: 2px 0 0; font-size: 11px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em;">Música en Vivo &amp; Producción de Eventos</p>
+            <p style="margin: 2px 0 0; font-size: 10px; color: #475569;">Razón Social: <strong>Arkik Productions</strong> · Cédula Jurídica: <strong>3-101-884920</strong></p>
+            <p style="margin: 1px 0 0; font-size: 10px; color: #64748b;">Sede: Granadilla, San José, Costa Rica · Tel: +506 6227-4984 · arkikproduc2023@gmail.com</p>
+          </div>
+        </div>
+        <div style="text-align: right; flex-shrink: 0;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 14px; display: inline-block; text-align: right;">
+            <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em;">Prefactura / Comprobante</div>
+            <div style="font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 15px; font-weight: 900; color: #4338ca; margin-top: 2px;">${sanitizeInput(code)}</div>
+            <div style="font-size: 9.5px; color: #475569; margin-top: 3px;">Fecha: <strong>${today}</strong> ${timeNow}</div>
+            <div style="margin-top: 5px;">
+              <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; background: ${isValidated ? '#ecfdf5' : '#fef3c7'}; border: 1px solid ${isValidated ? '#a7f3d0' : '#fde68a'}; color: ${isValidated ? '#047857' : '#b45309'};">
+                ${sanitizeInput(statusLabel)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. DATOS DEL CLIENTE Y EVENTO -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 9px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px;">
+            Datos del Cliente
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <tr><td style="padding: 2px 0; color: #64748b; width: 34%;">Nombre:</td><td style="padding: 2px 0; font-weight: 700; color: #0f172a;">${sanitizeInput(b.clientName || "Sin especificar")}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Cédula / ID:</td><td style="padding: 2px 0; font-weight: 600; color: #0f172a; font-family: ui-monospace, monospace;">${sanitizeInput(b.clientId || b.cedula || "No registrada")}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Teléfono:</td><td style="padding: 2px 0; font-weight: 600; color: #0f172a;">${sanitizeInput(b.clientPhone || "Sin registrar")}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Correo:</td><td style="padding: 2px 0; font-weight: 600; color: #0f172a;">${sanitizeInput(b.clientEmail || "No especificado")}</td></tr>
+          </table>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 9px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px;">
+            Detalles del Evento &amp; Ubicación
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <tr><td style="padding: 2px 0; color: #64748b; width: 34%;">Tipo de Evento:</td><td style="padding: 2px 0; font-weight: 700; color: #0f172a;">${sanitizeInput(b.eventType || "Evento Privado")}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Fecha &amp; Hora:</td><td style="padding: 2px 0; font-weight: 700; color: #4338ca;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Ubicación:</td><td style="padding: 2px 0; font-weight: 600; color: #0f172a;">${sanitizeInput([b.canton, b.province].filter(Boolean).join(", "))}</td></tr>
+            <tr><td style="padding: 2px 0; color: #64748b;">Dirección:</td><td style="padding: 2px 0; font-weight: 500; color: #334155;">${sanitizeInput(b.address || "Sede por confirmar")}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- 3. TABLA DE DESGLOSE CONTABLE -->
+      <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 16px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+          <thead style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+            <tr>
+              <th style="padding: 7px 10px; text-align: left; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #475569; letter-spacing: 0.05em;">Descripción del Servicio / Ítem</th>
+              <th style="padding: 7px 10px; text-align: right; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #475569; letter-spacing: 0.05em; width: 140px;">Monto (₡)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">
+                Formato Musical Base: ${sanitizeInput(b.serviceName || "Música en Vivo")}
+                <div style="font-size: 9.5px; font-weight: 600; color: #4338ca; margin-top: 2px;">Duración: ${sanitizeInput(service ? service.duration : (b.duration || "2 Horas (Duración Estándar)"))}</div>
+                <div style="font-size: 9.5px; font-weight: 400; color: #64748b; margin-top: 1px;">Montaje: ${sanitizeInput(setupDisplay)} · Desmontaje: ${sanitizeInput(teardownDisplay)}</div>
+              </td>
+              <td style="padding: 8px 10px; text-align: right; font-weight: 800; font-family: ui-monospace, monospace; color: #0f172a;">${formatCRC(basePrice)}</td>
+            </tr>
+            ${extrasRowsHtml}
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 7px 10px; color: #334155;">${travelLabel}</td>
+              <td style="padding: 7px 10px; text-align: right; font-weight: 700; font-family: ui-monospace, monospace; color: #334155;">
+                ${travelAmount > 0 ? "+" + formatCRC(travelAmount) : "₡0"}
+              </td>
+            </tr>
+            <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1;">
+              <td style="padding: 8px 10px; font-weight: 900; font-size: 12px; color: #1e1b4b; text-transform: uppercase;">Gran Total Cotizado</td>
+              <td style="padding: 8px 10px; text-align: right; font-weight: 900; font-size: 13.5px; font-family: ui-monospace, monospace; color: #1e1b4b;">${formatCRC(b.granTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 4. RESUMEN FINANCIERO -->
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+        <div style="width: 320px; background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 6px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; font-weight: 800; color: #475569; text-transform: uppercase;">
+            Resumen Financiero &amp; Estados de Pago
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <tr style="border-bottom: 1px solid #f1f5f9; background: #f0fdf4;">
+              <td style="padding: 6px 10px; font-weight: 800; color: #166534;">Adelanto 50% SINPE (${isValidated ? "Confirmado" : "Pendiente"}):</td>
+              <td style="padding: 6px 10px; text-align: right; font-weight: 900; font-family: ui-monospace, monospace; color: #166534;">${formatCRC(b.deposit50Amount)}</td>
+            </tr>
+            <tr style="background: #fff7ed;">
+              <td style="padding: 6px 10px; font-weight: 800; color: #9a3412;">Saldo Pendiente (Día del Evento):</td>
+              <td style="padding: 6px 10px; text-align: right; font-weight: 900; font-family: ui-monospace, monospace; color: #9a3412;">${formatCRC(b.remainingBalance)}</td>
+            </tr>
+          </table>
+          <div style="padding: 5px 10px; font-size: 9px; color: #64748b; background: #fafafa; border-top: 1px solid #f1f5f9;">
+            Ref. SINPE: <strong>${sanitizeInput(b.sinpeRef || "Validado en Cuenta")}</strong> · Móvil: ${SINPE_CONFIG.phone}
+          </div>
+        </div>
+      </div>
+
+      <!-- 4.5. COMPROBANTE SINPE DIGITALIZADO (AUDITORÍA CONTABLE) -->
+      ${safeImageDataUrl(b.voucherImage) ? `
+      <div style="margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; background: #f8fafc; page-break-inside: avoid;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 9px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em;">Comprobante de Pago SINPE Móvil (Copia Digitalizada)</span>
+          <span style="font-family: ui-monospace, monospace; font-size: 9.5px; font-weight: 700; color: #059669;">Ref: ${sanitizeInput(b.sinpeRef || "Validado")}</span>
+        </div>
+        <div style="text-align: center;">
+          <img src="${safeImageDataUrl(b.voucherImage)}" alt="Comprobante SINPE" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #ffffff;" />
+        </div>
+      </div>` : ""}
+
+      <!-- 5. FOOTER LEGAL Y FIRMAS -->
+      <div style="border-top: 1px solid #cbd5e1; padding-top: 10px; font-size: 9px; color: #475569; line-height: 1.45;">
+        <div style="font-weight: 800; color: #1e1b4b; text-transform: uppercase; margin-bottom: 3px;">Cláusulas de Servicio Profesional</div>
+        <p style="margin: 0 0 3px;">1. El adelanto del 50% confirma y congela la fecha en la agenda oficial de Arkik Productions; no es reembolsable debido al bloqueo de disponibilidad.</p>
+        <p style="margin: 0 0 3px;">2. El saldo restante (50%) debe cancelarse en su totalidad el día del evento previo al inicio del espectáculo musical contratado.</p>
+        <p style="margin: 0 0 10px;">3. Este documento constituye una prefactura y comprobante contable de validez comercial emitido conforme a las políticas de Arkik Productions.</p>
+
+        <!-- Firmas -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 14px;">
+          <div style="text-align: center;">
+            <div style="border-bottom: 1px solid #94a3b8; height: 26px; margin-bottom: 4px;"></div>
+            <div style="font-weight: 800; color: #0f172a; font-size: 9.5px;">Juan José Ramírez Chaves</div>
+            <div style="color: #64748b; font-size: 8.5px;">Dirección General · Arkik Productions</div>
+            <div style="color: #94a3b8; font-size: 8px;">Cédula Jurídica 3-101-884920</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="border-bottom: 1px solid #94a3b8; height: 26px; margin-bottom: 4px;"></div>
+            <div style="font-weight: 800; color: #0f172a; font-size: 9.5px;">${sanitizeInput(b.clientName || "Firma del Cliente")}</div>
+            <div style="color: #64748b; font-size: 8.5px;">Cliente / Contratante Aceptante</div>
+            <div style="color: #94a3b8; font-size: 8px;">ID: ${sanitizeInput(b.clientId || b.cedula || "Identificación Registrada")}</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+/**
+ * Motor Maestro de Renderizado PDF para html2pdf.js.
+ * Utiliza el contenedor real `#invoice-print-container` fuera de pantalla
+ * (left: -9999px; width: 800px; padding: 40px; background: white).
+ * Resuelve definitivamente el bug de PDF en blanco.
+ */
+async function renderAndSaveAccountingPDF(booking, filename, statusOverride) {
+  let container = document.getElementById("invoice-print-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "invoice-print-container";
+    container.setAttribute("aria-hidden", "true");
+    container.style.position = "absolute";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = "800px";
+    container.style.padding = "40px";
+    container.style.background = "#ffffff";
+    container.style.color = "#000000";
+    container.style.fontFamily = "'Inter', system-ui, sans-serif";
+    container.style.boxSizing = "border-box";
+    document.body.appendChild(container);
+  }
+
+  container.innerHTML = buildAccountingInvoiceHtml(booking, statusOverride);
+
+  // Asegura precarga y decodificación completa del logo antes de rasterizar
   await preloadExecutiveImages(container);
 
-  const wrapper = document.createElement("div");
-  wrapper.style.position = "absolute";
-  wrapper.style.left = "-9999px";
-  wrapper.style.top = "0";
-  wrapper.style.zIndex = "-1";
-  wrapper.style.margin = "0";
-  wrapper.style.padding = "0";
-  wrapper.appendChild(container);
-  document.body.appendChild(wrapper);
-
-  try {
-    const opt = {
-      margin: 0,
-      filename: filename,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-    };
-    // from() recibe el contenedor ESTÁTICO; el wrapper con -9999px jamás se clona.
-    await window.html2pdf().set(opt).from(container).save();
-  } finally {
-    if (wrapper && wrapper.parentNode) {
-      wrapper.parentNode.removeChild(wrapper);
+  if (window.html2pdf) {
+    try {
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+          windowWidth: 800
+        },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+      };
+      await window.html2pdf().set(opt).from(container).save();
+      return true;
+    } catch (err) {
+      console.warn("[PDF Engine] html2pdf falló, recurriendo a impresión:", err);
     }
   }
+
+  // Fallback si html2pdf no está presente o falla
+  printFallback(container.innerHTML, filename.replace(/\.pdf$/i, ""));
+  return true;
+}
+
+/**
+ * Alias de compatibilidad hacia renderAndSaveAccountingPDF
+ */
+async function saveExecutiveInvoicePDF(containerOrBooking, filename, statusOverride) {
+  let booking = null;
+  if (containerOrBooking && typeof containerOrBooking === "object") {
+    if (containerOrBooking.code || containerOrBooking.clientName) {
+      booking = containerOrBooking;
+    }
+  }
+  if (!booking) {
+    booking = currentPreInvoiceBooking || (typeof cart !== "undefined" && cart.createdBooking) || null;
+  }
+  return renderAndSaveAccountingPDF(booking, filename, statusOverride);
 }
 
 /**
@@ -5636,8 +5918,8 @@ function triggerPreInvoiceDOCXDownload() {
 }
 
 /**
- * PDF Export Engine: Restringe el contenedor a 794px width con 28px padding
- * y ejecuta html2pdf con la configuración oficial A4 portrait.
+ * PDF Export Engine: Exporta la Prefactura/Comprobante A4 usando el contenedor
+ * real #invoice-print-container y html2pdf.js con la plantilla contable oficial.
  */
 async function exportVoucherPDF(bookingId) {
   let booking = null;
@@ -5654,44 +5936,13 @@ async function exportVoucherPDF(bookingId) {
     return;
   }
 
-  const bookingCode = booking.code || booking.id || "RESERVA";
-  booking.id = booking.id || bookingCode;
-
-  // Contenedor acotado para rasterización limpia a escala 2 sin deformación
-  const contentElement = document.createElement("div");
-  contentElement.className = "pre-invoice-print-container";
-  contentElement.style.width = "794px";
-  contentElement.style.maxWidth = "794px";
-  contentElement.style.padding = "28px";
-  contentElement.style.boxSizing = "border-box";
-  contentElement.style.background = "#ffffff";
-  contentElement.style.color = "#0f172a";
-  contentElement.style.margin = "0 auto";
-  contentElement.innerHTML = buildPreInvoiceCardHtml(booking);
-
-  await preloadExecutiveImages(contentElement);
-
+  const rawCode = String(booking.code || booking.id || "RESERVA").replace(/^ARK-/, "");
+  const filename = `ARK-${rawCode}-PREFACTURA.pdf`;
   showToast("Generando PDF Oficial A4...", "info");
-
-  if (window.html2pdf) {
-    try {
-      const opt = {
-        margin: 0,
-        filename: 'Prefactura_' + booking.id + '.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, windowWidth: 794 },
-        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
-      };
-      await window.html2pdf().set(opt).from(contentElement).save();
-      showToast("¡PDF Oficial descargado con éxito!", "success");
-      return;
-    } catch (err) {
-      console.warn("[PDF Engine] html2pdf falló, recurriendo a impresión:", err);
-    }
+  const success = await renderAndSaveAccountingPDF(booking, filename);
+  if (success) {
+    showToast("¡PDF Oficial descargado con éxito!", "success");
   }
-
-  // Fallback si html2pdf no está disponible
-  printFallback(contentElement.innerHTML, 'Prefactura_' + booking.id);
 }
 
 /**
@@ -6021,13 +6272,13 @@ async function validateBankPayment(b) {
   const confirmed = res.booking || b;
   showToast(`Depósito bancario validado. Reserva ${confirmed.code} CONFIRMADA.`, "success");
 
-  // 1) Descarga automática de la Pre-Factura VALIDADA (PDF alta resolución).
-  const pdfContainer = buildExecutiveInvoiceHtml(confirmed);
-  saveExecutiveInvoicePDF(pdfContainer, `PreFactura_${confirmed.code}_VALIDADA.pdf`)
-    .then(() => showToast("Pre-Factura validada descargada.", "success"))
-    .catch(() => {
-      console.warn("PDF validado fallback:", "se genera impresión");
-      try { printFallback(pdfContainer.innerHTML, `PreFactura_${confirmed.code}_VALIDADA`); } catch (e) { /* noop */ }
+  // 1) Descarga automática de la Pre-Factura VALIDADA: ARK-[CODIGO]-VALIDADO.pdf
+  const rawCode = String(confirmed.code || confirmed.id || "RESERVA").replace(/^ARK-/, "");
+  const validatedPdfName = `ARK-${rawCode}-VALIDADO.pdf`;
+  renderAndSaveAccountingPDF(confirmed, validatedPdfName, "Validado")
+    .then(() => showToast(`Archivo ${validatedPdfName} descargado.`, "success"))
+    .catch((err) => {
+      console.warn("PDF validado fallback:", err);
     });
 
   // 2) Descarga automática del Expediente JSON (auditoría de respaldo).
@@ -7173,6 +7424,17 @@ function guardInternalPathLinks() {
   document.addEventListener("click", (e) => {
     const link = e.target.closest('a[href]');
     if (!link) return;
+    // Excluir enlaces externos, redes sociales y destinos a nueva pestaña para evitar dead buttons
+    if (
+      link.classList.contains("social-link") ||
+      link.closest(".social-link") ||
+      link.classList.contains("footer-social") ||
+      link.closest(".footer-social") ||
+      link.getAttribute("target") === "_blank" ||
+      (link.getAttribute("rel") && link.getAttribute("rel").includes("external"))
+    ) {
+      return;
+    }
     const href = link.getAttribute("href") || "";
     if (!/^\/[^/]/.test(href)) return;
     const normalized = href.replace(/\/+$/, "").toLowerCase();
@@ -7236,6 +7498,457 @@ let modalCounter = 0;
 function trackModal(open) {
   modalCounter = Math.max(0, modalCounter + (open ? 1 : -1));
   syncModalAnimationState();
+}
+
+// ============================================================
+// 10.6 CANVAS ENGINE & 60 FPS PERFORMANCE ISOLATION
+// ============================================================
+
+/**
+ * Controlador dinámico de canvas con escalado DPR y debounce estricto (150ms)
+ * en ResizeObserver para eliminar el Layout Thrashing.
+ */
+function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
+  let logicalW = 0;
+  let logicalH = 0;
+  let resizeTimer = null;
+  const DPR_CAP = 2;
+
+  function resizeNow() {
+    if (!canvas || !container || !ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const rect = container.getBoundingClientRect();
+    logicalW = Math.max(1, Math.round(rect.width));
+    logicalH = Math.max(1, Math.round(rect.height));
+    canvas.width = Math.round(logicalW * dpr);
+    canvas.height = Math.round(logicalH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (typeof onAfterResize === "function") {
+      onAfterResize(logicalW, logicalH);
+    }
+  }
+
+  function debouncedResize() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeNow();
+    }, 150);
+  }
+
+  if (typeof ResizeObserver === "function" && container) {
+    const ro = new ResizeObserver(debouncedResize);
+    ro.observe(container);
+  } else {
+    window.addEventListener("resize", debouncedResize, { passive: true });
+  }
+
+  return {
+    resizeNow,
+    get width() { return logicalW; },
+    get height() { return logicalH; }
+  };
+}
+
+/**
+ * Hero: Cuerdas de Guitarra Neón Interactivas
+ * Aislado estrictamente por IntersectionObserver y pausado de inmediato cuando un modal está abierto.
+ */
+function initHeroStringsEffect() {
+  const hero = document.getElementById("hero");
+  const canvas = document.getElementById("heroStringsCanvas");
+  if (!hero || !canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NEON = ["#a855f7", "#38bdf8", "#10b981", "#ec4899"];
+  const STRING_COUNT = 4;
+  const SEGMENTS = 60;
+  const DEFLECT_REACH = 140;
+
+  let logicalW = 0;
+  let logicalH = 0;
+  let rafId = null;
+  let heroInView = false;
+  const strings = [];
+  let scrollEnergy = 0;
+  let lastScrollY = window.scrollY || 0;
+  let lastScrollAt = performance.now();
+  const pointer = { x: -1, y: -1, active: false, velX: 0, velY: 0, lastX: -1, lastY: -1, lastT: 0 };
+
+  function buildStrings() {
+    strings.length = 0;
+    for (let i = 0; i < STRING_COUNT; i++) {
+      strings.push({
+        color: NEON[i % NEON.length],
+        baseY: (0.16 + i * 0.22 + Math.random() * 0.04) * logicalH,
+        amp: (0.008 + Math.random() * 0.006) * logicalH,
+        freq: 0.006 + Math.random() * 0.004,
+        speed: 0.0002 + Math.random() * 0.0002,
+        phase: Math.random() * Math.PI * 2,
+        width: i === 2 ? 2 : 1.5,
+        alpha: i === 3 ? 0.55 : 0.85
+      });
+    }
+  }
+
+  const canvasController = createDynamicCanvasController(canvas, hero, ctx, (w, h) => {
+    logicalW = w;
+    logicalH = h;
+    buildStrings();
+  });
+
+  let scrollTicking = false;
+  function onScroll() {
+    if (!heroInView) return;
+    if (scrollTicking) return;
+    scrollTicking = true;
+    requestAnimationFrame(() => {
+      scrollTicking = false;
+      if (!heroInView) return;
+      const now = performance.now();
+      const sy = window.scrollY || 0;
+      const dt = Math.max(1, now - lastScrollAt);
+      const velocity = Math.abs(sy - lastScrollY) / dt;
+      lastScrollY = sy;
+      lastScrollAt = now;
+      if (velocity <= 0.4) return;
+      scrollEnergy = Math.min(1, scrollEnergy + Math.min(0.5, velocity * 0.004));
+    });
+  }
+
+  function onPointerMove(e) {
+    const rect = hero.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < -60 || y < -60 || x > logicalW + 60 || y > logicalH + 60) {
+      pointer.active = false;
+      return;
+    }
+    const now = performance.now();
+    if (pointer.lastX >= 0 && now > pointer.lastT) {
+      pointer.velX = (x - pointer.lastX) / (now - pointer.lastT);
+      pointer.velY = (y - pointer.lastY) / (now - pointer.lastT);
+    }
+    pointer.x = x;
+    pointer.y = y;
+    pointer.active = true;
+    pointer.lastX = x;
+    pointer.lastY = y;
+    pointer.lastT = now;
+  }
+
+  function onPointerLeave() {
+    pointer.active = false;
+  }
+
+  function tick() {
+    // Si sale de viewport o hay modal abierto, apagar rAF de inmediato
+    if (!heroInView || document.hidden || (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen())) {
+      stop();
+      ctx.clearRect(0, 0, logicalW, logicalH);
+      return;
+    }
+
+    ctx.clearRect(0, 0, logicalW, logicalH);
+    const t = performance.now();
+
+    scrollEnergy *= 0.94;
+    if (scrollEnergy < 0.004) scrollEnergy = 0;
+
+    for (let s = 0; s < strings.length; s++) {
+      const st = strings[s];
+      ctx.beginPath();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = st.color;
+      ctx.strokeStyle = st.color;
+      ctx.globalAlpha = st.alpha;
+      ctx.lineWidth = st.width;
+      ctx.lineCap = "round";
+
+      for (let i = 0; i <= SEGMENTS; i++) {
+        const fx = i / SEGMENTS;
+        const x = fx * logicalW;
+
+        let y = st.baseY
+          + Math.sin(x * st.freq + t * st.speed + st.phase) * st.amp
+          + Math.sin(x * st.freq * 2.3 - t * st.speed * 0.55 + st.phase * 2.1) * st.amp * 0.4;
+
+        if (scrollEnergy > 0) {
+          const travel = (t * 0.0006) % 1;
+          const d = Math.abs(fx - travel);
+          const envelope = d < 0.5 ? Math.cos((d / 0.5) * Math.PI) : 0;
+          y += Math.sin(d * Math.PI * 6 - t * 0.004) * envelope * scrollEnergy * 26;
+        }
+
+        if (pointer.active) {
+          const dx = x - pointer.x;
+          const dy = pointer.y - st.baseY;
+          if (Math.abs(dx) < DEFLECT_REACH) {
+            const g = Math.exp(-(dx * dx) / (2 * 38 * 38));
+            const pull = Math.exp(-(dy * dy) / (2 * 62 * 62));
+            const velBoost = Math.min(1.4, 1 + (Math.abs(pointer.velX) + Math.abs(pointer.velY)) * 0.02);
+            y += Math.sign(dy) * g * pull * 32 * velBoost;
+          }
+        }
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (rafId != null || reducedMotion) return;
+    if (!heroInView || document.hidden) return;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (rafId == null) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  if (typeof window.IntersectionObserver === "function") {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        heroInView = entry.isIntersecting;
+        if (heroInView) {
+          start();
+        } else {
+          stop();
+          ctx.clearRect(0, 0, logicalW, logicalH);
+        }
+      });
+    }, { rootMargin: "0px", threshold: 0 });
+    observer.observe(hero);
+  } else {
+    heroInView = true;
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); } else if (heroInView) { start(); }
+  });
+
+  window.addEventListener("scroll", onScroll, { passive: true });
+  hero.addEventListener("mousemove", onPointerMove, { passive: true });
+  hero.addEventListener("touchstart", onPointerMove, { passive: true });
+  hero.addEventListener("touchmove", onPointerMove, { passive: true });
+  hero.addEventListener("mouseleave", onPointerLeave);
+  hero.addEventListener("touchend", onPointerLeave, { passive: true });
+
+  canvasController.resizeNow();
+  start();
+
+  const handle = { start, stop };
+  AnimationRegistry.register("hero-strings", handle);
+  return handle;
+}
+
+/**
+ * Footer: Partículas de Fluido Reactivo
+ * Aislado estrictamente por IntersectionObserver y pausado de inmediato cuando un modal está abierto.
+ */
+function initFooterParticlesEffect() {
+  const footer = document.getElementById("master-liquid-footer") || document.getElementById("site-footer") || document.querySelector("footer");
+  const canvas = document.getElementById("footerParticlesCanvas") || document.getElementById("footerFluidCanvas");
+  if (!footer || !canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NEON = ["#a855f7", "#38bdf8", "#10b981", "#ec4899"];
+  const RIBBON_COUNT = 3;
+  const RIBBON_POINTS = 64;
+  const MAX_PARTICLES = 120;
+
+  let logicalW = 0;
+  let logicalH = 0;
+  let rafId = null;
+  let footerInView = false;
+  let lastBurstAt = 0;
+  let lastScrollAt = 0;
+  const ribbons = [];
+  const particles = [];
+
+  function buildRibbons() {
+    ribbons.length = 0;
+    for (let i = 0; i < RIBBON_COUNT; i++) {
+      ribbons.push({
+        color: NEON[i % NEON.length],
+        baseY: (0.28 + i * 0.2 + Math.random() * 0.12) * logicalH,
+        amp: (0.02 + Math.random() * 0.018) * logicalH,
+        freq: 0.004 + Math.random() * 0.003,
+        speed: 0.00022 + Math.random() * 0.00018,
+        phase: Math.random() * Math.PI * 2,
+        width: 1.6 + Math.random() * 1.4,
+        alpha: 0.34 + Math.random() * 0.2
+      });
+    }
+  }
+
+  const canvasController = createDynamicCanvasController(canvas, footer, ctx, (w, h) => {
+    logicalW = w;
+    logicalH = h;
+    buildRibbons();
+  });
+
+  function spawnBurst(x, y, count, spread) {
+    if (particles.length >= MAX_PARTICLES) return;
+    for (let i = 0; i < count; i++) {
+      if (particles.length >= MAX_PARTICLES) break;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.5 + Math.random() * 2.2;
+      const life = 700 + Math.random() * 900;
+      particles.push({
+        x: x + (Math.random() - 0.5) * spread,
+        y: y + (Math.random() - 0.5) * spread,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life,
+        maxLife: life,
+        size: 1 + Math.random() * 1.6,
+        color: NEON[Math.floor(Math.random() * NEON.length)],
+        history: []
+      });
+    }
+  }
+
+  function pointerBurst(e) {
+    const now = performance.now();
+    if (now - lastBurstAt < 70) return;
+    lastBurstAt = now;
+    const rect = footer.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    spawnBurst(x, y, 4, 24);
+  }
+
+  function scrollBurst() {
+    if (!footerInView) return;
+    const now = performance.now();
+    if (now - lastScrollAt < 260) return;
+    lastScrollAt = now;
+    const rect = footer.getBoundingClientRect();
+    for (let i = 0; i < 2; i++) {
+      spawnBurst(Math.random() * rect.width, rect.top * 0.2 + Math.random() * rect.height * 0.25, 3, 30);
+    }
+  }
+
+  function tick() {
+    if (!footerInView || document.hidden || (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen())) {
+      stop();
+      ctx.clearRect(0, 0, logicalW, logicalH);
+      return;
+    }
+
+    ctx.clearRect(0, 0, logicalW, logicalH);
+
+    for (const r of ribbons) {
+      ctx.beginPath();
+      for (let i = 0; i <= RIBBON_POINTS; i++) {
+        const x = (i / RIBBON_POINTS) * logicalW;
+        const y = r.baseY
+          + Math.sin(x * r.freq + performance.now() * r.speed + r.phase) * r.amp
+          + Math.sin(x * r.freq * 2.7 - performance.now() * r.speed * 0.6 + r.phase * 2) * r.amp * 0.35;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = r.color;
+      ctx.globalAlpha = r.alpha;
+      ctx.lineWidth = r.width;
+      ctx.shadowBlur = 16;
+      ctx.shadowColor = r.color;
+      ctx.stroke();
+    }
+
+    ctx.shadowBlur = 12;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.985;
+      p.vy *= 0.985;
+      p.life -= 16.67;
+      p.history.push({ x: p.x, y: p.y });
+      if (p.history.length > 7) p.history.shift();
+      if (p.life <= 0 || p.y > logicalH + 30) {
+        particles.splice(i, 1);
+        continue;
+      }
+      const alpha = Math.max(0, p.life / p.maxLife) * 0.8;
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = p.size;
+      ctx.shadowColor = p.color;
+      ctx.beginPath();
+      p.history.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (rafId != null || reducedMotion) return;
+    if (!footerInView || document.hidden) return;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (rafId == null) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  if (typeof window.IntersectionObserver === "function") {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        footerInView = entry.isIntersecting;
+        if (footerInView) {
+          start();
+        } else {
+          stop();
+          ctx.clearRect(0, 0, logicalW, logicalH);
+        }
+      });
+    }, { rootMargin: "0px", threshold: 0 });
+    observer.observe(footer);
+  } else {
+    footerInView = true;
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); } else if (footerInView) { start(); }
+  });
+
+  footer.addEventListener("pointermove", pointerBurst, { passive: true });
+  window.addEventListener("scroll", scrollBurst, { passive: true });
+
+  canvasController.resizeNow();
+  start();
+
+  const handle = { start, stop };
+  AnimationRegistry.register("footer-particles", handle);
+  return handle;
 }
 
 // ---- Helpers Globales de Interfaz & Clipboard ----
@@ -7369,6 +8082,9 @@ function initApp() {
   PriceManager.loadPublic().catch(function () {});
   CloudSync.refresh("boot").catch(function () {});
   AdminModule.restoreSession().catch(function () {});
+  // Motores Canvas 60 FPS aislados en viewport
+  initHeroStringsEffect();
+  initFooterParticlesEffect();
 }
 
 // ============================================================
@@ -7892,17 +8608,9 @@ function setupEventListeners() {
   }
 
   const nameInput = document.getElementById("client-name");
-  const nameCheck = document.getElementById("name-check");
   if (nameInput) {
-    nameInput.addEventListener("input", (e) => {
-      const val = e.target.value.trim();
-      const ok = isValidClientName(val);
-      if (nameCheck) {
-        nameCheck.textContent = ok ? "✓ 2 palabras min. confirmado" : "";
-        nameCheck.classList.toggle("hidden", !ok);
-      }
-      validateFieldLive(e.target);
-    });
+    nameInput.addEventListener("input", (e) => validateFieldLive(e.target));
+    nameInput.addEventListener("blur", (e) => validateFieldLive(e.target));
   }
 
   const phoneInput = document.getElementById("client-phone");
@@ -7911,24 +8619,46 @@ function setupEventListeners() {
       maskCrPhoneInput(e.target);
       validateFieldLive(e.target);
     });
+    phoneInput.addEventListener("blur", (e) => validateFieldLive(e.target));
   }
 
   const emailInput = document.getElementById("client-email");
-  if (emailInput) emailInput.addEventListener("input", (e) => validateFieldLive(e.target));
+  if (emailInput) {
+    emailInput.addEventListener("input", (e) => validateFieldLive(e.target));
+    emailInput.addEventListener("blur", (e) => validateFieldLive(e.target));
+  }
+
+  const idInput = document.getElementById("client-id");
+  if (idInput) {
+    idInput.addEventListener("input", (e) => validateFieldLive(e.target));
+    idInput.addEventListener("blur", (e) => validateFieldLive(e.target));
+  }
+
   const addressInput = document.getElementById("booking-address");
-  if (addressInput) addressInput.addEventListener("input", (e) => validateFieldLive(e.target));
+  if (addressInput) {
+    addressInput.addEventListener("input", (e) => validateFieldLive(e.target));
+    addressInput.addEventListener("blur", (e) => validateFieldLive(e.target));
+  }
+
+  const policiesCheck = document.getElementById("accept-policies-checkbox");
+  if (policiesCheck) {
+    policiesCheck.addEventListener("change", () => updateStep3SubmitButtonState());
+  }
 
   const provSelect = document.getElementById("booking-province");
   if (provSelect) {
     provSelect.addEventListener("change", (e) => {
       cart.province = e.target.value;
-      cart.canton = "";
+      cart.canton = null;
       populateCantones(e.target.value);
       updateSummaryPrices();
       cart.persist();
       validateFieldLive(provSelect);
       const canton = document.getElementById("booking-canton");
-      if (canton) validateFieldLive(canton);
+      if (canton) {
+        canton.value = "";
+        validateFieldLive(canton);
+      }
     });
   }
 
@@ -8301,6 +9031,23 @@ function setupEventListeners() {
       if (conflictEl && !conflictEl.classList.contains("hidden")) {
         hideSlotConflictAlert();
         return;
+      }
+      // Stacked admin dialogs (innermost first) that previously ignored ESC.
+      const escTargets = [
+        ["adminVoucherModal", () => AdminModule.closeVoucherPreview()],
+        ["bank-validation-modal", () => closeBankValidationModal()],
+        ["adminRescheduleModal", () => AdminModule.closeRescheduleModal()],
+        ["preInvoicePreviewModal", () => closePreInvoicePreview()],
+        ["invoicePreviewModal", () => closeInvoicePreview()],
+        ["rackPreviewModal", () => closeRackPreview()],
+        ["ragStudioView", () => closeRagStudio()]
+      ];
+      for (const [id, closeFn] of escTargets) {
+        const el = document.getElementById(id);
+        if (el && !el.classList.contains("hidden")) {
+          try { closeFn(); } catch (err) { el.classList.add("hidden"); }
+          return;
+        }
       }
       const execReportModal = document.getElementById("execReportPreviewModal");
       if (execReportModal && !execReportModal.classList.contains("hidden")) {
@@ -8851,36 +9598,59 @@ function adminLogout() {
 // explicit user interaction. Wipes any leftover visible state on
 // app boot so a rogue backdrop can never black the page out.
 const ModalController = {
-  _ids: ['booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
+  _ids: ['bookingModal', 'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
 
-  // Inventario completo de overlays: los 8 modales pre-montados más los que
-  // alternan sus propias clases (media admin, executive, brand, políticas,
-  // profile lightbox y el estudio RAG). Si ALGUNO está abierto, las
-  // animaciones de fondo deben estar en pausa.
+  // Inventario completo de overlays: los modales pre-montados más vistas a pantalla completa.
+  // Si ALGUNO está abierto, las animaciones canvas de fondo deben estar en pausa estricta.
   _overlayIds: [
-    'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal',
+    'bookingModal', 'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal',
     'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal',
     'execReportPreviewModal', 'adminMediaModal', 'executive-modal', 'brand-modal',
     'modal-politicas', 'profile-lightbox', 'ragStudioView'
   ],
 
+  _returnFocus: {},
+
+  _resolve(modalId) {
+    if (!modalId) return null;
+    let el = document.getElementById(modalId);
+    if (!el && modalId === 'bookingModal') el = document.getElementById('booking-modal') || document.querySelector('[data-id="booking-modal"]');
+    if (!el && modalId === 'booking-modal') el = document.getElementById('bookingModal') || document.querySelector('[data-id="booking-modal"]');
+    return el;
+  },
+
   open(modalId) {
-    const modal = document.getElementById(modalId);
+    const modal = this._resolve(modalId);
     if (!modal) return;
+    // Remember the trigger so focus returns to it on close (WCAG 2.4.3).
+    if (document.activeElement && !modal.contains(document.activeElement)) {
+      this._returnFocus[modal.id] = document.activeElement;
+    }
+    modal.setAttribute('aria-modal', 'true');
+    if (!modal.getAttribute('role')) modal.setAttribute('role', 'dialog');
     modal.classList.remove('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
     modal.classList.add('flex', 'opacity-100', 'pointer-events-auto', 'visible');
     document.body.style.overflow = 'hidden';
     syncModalAnimationState();
+    requestAnimationFrame(() => {
+      const first = getFocusableElements(modal)[0];
+      if (first) first.focus({ preventScroll: true });
+    });
   },
 
   close(modalId) {
-    const modal = document.getElementById(modalId);
+    const modal = this._resolve(modalId);
     if (modal) {
       modal.classList.add('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
       modal.classList.remove('flex', 'opacity-100', 'pointer-events-auto', 'visible');
+      const back = this._returnFocus[modal.id];
+      delete this._returnFocus[modal.id];
+      if (back && document.contains(back) && typeof back.focus === 'function') {
+        back.focus({ preventScroll: true });
+      }
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#booking-modal.flex, #slotConflictModal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
+    const anyOpen = document.querySelectorAll('#bookingModal.flex, #booking-modal.flex, #slotConflictModal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
     if (anyOpen.length === 0) {
       document.body.style.overflow = '';
     }
@@ -8892,8 +9662,8 @@ const ModalController = {
   },
 
   isOpen(modalId) {
-    const modal = document.getElementById(modalId);
-    return modal ? !modal.classList.contains('hidden') : false;
+    const modal = this._resolve(modalId);
+    return modal ? (!modal.classList.contains('hidden') && modal.classList.contains('flex')) : false;
   },
 
   // Fuente única de verdad: ¿hay algún overlay visible ahora mismo?
@@ -8902,6 +9672,54 @@ const ModalController = {
     return this._overlayIds.some((id) => this.isOpen(id));
   }
 };
+
+// ---- Focus trap for every visible aria-modal dialog ----
+// Works for modals opened via ModalController AND those toggled directly
+// with .hidden. Only runs on Tab, so it costs nothing per frame.
+const FOCUSABLE_SELECTOR = [
+  'a[href]', 'area[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])', 'textarea:not([disabled])', 'iframe', '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]'
+].join(',');
+
+function isElementVisible(el) {
+  return Boolean(el) && !el.classList.contains('hidden') && el.getClientRects().length > 0;
+}
+
+function getFocusableElements(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR))
+    .filter((el) => !el.closest('.hidden') && !el.hasAttribute('inert') && el.getClientRects().length > 0);
+}
+
+function getTopmostOpenDialog() {
+  const dialogs = Array.from(document.querySelectorAll('[aria-modal="true"]')).filter(isElementVisible);
+  return dialogs.length ? dialogs[dialogs.length - 1] : null; // last in DOM paints on top
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const dialog = getTopmostOpenDialog();
+  if (!dialog) return;
+  const focusables = getFocusableElements(dialog);
+  if (focusables.length === 0) {
+    e.preventDefault();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (!dialog.contains(active)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 // ============================================================
 // 15. BOOKING WIZARD (4 pasos con micro-interacciones)
@@ -8918,19 +9736,19 @@ function openBookingModal(serviceId) {
 
   updateModalStep(1);
 
-  const modal = document.getElementById("booking-modal");
+  const modal = document.getElementById("bookingModal") || document.getElementById("booking-modal");
   if (modal) {
     // Pre-mounted modal: deterministic reveal via ModalController
-    ModalController.open("booking-modal");
+    ModalController.open(modal.id);
   }
 
   showToast(`Formato seleccionado: ${cart.selectedService.name}`);
 }
 
 function closeBookingModal() {
-  const modal = document.getElementById("booking-modal");
+  const modal = document.getElementById("bookingModal") || document.getElementById("booking-modal");
   if (modal) {
-    ModalController.close("booking-modal");
+    ModalController.close(modal.id);
     resetBooking();
     clearRouteHashIfNeeded();
     trackModal(false);
@@ -8944,10 +9762,11 @@ function resetBooking() {
     djHoursCount: 0,
     subwoofersCount: 0,
     province: "",
-    canton: "",
+    canton: null,
     clientName: "",
     clientPhone: "",
     clientEmail: "",
+    clientId: "",
     eventType: "Boda",
     selectedDate: "",
     selectedTime: "",
@@ -8961,20 +9780,37 @@ function resetBooking() {
   lastModalStep = 1;
   CalendarModule.reset();
 
-  const ids = ["client-name", "client-phone", "client-email", "booking-address", "sinpe-reference", "website_hp"];
+  const ids = ["client-name", "client-phone", "client-email", "client-id", "booking-address", "sinpe-reference", "website_hp"];
   ids.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.value = "";
+    if (el) {
+      el.value = "";
+      el.classList.remove("field-valid", "field-invalid", "field-shake");
+    }
+    const err = document.getElementById(id + "-error");
+    if (err) err.textContent = "";
   });
 
   const eventType = document.getElementById("event-type");
   if (eventType) eventType.value = "Boda";
 
   const prov = document.getElementById("booking-province");
-  if (prov) prov.value = "";
+  if (prov) {
+    prov.value = "";
+    prov.classList.remove("field-valid", "field-invalid");
+  }
 
   const canton = document.getElementById("booking-canton");
-  if (canton) canton.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione primero provincia</option>';
+  if (canton) {
+    canton.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione primero provincia</option>';
+    canton.classList.remove("field-valid", "field-invalid");
+  }
+
+  const policies = document.getElementById("accept-policies-checkbox");
+  if (policies) policies.checked = false;
+
+  document.querySelectorAll(".field-check-icon").forEach(icon => icon.classList.add("hidden"));
+  document.querySelectorAll(".field-error").forEach(err => err.textContent = "");
 
   const voucher = document.getElementById("voucher-view");
   const gateway = document.getElementById("sinpe-gateway-view");
@@ -8984,12 +9820,26 @@ function resetBooking() {
   // Nueva reserva: limpiar comprobante SINPE previamente cargado (miniatura + botón).
   resetVoucherUploadState();
 
-  // Clear new Step 2 elements
+  // Clear Step 2 elements
   const logisticsPill = document.getElementById("logistics-pill");
   if (logisticsPill) logisticsPill.classList.add("hidden");
 
   const selectionSummary = document.getElementById("selection-summary");
   if (selectionSummary) selectionSummary.classList.add("hidden");
+
+  const selectedHeader = document.getElementById("selected-date-header");
+  if (selectedHeader) selectedHeader.textContent = "Seleccione una fecha";
+
+  const selectedDisplay = document.getElementById("selected-date-display");
+  if (selectedDisplay) selectedDisplay.textContent = "Ninguna fecha seleccionada";
+
+  const timeWrap = document.getElementById("time-selector-wrap");
+  if (timeWrap) timeWrap.classList.add("hidden");
+
+  renderDynamicExtrasCounters();
+  updateSummaryPrices();
+  updateStep2ContinueState();
+  updateStep3SubmitButtonState();
 
   cart.clearStoredState();
 }
@@ -9019,7 +9869,10 @@ function selectNextAvailableDate() {
 
     // Cupos restantes: el servidor manda; el conteo local solo es la
     // estimación heredada cuando aún no hay datos remotos del día.
-    if (AvailabilityManager.remainingSlots(iso) >= 1) {
+    // Además, el día debe tener al menos una hora fuera de la ventana de 72h.
+    const blockedTimes = computeBlockedTimes(iso);
+    const hasBookableSlot = TimeSlots.some(s => !blockedTimes.has(s) && !isInsideNoticeWindow(iso, s));
+    if (AvailabilityManager.remainingSlots(iso) >= 1 && hasBookableSlot) {
       foundISO = iso;
       break;
     }
@@ -9063,9 +9916,33 @@ function selectNextAvailableDate() {
 }
 
 function goToStep(stepNumber) {
-  if (stepNumber === 3 && !validateCalendarSelection()) return;
+  const target = clampInt(stepNumber, 1, 4);
 
-  if (stepNumber === 4) {
+  // Navegación hacia atrás siempre permitida
+  if (target < cart.currentStep) {
+    cart.currentStep = target;
+    cart.persist();
+    updateModalStep(target);
+    return;
+  }
+
+  // Paso 2 requiere servicio válido seleccionado
+  if (target >= 2) {
+    if (!cart.selectedService) {
+      cart.selectedService = CATALOG_SERVICES[0] || null;
+    }
+  }
+
+  // Paso 3 requiere fecha y hora válidas (y fuera de la ventana 72h)
+  if (target >= 3) {
+    if (!validateCalendarSelection()) {
+      updateModalStep(2);
+      return;
+    }
+  }
+
+  // Paso 4 requiere datos completos de cliente, ubicación y aceptación de políticas
+  if (target >= 4) {
     if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
     if (!validateCalendarSelection()) {
       updateModalStep(2);
@@ -9081,9 +9958,7 @@ function goToStep(stepNumber) {
       updateModalStep(3);
       return;
     }
-    // T&C de contratación: bloquear el avance al Paso 4 si la casilla no está
-    // marcada. Cubre también el salto directo desde el stepper (nodo "4").
-    if (cart.currentStep === 3 && !validatePoliciesAcceptance()) {
+    if (!validatePoliciesAcceptance()) {
       showToast("⚠️ Debe aceptar los Términos y Condiciones para continuar.", "error");
       updateModalStep(3);
       return;
@@ -9091,9 +9966,9 @@ function goToStep(stepNumber) {
     saveClientAndLocationValues();
   }
 
-  cart.currentStep = stepNumber;
+  cart.currentStep = target;
   cart.persist();
-  updateModalStep(stepNumber);
+  updateModalStep(target);
 }
 
 /**
@@ -9166,6 +10041,19 @@ function validateCalendarSelection() {
     showToast("Seleccione una fecha disponible en el calendario.", "error");
     return false;
   }
+  if (!cart.selectedTime) {
+    showToast("Seleccione una hora válida para el evento.", "error");
+    return false;
+  }
+  if (isInsideNoticeWindow(cart.selectedDate, cart.selectedTime)) {
+    showToast(`Antelación mínima obligatoria: se requiere un mínimo de ${LOGISTICS_CONFIG.minNoticeHours || 72} horas de anticipación.`, "error");
+    return false;
+  }
+  const slotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+  if (!slotCheck.ok) {
+    showToast(slotCheck.message || "La fecha y hora seleccionadas no están disponibles.", "error");
+    return false;
+  }
   return true;
 }
 
@@ -9226,7 +10114,7 @@ function validateClientData() {
   return true;
 }
 
-// ---- Visual feedback estricto (borde rojo + mensaje) ----
+// ---- Visual feedback estricto (borde verde + check SVG / borde rojo + mensaje) ----
 
 function fieldShell(el) {
   return el && el.closest ? el.closest(".validate-field") : null;
@@ -9236,7 +10124,10 @@ function showFieldError(el, message) {
   if (!el) return;
   markFieldInvalid(el);
   const shell = fieldShell(el);
-  let tip = shell ? shell.querySelector(".field-error") : null;
+  const checkIcon = shell ? shell.querySelector(".field-check-icon") : null;
+  if (checkIcon) checkIcon.classList.add("hidden");
+
+  let tip = shell ? (shell.querySelector(".field-error") || shell.querySelector("#" + el.id + "-error")) : null;
   if (!tip) {
     tip = document.createElement("span");
     tip.className = "field-error";
@@ -9251,7 +10142,10 @@ function clearFieldError(el) {
   if (!el) return;
   markFieldValid(el);
   const shell = fieldShell(el);
-  const tip = shell ? shell.querySelector(".field-error") : null;
+  const checkIcon = shell ? shell.querySelector(".field-check-icon") : null;
+  if (checkIcon) checkIcon.classList.remove("hidden");
+
+  const tip = shell ? (shell.querySelector(".field-error") || shell.querySelector("#" + el.id + "-error")) : null;
   if (tip) tip.textContent = "";
 }
 
@@ -9274,22 +10168,70 @@ function triggerFieldShake(el) {
   el.classList.add("field-shake");
 }
 
+/** Verifica todas las condiciones de validación del Paso 3 y actualiza el botón Continuar */
+function updateStep3SubmitButtonState() {
+  const btn = document.getElementById("btn-continue-pay");
+  if (!btn) return;
+
+  const nameEl = document.getElementById("client-name");
+  const phoneEl = document.getElementById("client-phone");
+  const emailEl = document.getElementById("client-email");
+  const addressEl = document.getElementById("booking-address");
+  const provEl = document.getElementById("booking-province");
+  const cantonEl = document.getElementById("booking-canton");
+  const policiesEl = document.getElementById("accept-policies-checkbox");
+
+  const isNameValid = Boolean(nameEl && isValidClientName(nameEl.value));
+  const isPhoneValid = Boolean(phoneEl && isValidCRPhone(phoneEl.value));
+  const isEmailValid = Boolean(emailEl && isValidRFC5322Email(emailEl.value));
+  const isAddressValid = Boolean(addressEl && String(addressEl.value || "").trim().length >= 6);
+  const isLocValid = Boolean(provEl && provEl.value && cantonEl && cantonEl.value);
+  const isPoliciesAccepted = Boolean(policiesEl && policiesEl.checked);
+
+  const isAllValid = isNameValid && isPhoneValid && isEmailValid && isAddressValid && isLocValid && isPoliciesAccepted;
+
+  if (isAllValid) {
+    btn.disabled = false;
+    btn.classList.remove("opacity-50", "cursor-not-allowed");
+    btn.classList.add("cursor-pointer");
+  } else {
+    btn.disabled = true;
+    btn.classList.add("opacity-50", "cursor-not-allowed");
+    btn.classList.remove("cursor-pointer");
+  }
+}
+
 /** Evalúa en vivo un campo del paso 3 y actualiza el feedback visual. */
 function validateFieldLive(field) {
-  const id = field && field.id;
+  if (!field) return;
+  const id = field.id;
+  const val = String(field.value || "").trim();
+
   if (id === "client-name") {
-    isValidClientName(field.value) ? clearFieldError(field) : markFieldInvalid(field);
+    isValidClientName(val)
+      ? clearFieldError(field)
+      : (val.length > 0 ? showFieldError(field, "El nombre o empresa debe tener al menos 2 palabras y 6 caracteres.") : markFieldInvalid(field));
   } else if (id === "client-phone") {
-    isValidCRPhone(field.value) ? clearFieldError(field) : markFieldInvalid(field);
+    isValidCRPhone(val)
+      ? clearFieldError(field)
+      : (val.length > 0 ? showFieldError(field, "Formato Costa Rica inválido: use 8888-8888 o +506 8888-8888.") : markFieldInvalid(field));
   } else if (id === "client-email") {
-    isValidRFC5322Email(field.value) ? clearFieldError(field) : markFieldInvalid(field);
+    isValidRFC5322Email(val)
+      ? clearFieldError(field)
+      : (val.length > 0 ? showFieldError(field, "Ingrese un correo electrónico válido (RFC 5322).") : markFieldInvalid(field));
+  } else if (id === "client-id") {
+    val.length > 0 ? clearFieldError(field) : markFieldValid(field);
   } else if (id === "booking-address") {
-    String(field.value || "").trim().length >= 6 ? clearFieldError(field) : markFieldInvalid(field);
+    val.length >= 6
+      ? clearFieldError(field)
+      : (val.length > 0 ? showFieldError(field, "Ingrese una dirección o salón de eventos válido (mínimo 6 caracteres).") : markFieldInvalid(field));
   } else if (id === "booking-province" || id === "booking-canton") {
     isValidClientLocation() ? clearFieldError(field) : markFieldInvalid(field);
-  } else if (field && field.tagName === "SELECT") {
+  } else if (field.tagName === "SELECT") {
     field.value ? clearFieldError(field) : markFieldInvalid(field);
   }
+
+  updateStep3SubmitButtonState();
 }
 
 function isHoneypotTriggered() {
@@ -9301,6 +10243,8 @@ function saveClientAndLocationValues() {
   cart.clientName = cleanText(document.getElementById("client-name").value, 70);
   cart.clientPhone = cleanText(document.getElementById("client-phone").value, 30);
   cart.clientEmail = cleanText(document.getElementById("client-email").value, 120);
+  const clientIdEl = document.getElementById("client-id");
+  if (clientIdEl) cart.clientId = cleanText(clientIdEl.value, 30);
   cart.eventType = cleanText(document.getElementById("event-type").value, 40);
   cart.province = document.getElementById("booking-province").value;
   cart.canton = document.getElementById("booking-canton").value;
@@ -9396,6 +10340,9 @@ function updateModalStep(stepNumber) {
         ? `${cart.selectedDate}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`
         : "Pendiente de selección";
     }
+    if (typeof updateStep3SubmitButtonState === "function") {
+      updateStep3SubmitButtonState();
+    }
   }
 
   if (stepNumber === 4) {
@@ -9416,6 +10363,10 @@ function updateModalStep(stepNumber) {
   }
 
   if (cart.selectedService) {
+    const badgeEl = document.getElementById("modal-service-duration-badge");
+    if (badgeEl) {
+      badgeEl.textContent = `Formato Seleccionado (${cart.selectedService.duration || "2 Horas"})`;
+    }
     document.getElementById("modal-service-name").textContent = cart.selectedService.name;
     document.getElementById("modal-service-price").textContent = formatCRC(PriceManager.getServicePrice(cart.selectedService));
     document.getElementById("modal-service-desc").textContent = cart.selectedService.description;
@@ -9959,31 +10910,43 @@ function handleBookingCreateFailure(res) {
 async function submitStaticBooking() {
   if (cart.isSubmitting) return;
 
-  if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
+  // Bloqueo inmediato del botón para evitar multiclics instantáneos
+  const btn = document.getElementById("btn-submit-booking");
+  const originalLabel = btn ? btn.innerHTML : "";
+  cart.isSubmitting = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("btn-loading", "opacity-50", "cursor-not-allowed");
+    btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Verificando…';
+  }
+
+  if (isHoneypotTriggered()) {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("btn-loading", "opacity-50", "cursor-not-allowed");
+      btn.innerHTML = originalLabel;
+    }
+    cart.isSubmitting = false;
+    return; // neutralización silenciosa de bots
+  }
 
   // (3) Anti-spam de inmediato: ventana de rate limiting por dispositivo y
-  // bloqueo mínimo del botón en cada toque. Estas dos salidas NO bloquean
-  // nada todavía, así que no hay nada que liberar.
+  // bloqueo mínimo del botón en cada toque.
   const tapAt = Date.now();
   const gate = ClientThrottler.check();
   if (!gate.ok) {
+    cart.isSubmitting = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("btn-loading", "opacity-50", "cursor-not-allowed");
+      btn.innerHTML = originalLabel;
+    }
     if (gate.reason === "locked") {
       showToast(`Espere ${Math.ceil(gate.retryMs / 1000)} segundos antes de reintentar.`, "error");
     } else {
       showToast(`Demasiados envíos de reserva. Vuelva a intentarlo en ${Math.ceil(gate.retryMs / 60000)} min.`, "error");
     }
     return;
-  }
-
-  // (4) Captura la etiqueta original y bloquea el botón de inmediato: el
-  // usuario ve "Verificando…" mientras se revalida contra la nube.
-  const btn = document.getElementById("btn-submit-booking");
-  const originalLabel = btn ? btn.innerHTML : "";
-  cart.isSubmitting = true;
-  if (btn) {
-    btn.disabled = true;
-    btn.classList.add("btn-loading");
-    btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Verificando…';
   }
 
   // (5) Única vía de desbloqueo. Respeta el bloqueo mínimo por toque y
@@ -10188,11 +11151,10 @@ ${surchargeText}
 💳 *ADELANTO SINPE (50%):* ${formatCRC(cart.deposit50Amount)}
 🤝 *SALDO DÍA DEL EVENTO:* ${formatCRC(cart.remainingBalance)}
 📲 *Destino SINPE:* ${SINPE_CONFIG.phone} (${SINPE_CONFIG.holder})
-🔢 *Ref. SINPE:* ${cart.sinpeRef}
+🔢 *Ref. SINPE:* ${cart.sinpeRef || "Registrada"}
 🔒 *Estado Inicial:* Pendiente de Aprobación
 ----------------------------------------
-📎 *Importante:* ${SINPE_CONFIG.policyText}
-Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
+📎 *Comprobante SINPE:* Adjuntado y registrado en el expediente digital de Arkik Productions.`;
 
         const encodedMsg = encodeURIComponent(rawMsg);
         const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
@@ -10251,7 +11213,7 @@ Adjunte el comprobante de transferencia a este chat para confirmar su reserva.`;
 
 function finalizeVoucher() {
   closeBookingModal();
-  showToast("¡Reserva registrada! Envíenos el comprobante bancario por WhatsApp.", "success");
+  showToast("¡Reserva registrada con éxito! Desglose y comprobante archivados.", "success");
 }
 
 // ============================================================

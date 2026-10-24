@@ -107,10 +107,10 @@ async function createBooking(input) {
   const logic = registry.get('logic');
   const ratelimit = registry.get('ratelimit');
 
-  // 1) rate limit per client IP
+  // 1) rate limit per client IP: max 5 requests per 10 minutes
   await ratelimit.enforce({
     bucket: `create:${input.ip || 'unknown'}`,
-    limit: 10,
+    limit: 5,
     windowMs: 10 * 60 * 1000
   });
 
@@ -130,11 +130,17 @@ async function createBooking(input) {
   if (!validated.ok) throw validationError(validated.errors);
 
   const value = validated.value;
-  // 3) server-side pricing: client-sent amounts never reach this function's math
+  // 3) server-side pricing: recalculate amounts and travel surcharges (GAM vs Non-GAM)
   const pricing = logic.computePricing(
     { serviceId: value.serviceId, extras: value.extras, province: value.province, canton: value.canton },
     cfg
   );
+
+  // Anti-tampering: reject client price discrepancies with HTTP 400 (PRICE_MISMATCH)
+  const clientGrandTotal = input.body ? (input.body.grandTotal ?? input.body.granTotal) : undefined;
+  if (clientGrandTotal !== undefined && clientGrandTotal !== null && Number(clientGrandTotal) !== pricing.granTotal) {
+    throw appError('price_mismatch', 'Discrepancia en el precio calculado (PRICE_MISMATCH).', 400);
+  }
 
   const extras = {
     extraHoursCount: pricing.extraHoursCount,

@@ -53,7 +53,7 @@ const API_CONFIG = {
 // Demo catalog: when true, StorageEngine._healSeedData() re-plants the sample
 // bookings/availability/price seeds into an empty or corrupted localStorage.
 // Production keeps this false: the server owns the data.
-const SEED_MODE = true;
+const SEED_MODE = false;
 
 // ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
 const CLIENT_GUARD_CONFIG = {
@@ -129,6 +129,18 @@ const NON_GAM_EXCEPTIONS = {
   "Heredia": ["Sarapiquí"],
   "Cartago": ["Turrialba"]
 };
+
+/**
+ * Canton-level GAM classification: evaluates whether a location is outside the GAM (+12% surcharge).
+ * Correctly classifies peripheral cantons (e.g. Pérez Zeledón, Sarapiquí, Turrialba) as non-GAM
+ * even if their parent province belongs to the central GAM region.
+ */
+function isNonGamLocation(province, canton) {
+  if (!province) return false;
+  if (!GAM_PROVINCES.includes(province)) return true;
+  if (!canton) return false;
+  return (NON_GAM_EXCEPTIONS[province] || []).includes(canton);
+}
 
 // Hard caps for the extras counters (max selectable units per line item).
 // Keys must match CartState property names.

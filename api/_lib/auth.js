@@ -71,20 +71,27 @@ function parseCookies(req) {
   return jar;
 }
 
-function getSessionToken(req) {
-  return parseCookies(req)[COOKIE_NAME] || null;
+function getSessionCookieName() {
+  return config.isProduction ? '__Host-session' : COOKIE_NAME;
 }
 
-function secureSuffix() {
-  return config.isProduction ? '; Secure' : '';
+function getSessionToken(req) {
+  const jar = parseCookies(req);
+  return jar['__Host-session'] || jar[COOKIE_NAME] || null;
 }
 
 function sessionCookie(token) {
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=900${secureSuffix()}`;
+  const name = getSessionCookieName();
+  const secure = config.isProduction ? '; Secure' : '';
+  const sameSite = config.isProduction ? 'Strict' : 'Lax';
+  return `${name}=${encodeURIComponent(token)}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=900${secure}`;
 }
 
 function clearSessionCookie() {
-  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureSuffix()}`;
+  const name = getSessionCookieName();
+  const secure = config.isProduction ? '; Secure' : '';
+  const sameSite = config.isProduction ? 'Strict' : 'Lax';
+  return `${name}=; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=0${secure}`;
 }
 
 /**
