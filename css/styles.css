@@ -5183,12 +5183,16 @@ textarea:disabled,
   pointer-events: auto !important;
 }
 
-/* Headings con tipografía Syne */
-#modal-politicas #politicas-modal-title,
-#modal-politicas .policy-section__header-tag,
-#modal-politicas h3,
-#modal-politicas h4 {
-  font-family: 'Syne', 'Plus Jakarta Sans', sans-serif;
+/* Título principal: estética moderna limpia con Plus Jakarta Sans */
+#modal-politicas #politicas-modal-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-stretch: normal !important;
+  letter-spacing: -0.025em;
+}
+
+/* Sub-badges de sección */
+#modal-politicas .policy-section__header-tag {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
 }
 
 /* Scrollbar líquida de 6px y contención táctil */
