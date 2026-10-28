@@ -66,7 +66,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap"
     rel="stylesheet">
 
   <!-- Custom Styles -->
@@ -1210,125 +1210,118 @@
   <!-- Políticas de Empresa & Términos (modal oficial de políticas de servicio) -->
   <div id="modal-politicas" role="dialog" aria-modal="true" aria-labelledby="politicas-modal-title"
     onclick="if (event.target === this) closePoliciesModal()"
-    class="fixed inset-0 z-[60] hidden overflow-y-auto p-4 sm:p-6 bg-black/85 backdrop-blur-md">
-    <div class="relative m-auto my-8 w-full max-w-3xl">
+    class="fixed inset-0 z-[60] hidden opacity-0 pointer-events-none items-center justify-center p-3 sm:p-6 bg-[#040208]/85 backdrop-blur-2xl overflow-y-auto transition-opacity duration-300">
+    <div class="relative m-auto my-auto w-full max-w-3xl">
 
-      <!-- Botón Cerrar 'X' accesible (fijo sobre el card, no hace scroll con el contenido) -->
-      <button type="button" id="btn-close-policies" onclick="closePoliciesModal()"
-        aria-label="Cerrar políticas de empresa"
-        class="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-gray-300 hover:text-white hover:bg-white/20 hover:rotate-90 active:scale-95 transition-all duration-300 flex items-center justify-center">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-      </button>
-
-      <!-- Card obsidiana: contenido con scroll interno (máx. 85vh) -->
+      <!-- Main Modal Shell -->
       <div
-        class="policy-modal-card bg-[#0c081a]/95 border border-purple-500/30 backdrop-blur-2xl rounded-3xl p-6 shadow-2xl max-w-3xl mx-auto max-h-[85vh] overflow-y-auto">
+        class="policy-modal-card rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 max-w-3xl w-full mx-auto relative overflow-hidden max-h-[85vh] sm:max-h-[88vh] flex flex-col shadow-2xl">
 
-        <!-- Encabezado -->
-        <h3 id="politicas-modal-title"
-          class="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight pr-12">
-          Políticas de Empresa & Términos
-        </h3>
-        <p class="mt-1.5 text-sm font-medium text-purple-300">Arkik Productions · Sonido Profesional para Eventos</p>
+        <!-- Atmospheric Lighting Orbs (Non-intrusive ambient background) -->
+        <div class="absolute -top-16 -right-16 w-56 h-56 bg-purple-600/15 rounded-full blur-[90px] pointer-events-none"></div>
+        <div class="absolute -bottom-16 -left-16 w-60 h-60 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-        <!-- Contenido: 5 secciones oficiales (políticas de contratación y reserva) -->
-        <div class="mt-6 space-y-4 text-sm text-gray-300 leading-relaxed">
+        <!-- Close Button [✕] (Minimalist tactile glass circle) -->
+        <button type="button" id="btn-close-policies" onclick="closePoliciesModal()"
+          aria-label="Cerrar políticas de empresa"
+          class="absolute top-4 sm:top-6 right-4 sm:right-6 z-30 w-10 h-10 rounded-full bg-white/5 border border-white/10 hover:bg-white/15 hover:border-purple-400/50 hover:scale-105 active:scale-95 transition-all text-slate-300 hover:text-white flex items-center justify-center">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+
+        <!-- Refined Header Architecture -->
+        <div class="relative z-10 pr-12 pb-4 sm:pb-5 border-b border-white/[0.08] flex-shrink-0">
+          <h3 id="politicas-modal-title"
+            class="policy-modal-title text-2xl sm:text-3xl font-extrabold tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-purple-200">
+            Políticas de Empresa & Términos
+          </h3>
+          <p class="text-purple-300/80 text-xs sm:text-sm tracking-wide font-medium flex items-center gap-2 mt-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]"></span>
+            Arkik Productions · Estándares Profesionales de Contratación & Servicio
+          </p>
+        </div>
+
+        <!-- Scrollable Content with Custom Liquid Scrollbar -->
+        <div class="relative z-10 overflow-y-auto mt-4 sm:mt-6 pr-1 sm:pr-2 space-y-4 flex-1">
 
           <!-- 1 · Reservación y Políticas de Pago -->
           <section class="policy-section">
-            <h4 class="policy-section__header">
-              <span class="policy-section__icon" aria-hidden="true">💳</span>
+            <div class="policy-section__header-tag inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/50 border border-purple-500/30 text-purple-200 text-[11px] font-bold uppercase tracking-wider mb-4 shadow-sm">
+              <span class="text-sm" aria-hidden="true">💳</span>
               <span>Reservación y Políticas de Pago</span>
-            </h4>
-            <ul class="policy-section__list">
-              <li><strong>Enganche 50% no reembolsable:</strong> toda reserva se confirma con el 50% del gran total vía
-                SINPE Móvil. Este enganche garantiza el bloqueo de la fecha y del formato contratado y no es
-                reembolsable.</li>
-              <li><strong>Fecha límite de liquidación:</strong> el saldo del 50% restante se cancela el día del evento,
-                antes del inicio de la presentación.</li>
-              <li><strong>Confirmación previa validación de comprobante:</strong> la reserva queda en estado
-                «Pendiente de Aprobación» hasta que Arkik Productions verifique la transferencia a nombre de Juan José
-                Ramírez Chaves (+506 6227-4984). Solo se confirma el evento una vez validado el pago en WhatsApp.</li>
+            </div>
+            <ul class="policy-section__list space-y-3 text-slate-300 font-normal leading-relaxed text-xs sm:text-[13px]">
+              <li><strong class="font-semibold text-white tracking-normal">Enganche 50% no reembolsable:</strong> toda reserva se confirma con el 50% del gran total vía SINPE Móvil. Este enganche garantiza el bloqueo de la fecha y del formato contratado y no es reembolsable.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Fecha límite de liquidación:</strong> el saldo del 50% restante se cancela el día del evento, antes del inicio de la presentación.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Confirmación previa validación de comprobante:</strong> la reserva queda en estado «Pendiente de Aprobación» hasta que Arkik Productions verifique la transferencia a nombre de Juan José Ramírez Chaves (+506 6227-4984). Solo se confirma el evento una vez validado el pago en WhatsApp.</li>
             </ul>
           </section>
 
           <!-- 2 · Logística, Tiempos y Requerimientos Técnicos -->
           <section class="policy-section">
-            <h4 class="policy-section__header">
-              <span class="policy-section__icon" aria-hidden="true">🚚</span>
+            <div class="policy-section__header-tag inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/50 border border-purple-500/30 text-purple-200 text-[11px] font-bold uppercase tracking-wider mb-4 shadow-sm">
+              <span class="text-sm" aria-hidden="true">🚚</span>
               <span>Logística, Tiempos y Requerimientos Técnicos</span>
-            </h4>
-            <ul class="policy-section__list">
-              <li><strong>Puntualidad de itinerario:</strong> el cronograma acordado debe respetarse; el montaje inicia
-                entre 2 y 3 horas antes del evento e incluye pruebas de sonido previas a la llegada de los invitados.
-              </li>
-              <li><strong>Espacio plano y seco:</strong> se requiere un área libre de obstáculos y sin riesgo de
-                inundación para la instalación del equipo.</li>
-              <li><strong>Energía estable:</strong> toma eléctrica cercana (110V) y, de preferencia, acceso al tablero
-                principal del recinto.</li>
-              <li><strong>Toldo o protección ante intemperie:</strong> los eventos al aire libre deben contar con
-                cobertura techada que resguarde el equipo en caso de lluvia o sol directo.</li>
+            </div>
+            <ul class="policy-section__list space-y-3 text-slate-300 font-normal leading-relaxed text-xs sm:text-[13px]">
+              <li><strong class="font-semibold text-white tracking-normal">Puntualidad de itinerario:</strong> el cronograma acordado debe respetarse; el montaje inicia entre 2 y 3 horas antes del evento e incluye pruebas de sonido previas a la llegada de los invitados.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Espacio plano y seco:</strong> se requiere un área libre de obstáculos y sin riesgo de inundación para la instalación del equipo.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Energía estable:</strong> toma eléctrica cercana (110V) y, de preferencia, acceso al tablero principal del recinto.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Toldo o protección ante intemperie:</strong> los eventos al aire libre deben contar con cobertura techada que resguarde el equipo en caso de lluvia o sol directo.</li>
             </ul>
           </section>
 
           <!-- 3 · Cancelaciones, Reprogramación y Fuerza Mayor -->
           <section class="policy-section">
-            <h4 class="policy-section__header">
-              <span class="policy-section__icon" aria-hidden="true">🔄</span>
+            <div class="policy-section__header-tag inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/50 border border-purple-500/30 text-purple-200 text-[11px] font-bold uppercase tracking-wider mb-4 shadow-sm">
+              <span class="text-sm" aria-hidden="true">🔄</span>
               <span>Cancelaciones, Reprogramación y Fuerza Mayor</span>
-            </h4>
-            <ul class="policy-section__list">
-              <li><strong>Reprogramación:</strong> ante cancelación del cliente, el enganche puede aplicarse a una nueva
-                fecha dentro de los siguientes <strong>6 meses</strong>, sujeta a la disponibilidad de agenda (excepto
-                por negligencia o falta de comunicación).</li>
-              <li><strong>Fuerza mayor:</strong> desastres naturales, emergencias nacionales o prohibiciones oficiales
-                permiten reprogramar la fecha sin penalización.</li>
-              <li><strong>Fallo del proveedor:</strong> si Arkik Productions no pudiera presentarse, se asignará un
-                sustituto equivalente o se realizará un <strong>reembolso del 100%</strong> del monto pagado.</li>
+            </div>
+            <ul class="policy-section__list space-y-3 text-slate-300 font-normal leading-relaxed text-xs sm:text-[13px]">
+              <li><strong class="font-semibold text-white tracking-normal">Reprogramación:</strong> ante cancelación del cliente, el enganche puede aplicarse a una nueva fecha dentro de los siguientes <strong class="font-semibold text-white tracking-normal">6 meses</strong>, sujeta a la disponibilidad de agenda (excepto por negligencia o falta de comunicación).</li>
+              <li><strong class="font-semibold text-white tracking-normal">Fuerza mayor:</strong> desastres naturales, emergencias nacionales o prohibiciones oficiales permiten reprogramar la fecha sin penalización.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Fallo del proveedor:</strong> si Arkik Productions no pudiera presentarse, se asignará un sustituto equivalente o se realizará un <strong class="font-semibold text-white tracking-normal">reembolso del 100%</strong> del monto pagado.</li>
             </ul>
           </section>
 
           <!-- 4 · Seguridad y Cuidado del Equipo -->
           <section class="policy-section">
-            <h4 class="policy-section__header">
-              <span class="policy-section__icon" aria-hidden="true">🛡️</span>
+            <div class="policy-section__header-tag inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/50 border border-purple-500/30 text-purple-200 text-[11px] font-bold uppercase tracking-wider mb-4 shadow-sm">
+              <span class="text-sm" aria-hidden="true">🛡️</span>
               <span>Seguridad y Cuidado del Equipo</span>
-            </h4>
-            <ul class="policy-section__list">
-              <li><strong>Responsabilidad del cliente:</strong> durante el evento, el cliente responde por el bienestar
-                de los músicos y por el cuidado del equipo de sonido e iluminación.</li>
-              <li><strong>Daños, vandalismo y líquidos:</strong> cualquier daño, acto vandálico o derrame de líquidos
-                sobre el equipo será facturado según la cotización de reparación o reposición.</li>
+            </div>
+            <ul class="policy-section__list space-y-3 text-slate-300 font-normal leading-relaxed text-xs sm:text-[13px]">
+              <li><strong class="font-semibold text-white tracking-normal">Responsabilidad del cliente:</strong> durante el evento, el cliente responde por el bienestar de los músicos y por el cuidado del equipo de sonido e iluminación.</li>
+              <li><strong class="font-semibold text-white tracking-normal">Daños, vandalismo y líquidos:</strong> cualquier daño, acto vandálico o derrame de líquidos sobre el equipo será facturado según la cotización de reparación o reposición.</li>
             </ul>
           </section>
 
           <!-- 5 · Viáticos y Costos Adicionales -->
           <section class="policy-section">
-            <h4 class="policy-section__header">
-              <span class="policy-section__icon" aria-hidden="true">📍</span>
+            <div class="policy-section__header-tag inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/50 border border-purple-500/30 text-purple-200 text-[11px] font-bold uppercase tracking-wider mb-4 shadow-sm">
+              <span class="text-sm" aria-hidden="true">📍</span>
               <span>Viáticos y Costos Adicionales</span>
-            </h4>
-            <ul class="policy-section__list">
-              <li><strong>Cobertura base (GAM):</strong> la tarifa cotizada incluye el Gran Área Metropolitana (San
-                José, Heredia, Alajuela y Cartago).</li>
-              <li><strong>Fuera del GAM o jornadas extendidas:</strong> los viáticos de transporte y/o hospedaje se
-                cotizan por separado según la distancia, la duración del evento y la logística requerida.</li>
+            </div>
+            <ul class="policy-section__list space-y-3 text-slate-300 font-normal leading-relaxed text-xs sm:text-[13px]">
+              <li><strong class="font-semibold text-white tracking-normal">Cobertura base (GAM):</strong> la tarifa cotizada incluye el Gran Área Metropolitana (San José, Heredia, Alajuela y Cartago).</li>
+              <li><strong class="font-semibold text-white tracking-normal">Fuera del GAM o jornadas extendidas:</strong> los viáticos de transporte y/o hospedaje se cotizan por separado según la distancia, la duración del evento y la logística requerida.</li>
             </ul>
           </section>
 
+          <!-- Disclaimer -->
           <p class="policy-section__disclaimer">
             Al completar su reserva, usted declara haber leído y aceptado estos Términos y Condiciones de Contratación
             y Políticas de Cancelación en su totalidad.
           </p>
-        </div>
 
-        <!-- Cierre del modal -->
-        <div class="mt-8 flex justify-end">
-          <button type="button" id="btn-close-policies-cta" onclick="closePoliciesModal()" class="btn-cta-primary">
-            Entendido / Cerrar
-          </button>
+          <!-- Cierre del modal -->
+          <div class="mt-6 pt-2 pb-1 flex justify-end">
+            <button type="button" id="btn-close-policies-cta" onclick="closePoliciesModal()"
+              class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold tracking-wide shadow-lg shadow-purple-600/30 hover:shadow-purple-600/50 hover:scale-[1.02] active:scale-95 transition-all duration-200">
+              Entendido / Cerrar
+            </button>
+          </div>
         </div>
       </div>
     </div>

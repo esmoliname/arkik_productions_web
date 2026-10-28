@@ -5167,89 +5167,130 @@ textarea:disabled,
 }
 
 /* ============================================================
-   POLÍTICAS DE EMPRESA & TÉRMINOS — MODAL OBSIDIANO (v3.1)
-   Estructura de 5 secciones + checkbox obligatorio del Paso 3.
+   POLÍTICAS DE EMPRESA & TÉRMINOS — OBSIDIAN LIQUID GLASS (v4.0)
+   Visual overhaul: obsidian glass, atmospheric glow, micro-slabs
    ============================================================ */
 
-/* Tarjetas de sección dentro del modal de políticas */
+/* Tipografía base del modal */
+#modal-politicas {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+}
+
+/* Estado activo del modal: reveal limpio sin flash en carga inicial */
+#modal-politicas.flex,
+#modal-politicas:not(.hidden) {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Headings con tipografía Syne */
+#modal-politicas #politicas-modal-title,
+#modal-politicas .policy-section__header-tag,
+#modal-politicas h3,
+#modal-politicas h4 {
+  font-family: 'Syne', 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Scrollbar líquida de 6px y contención táctil */
+#modal-politicas .overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.25) transparent;
+}
+#modal-politicas .overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+#modal-politicas .overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+#modal-politicas .overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.25);
+  border-radius: 9999px;
+}
+#modal-politicas .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.5);
+}
+
+/* Modal Shell: Deep Obsidian layered glass y contención responsive */
+#modal-politicas .policy-modal-card {
+  background: linear-gradient(165deg, rgba(16, 10, 32, 0.95) 0%, rgba(8, 5, 18, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 30px 90px -15px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  max-height: 85vh;
+}
+@media (min-width: 640px) {
+  #modal-politicas .policy-modal-card {
+    max-height: 88vh;
+  }
+}
+
+/* Tarjetas de sección: Frosted glass micro-slabs */
 .policy-section {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.10) 0%, rgba(139, 92, 246, 0.03) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.18);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: 1rem;
-  padding: 1rem 1.25rem;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
 .policy-section:hover {
-  border-color: rgba(168, 85, 247, 0.45);
-  box-shadow: 0 0 24px rgba(139, 92, 246, 0.12);
+  border-color: rgba(192, 132, 252, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 15px 35px -10px rgba(168, 85, 247, 0.15);
   transform: translateY(-1px);
 }
 
-/* Encabezado de sección: ícono + título en mayúsculas */
-.policy-section__header {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #d8b4fe;
-}
-.policy-section__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.65rem;
-  background: rgba(168, 85, 247, 0.14);
-  border: 1px solid rgba(168, 85, 247, 0.25);
-  font-size: 1rem;
-  flex-shrink: 0;
+/* Encabezado en píldora con micro-borde púrpura */
+.policy-section__header-tag {
+  letter-spacing: 0.06em;
 }
 
-/* Lista de puntos de cada política */
+/* Lista de cláusulas y viñetas minimalistas de diamante radiante */
 .policy-section__list {
-  margin-top: 0.6rem;
+  margin-top: 0.75rem;
   padding-left: 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  font-size: 0.82rem;
-  line-height: 1.55;
-  color: rgba(226, 232, 240, 0.85);
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
 }
 .policy-section__list li {
   position: relative;
-  padding-left: 1.05rem;
+  padding-left: 1.25rem;
+  color: #cbd5e1; /* slate-300 */
 }
 .policy-section__list li::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: 0.1rem;
   top: 0.55em;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, #a855f7, #ec4899);
-  box-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
+  width: 5px;
+  height: 5px;
+  background: #c084fc;
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px rgba(192, 132, 252, 0.85);
+  border-radius: 1px;
 }
 .policy-section__list strong {
-  color: #f1f5f9;
-  font-weight: 700;
+  color: #ffffff;
+  font-weight: 600;
+  letter-spacing: normal;
 }
 
-/* Aceptación final (disclaimer) */
+/* Aceptación final (disclaimer) con acento y borde translúcido */
 .policy-section__disclaimer {
-  padding: 0.75rem 1.1rem;
-  font-size: 0.75rem;
-  line-height: 1.5;
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.08);
-  border-left: 3px solid rgba(168, 85, 247, 0.6);
-  border-radius: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #c4b5fd;
+  background: rgba(168, 85, 247, 0.06);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-left: 3px solid rgba(192, 132, 252, 0.7);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.4);
 }
 
 /* Checkbox de aceptación (Paso 3): refuerzo si el CDN de Tailwind no aplica accent-color */
