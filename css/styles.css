@@ -7306,14 +7306,26 @@ body.rack-preview-open {
     will-change: auto !important;
   }
 
-  /* Baseline mobile glass: lightweight solid fallbacks preventing GPU thrashing */
+  /* Mobile 60 FPS Audit: Disable heavy backdrop-filter in favor of solid glass #0b0717 */
+  .glass-panel,
+  .glass-card,
+  .glass-panel-glow,
+  .modal-sheet-panel,
+  .modal-premounted,
+  .modal-card,
+  .benefit-card,
+  .process-step-card,
+  .pricing-card,
+  .fintech-login-panel,
   .backdrop-blur-sm,
   .backdrop-blur-md,
   .backdrop-blur-xl,
   .backdrop-blur-2xl,
-  .backdrop-blur-3xl {
+  .backdrop-blur-3xl,
+  [class*="backdrop-blur"] {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+    background-color: #0b0717 !important;
   }
 
   /* Scrims and cards on mobile use crisp semi-opaque solid backgrounds instead of blur passes */

@@ -1759,6 +1759,15 @@
 
           <!-- STEP 4: Pago SINPE (50%) & Voucher -->
           <div id="modal-step-4" class="hidden">
+            <!-- Zero-Trust Static/Offline Provisional Notice Banner -->
+            <div id="static-offline-banner"
+              class="mb-4 p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs leading-relaxed flex items-start gap-2.5 shadow-lg"
+              role="status" aria-live="polite">
+              <span class="text-base leading-none flex-shrink-0" aria-hidden="true">⚠️</span>
+              <p class="font-medium">
+                Su solicitud queda registrada localmente. La fecha final se confirmará al verificar su comprobante por WhatsApp
+              </p>
+            </div>
             <div id="sinpe-gateway-view" class="space-y-6">
               <div class="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center">
                 <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">Pasarela SINPE Móvil Oficial
@@ -1792,8 +1801,8 @@
                 <div>
                   <label class="block text-sm font-medium text-purple-200 mb-1.5" for="sinpe-reference">Número de
                     Referencia SINPE (Opcional)</label>
-                  <input type="text" id="sinpe-reference" placeholder="Ej. 94820194" maxlength="15"
-                    pattern="[A-Za-z0-9]*" title="Solo caracteres alfanuméricos (máx. 15)"
+                  <input type="text" id="sinpe-reference" placeholder="Ej. 94820194" maxlength="20"
+                    pattern="[A-Za-z0-9]*" title="Solo caracteres alfanuméricos (máx. 20)"
                     class="w-full py-3 px-4 rounded-xl text-base bg-white/10 border border-white/20 text-white font-medium placeholder-gray-400 shadow-inner focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all glass-input">
                 </div>
 

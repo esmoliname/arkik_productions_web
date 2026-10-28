@@ -6605,6 +6605,14 @@ async function exportVoucherPDF(bookingId) {
     return;
   }
 
+  // Pull voucher image from window._activeVoucherBlob if cart.voucherImage was pruned due to quota safeguards
+  if (!booking.voucherImage && typeof window !== "undefined" && window._activeVoucherBlob) {
+    booking.voucherImage = window._activeVoucherBlob;
+  }
+  if (typeof cart !== "undefined" && !cart.voucherImage && typeof window !== "undefined" && window._activeVoucherBlob) {
+    cart.voucherImage = window._activeVoucherBlob;
+  }
+
   const rawCode = String(booking.code || booking.id || "RESERVA").replace(/^ARK-/, "");
   const filename = `ARK-${rawCode}-PREFACTURA.pdf`;
   showToast("Generando PDF Oficial A4...", "info");
@@ -10497,6 +10505,13 @@ function resetBooking() {
   document.querySelectorAll(".field-check-icon").forEach(icon => icon.classList.add("hidden"));
   document.querySelectorAll(".field-error").forEach(err => err.textContent = "");
 
+  if (originalModalStep4Html) {
+    const step4El = document.getElementById("modal-step-4");
+    if (step4El) {
+      step4El.innerHTML = originalModalStep4Html;
+    }
+  }
+
   const voucher = document.getElementById("voucher-view");
   const gateway = document.getElementById("sinpe-gateway-view");
   if (voucher) voucher.classList.add("hidden");
@@ -12203,13 +12218,35 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
 }
 
 function finalizeVoucher() {
-  if (typeof cart !== "undefined" && typeof cart.reset === "function") {
-    cart.reset();
+  if (typeof cart !== "undefined") {
+    if (typeof cart.reset === "function") cart.reset();
     cart.voucherImage = null;
     cart.voucherRaw = null;
-    if (typeof window !== "undefined") window._activeVoucherBlob = null;
-    if (typeof scheduleVoucherTtlPurge === "function") scheduleVoucherTtlPurge();
+    cart.createdBooking = null;
+    cart.currentStep = 1;
+    if (typeof cart.clearStoredState === "function") cart.clearStoredState();
   }
+  if (typeof window !== "undefined") {
+    window._activeVoucherBlob = null;
+    window._lastCreatedBooking = null;
+  }
+  if (typeof scheduleVoucherTtlPurge === "function") scheduleVoucherTtlPurge();
+
+  // Cleanly unmount Step 4 voucher view and restore initial form step
+  if (originalModalStep4Html) {
+    const step4El = document.getElementById("modal-step-4");
+    if (step4El) {
+      step4El.innerHTML = originalModalStep4Html;
+    }
+  }
+
+  // Restore initial form step (Step 1)
+  if (typeof goToStep === "function") {
+    goToStep(1);
+  } else if (typeof updateModalStep === "function") {
+    updateModalStep(1);
+  }
+
   if (typeof closeBookingModal === "function") {
     closeBookingModal();
   }
@@ -12287,6 +12324,15 @@ function showSlotConflictAlert(detail) {
       detailEl.textContent = "El horario seleccionado acaba de ser ocupado concurrentemente por otro cliente. El calendario ha sido actualizado.";
       detailEl.classList.remove("hidden");
     }
+  }
+
+  // Explicit time reset: ensure no .time-chip.active remains upon routing back to Step 2
+  if (typeof resetSelectedTime === "function") {
+    resetSelectedTime();
+  }
+  document.querySelectorAll(".time-chip.active").forEach(el => el.classList.remove("active"));
+  if (typeof updateStep2ContinueState === "function") {
+    updateStep2ContinueState();
   }
 
   // Refrescar disponibilidad de inmediato para reflejar el bloqueo en la grilla y en los chips
