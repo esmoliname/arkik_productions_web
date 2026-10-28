@@ -57,10 +57,10 @@ const SEED_MODE = false;
 
 // ---- Guardián de resiliencia client-side (anti-spam + revalidación en vivo) ----
 const CLIENT_GUARD_CONFIG = {
-  maxSubmitAttempts: 5,          // intentos de reserva por ventana
+  maxSubmitAttempts: 3,          // intentos de reserva por ventana (máx 3 intentos cada 5 min)
   submitWindowMs: 5 * 60 * 1000, // ventana: 5 minutos
   submitLockMs: 1500,            // bloqueo mínimo del botón tras cada toque
-  preSubmitPullTimeoutMs: 3000   // tope del pull de nube antes de validar
+  preSubmitPullTimeoutMs: 2500   // tope del pull de nube antes de validar
 };
 
 // ============================================================
@@ -486,6 +486,7 @@ const STORAGE_KEYS = {
 
 // Capacidad diaria máxima de eventos
 const DEFAULT_MAX_EVENTS_PER_DAY = LOGISTICS_CONFIG.maxEventsPerDay; // 2 eventos máx/día
+const VOUCHER_TTL_MS = 24 * 60 * 60 * 1000; // TTL de 24 horas para purga de comprobantes Base64 e información sensible
 
 // ============================================================
 // 6. SELF-HEALING SEED DATA (auto-restauración de datos de producción)
@@ -505,7 +506,7 @@ function arkikSeedIso(daysAhead) {
 // Ajusta el importe al 50% de adelanto SINPE + saldo restante.
 function arkikSeedAmounts(total) {
   const deposit = Math.round(total * SINPE_CONFIG.depositPercentage);
-  return { subtotal: total, granTotal: total, deposit50Amount: deposit, remainingBalance: total - deposit };
+  return { subtotal: total, extrasTotal: 0, granTotal: total, deposit50: deposit, deposit50Amount: deposit, remainingBalance: total - deposit };
 }
 
 const SEED_PRICES_V1 = () => ({ services: {}, extras: {} });
@@ -531,14 +532,15 @@ const SEED_BOOKINGS_V1 = () => {
   const mk = (ageDays, fields) => Object.assign({
     createdAt: new Date(Date.now() - ageDays * 86400000).toISOString(),
     status: "confirmada",
-    clientEmail: "",
+    clientEmail: "reservas@arkikproductions.cr",
     setupDisplay: "",
     teardownDisplay: "",
     voucherImage: null,
     address: "",
     extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0, extraHoursTotal: 0, djTotal: 0, subwoofersTotal: 0 },
     travelSurcharge: 0,
-    sinpeRef: "S/N",
+    sinpeRef: "SN000001",
+    referenceSinpe: "SN000001",
     isSeed: true
   }, fields, { isSeed: true });
 

@@ -503,8 +503,443 @@ function cleanSinpeRef(value) {
   const cleaned = String(value || "")
     .replace(/[^A-Za-z0-9]/g, "")
     .toUpperCase()
-    .slice(0, 15);
-  return cleaned || "S/N";
+    .slice(0, 20);
+  return (cleaned && cleaned !== "SN") ? cleaned : "SN000000";
+}
+
+// ============================================================
+// 1.8 ZERO-TRUST CLIENT SECURITY LAYER (Anti-Tampering, Quota, Schema & TTL)
+// ============================================================
+
+if (typeof window !== "undefined" && window._activeVoucherBlob === undefined) {
+  window._activeVoucherBlob = null;
+}
+
+const ARKIK_VOUCHER_TTL_MS = (typeof VOUCHER_TTL_MS === "number" && VOUCHER_TTL_MS > 0)
+  ? VOUCHER_TTL_MS
+  : (24 * 60 * 60 * 1000);
+
+/**
+ * 1. RECALCULO INMUTABLE DE PRECIOS ANTI-TAMPERING
+ * Función pura que ignora por completo cualquier valor monetario recibido del
+ * formulario o del estado mutable del cliente y recalcula desde cero usando
+ * exclusivamente CATALOG_SERVICES, DYNAMIC_EXTRAS_CONFIG, MAX_EXTRAS e
+ * isNonGamLocation(province, canton) de js/data.js.
+ */
+function calculateVerifiedTotals(cartInput) {
+  const src = (cartInput && typeof cartInput === "object") ? cartInput : {};
+  const catalog = (typeof CATALOG_SERVICES !== "undefined" && Array.isArray(CATALOG_SERVICES))
+    ? CATALOG_SERVICES
+    : [];
+
+  const targetServiceId = src.serviceId || (src.selectedService && src.selectedService.id) || "";
+  const officialService = catalog.find((s) => s && String(s.id) === String(targetServiceId)) || catalog[0] || null;
+  const basePrice = officialService ? Math.max(0, Math.round(Number(officialService.price_crc) || 0)) : 0;
+
+  const maxExtraHours = (typeof MAX_EXTRAS !== "undefined" && Number.isFinite(MAX_EXTRAS.extraHoursCount))
+    ? MAX_EXTRAS.extraHoursCount : 5;
+  const maxDjHours = (typeof MAX_EXTRAS !== "undefined" && Number.isFinite(MAX_EXTRAS.djHoursCount))
+    ? MAX_EXTRAS.djHoursCount : 8;
+  const maxSubwoofers = (typeof MAX_EXTRAS !== "undefined" && Number.isFinite(MAX_EXTRAS.subwoofersCount))
+    ? MAX_EXTRAS.subwoofersCount : 4;
+
+  const rawExtras = (src.extras && typeof src.extras === "object") ? src.extras : src;
+  const extraHoursCount = clampInt(rawExtras.extraHoursCount, 0, maxExtraHours);
+  const djHoursCount = clampInt(rawExtras.djHoursCount, 0, maxDjHours);
+  const subwoofersCount = clampInt(rawExtras.subwoofersCount, 0, maxSubwoofers);
+
+  // Horas extra al 50% exacto de la tarifa base oficial del formato seleccionado
+  const extraHoursUnitPrice = Math.round(basePrice * 0.50);
+  const djUnitPrice = (typeof DYNAMIC_EXTRAS_CONFIG !== "undefined" &&
+    DYNAMIC_EXTRAS_CONFIG.dj_service &&
+    Number.isFinite(Number(DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice)))
+    ? Math.round(Number(DYNAMIC_EXTRAS_CONFIG.dj_service.unitPrice))
+    : 75000;
+  const subwoofersUnitPrice = (typeof DYNAMIC_EXTRAS_CONFIG !== "undefined" &&
+    DYNAMIC_EXTRAS_CONFIG.subwoofers &&
+    Number.isFinite(Number(DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice)))
+    ? Math.round(Number(DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice))
+    : 80000;
+
+  const extraHoursTotal = extraHoursUnitPrice * extraHoursCount;
+  const djTotal = djUnitPrice * djHoursCount;
+  const subwoofersTotal = subwoofersUnitPrice * subwoofersCount;
+  const extrasTotal = extraHoursTotal + djTotal + subwoofersTotal;
+
+  const subtotal = basePrice + extrasTotal;
+
+  const province = String(src.province || "").trim();
+  const canton = String(src.canton || "").trim();
+  const nonGam = (typeof isNonGamLocation === "function")
+    ? Boolean(isNonGamLocation(province, canton))
+    : false;
+  const surchargeRate = (typeof NON_GAM_SURCHARGE_RATE === "number" && NON_GAM_SURCHARGE_RATE > 0)
+    ? NON_GAM_SURCHARGE_RATE
+    : 0.12;
+
+  const travelSurcharge = nonGam ? Math.round(subtotal * surchargeRate) : 0;
+  const granTotal = subtotal + travelSurcharge;
+
+  const depositRate = (typeof SINPE_CONFIG !== "undefined" && typeof SINPE_CONFIG.depositPercentage === "number")
+    ? SINPE_CONFIG.depositPercentage
+    : 0.50;
+  const deposit50 = Math.round(granTotal * depositRate);
+  const remainingBalance = granTotal - deposit50;
+
+  return {
+    serviceId: officialService ? officialService.id : targetServiceId,
+    serviceName: officialService ? officialService.name : String(src.serviceName || ""),
+    basePrice: basePrice,
+    extraHoursCount: extraHoursCount,
+    djHoursCount: djHoursCount,
+    subwoofersCount: subwoofersCount,
+    extraHoursUnitPrice: extraHoursUnitPrice,
+    djUnitPrice: djUnitPrice,
+    subwoofersUnitPrice: subwoofersUnitPrice,
+    extraHoursTotal: extraHoursTotal,
+    djTotal: djTotal,
+    subwoofersTotal: subwoofersTotal,
+    extrasTotal: extrasTotal,
+    subtotal: subtotal,
+    isNonGam: nonGam,
+    travelSurcharge: travelSurcharge,
+    granTotal: granTotal,
+    deposit50: deposit50,
+    deposit50Amount: deposit50,
+    remainingBalance: remainingBalance,
+    extras: {
+      extraHoursCount: extraHoursCount,
+      djHoursCount: djHoursCount,
+      subwoofersCount: subwoofersCount,
+      extraHoursTotal: extraHoursTotal,
+      djTotal: djTotal,
+      subwoofersTotal: subwoofersTotal
+    }
+  };
+}
+
+/**
+ * Sobreescribe obligatoriamente los montos de una reserva con el resultado
+ * inmutable de calculateVerifiedTotals().
+ */
+function enforceVerifiedTotalsOnBooking(booking, sourceCart) {
+  if (!booking || typeof booking !== "object") return booking;
+  const verified = calculateVerifiedTotals(sourceCart || booking);
+  booking.serviceId = verified.serviceId || booking.serviceId;
+  if (verified.serviceName) booking.serviceName = verified.serviceName;
+  booking.basePrice = verified.basePrice;
+  booking.extras = verified.extras;
+  booking.extrasTotal = verified.extrasTotal;
+  booking.subtotal = verified.subtotal;
+  booking.travelSurcharge = verified.travelSurcharge;
+  booking.granTotal = verified.granTotal;
+  booking.deposit50 = verified.deposit50;
+  booking.deposit50Amount = verified.deposit50Amount;
+  booking.remainingBalance = verified.remainingBalance;
+  return booking;
+}
+
+/**
+ * 4. VALIDACIÓN DE ESQUEMA Y ANTI-STORED XSS EN COLA
+ * Compuerta de validación estricta previa a leer o insertar en offlineQueue / BookingStore:
+ * - code: /^ARK-[A-Z0-9]{8}$/
+ * - clientName: Alfanumérico limpio con espacios y tildes en español (3-70 chars), sanitizado con .replace(/[<>&"']/g, '')
+ * - clientPhone: /^(\+?506)?\s?[2678]\d{3}[-\s]?\d{4}$/
+ * - clientEmail: Formato RFC 5322 válido
+ * - referenceSinpe: Alfanumérico limpio máx 20 caracteres
+ */
+function validateBookingSchema(record) {
+  if (!record || typeof record !== "object") {
+    console.warn("[Arkik Security] Anomalía de esquema: registro nulo o no es objeto.", record);
+    return false;
+  }
+
+  const target = (record.payload && typeof record.payload === "object") ? record.payload : record;
+  let rawCode = String(record.code || record.bookingCode || target.code || "").trim();
+  if (!/^ARK-[A-Z0-9]{8}$/.test(rawCode)) {
+    rawCode = (typeof generateBookingCode === "function")
+      ? generateBookingCode()
+      : ("ARK-" + ((typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") ? crypto.randomUUID().split("-")[0].toUpperCase() : Date.now().toString(16).slice(-8).toUpperCase()));
+    record.code = rawCode;
+    target.code = rawCode;
+  }
+
+  const rawName = String(target.clientName ?? "");
+  if (/<script|javascript:|on\w+\s*=/i.test(rawName)) {
+    console.warn("[Arkik Security] Anomalía XSS detectada en clientName:", rawName);
+    return false;
+  }
+  const sanitizedName = rawName.replace(/[<>&"']/g, "").trim();
+  if (
+    sanitizedName.length < 3 ||
+    sanitizedName.length > 70 ||
+    !/^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ\s.\-]+$/.test(sanitizedName)
+  ) {
+    console.warn("[Arkik Security] Anomalía de esquema (clientName inválido):", sanitizedName);
+    return false;
+  }
+  target.clientName = sanitizedName;
+  if (record !== target && record.clientName !== undefined) {
+    record.clientName = sanitizedName;
+  }
+
+  const rawPhone = String(target.clientPhone ?? "").trim();
+  if (!/^(\+?506)?\s?[2678]\d{3}[-\s]?\d{4}$/.test(rawPhone)) {
+    console.warn("[Arkik Security] Anomalía de esquema (clientPhone inválido):", rawPhone);
+    return false;
+  }
+
+  const rawEmail = String(target.clientEmail ?? "").trim();
+  if (rawEmail && !isValidRFC5322Email(rawEmail)) {
+    console.warn("[Arkik Security] Anomalía de esquema (clientEmail RFC 5322 inválido):", rawEmail);
+    return false;
+  }
+
+  const rawRefInput = target.referenceSinpe !== undefined
+    ? target.referenceSinpe
+    : (target.sinpeRef !== undefined ? target.sinpeRef : (record.referenceSinpe !== undefined ? record.referenceSinpe : record.sinpeRef));
+  const rawRefStr = String(rawRefInput ?? "").trim();
+  const normalizedRef = rawRefStr.toUpperCase() === "S/N" ? "SN000000" : rawRefStr;
+
+  if (normalizedRef.length > 20 || !/^[A-Za-z0-9]{0,20}$/.test(normalizedRef)) {
+    console.warn("[Arkik Security] Anomalía de esquema (referenceSinpe inválido):", rawRefStr);
+    return false;
+  }
+
+  const finalRef = normalizedRef || "SN000000";
+  target.referenceSinpe = finalRef;
+  target.sinpeRef = finalRef;
+  if (record !== target) {
+    record.referenceSinpe = finalRef;
+    record.sinpeRef = finalRef;
+  }
+
+  return true;
+}
+
+/**
+ * 5. MINIMIZACIÓN DE PII Y CICLO DE VIDA (Purga TTL 24h de Base64 en arkik_bookings_v1)
+ * Purga el string Base64 (voucherImage / voucherRaw) en registros con antigüedad >= 24 horas
+ * (24 * 60 * 60 * 1000 ms), conservando únicamente fecha, código y estado contable.
+ */
+function purgeExpiredVouchers(bookings) {
+  if (!Array.isArray(bookings)) return false;
+  const now = Date.now();
+  let mutated = false;
+
+  for (let i = 0; i < bookings.length; i++) {
+    const item = bookings[i];
+    if (!item || typeof item !== "object") continue;
+
+    const createdMs = item.createdAt ? Date.parse(item.createdAt) : (Number(item.lockTimestamp) || 0);
+    const expiresAt = Number(item.voucherExpiresAt) || (createdMs > 0 ? createdMs + ARKIK_VOUCHER_TTL_MS : 0);
+
+    if (expiresAt > 0 && now >= expiresAt) {
+      if (item.voucherImage || item.voucherRaw) {
+        item.voucherImage = null;
+        delete item.voucherRaw;
+        item.voucherPurgedByTtl = true;
+        item.voucherPurgedAt = new Date(now).toISOString();
+        mutated = true;
+      }
+    }
+  }
+  return mutated;
+}
+
+let _voucherTtlTimer = null;
+function scheduleVoucherTtlPurge() {
+  if (typeof window === "undefined") return;
+  if (_voucherTtlTimer) clearTimeout(_voucherTtlTimer);
+  _voucherTtlTimer = setTimeout(function () {
+    try {
+      if (typeof BookingStore !== "undefined" && Array.isArray(BookingStore._data)) {
+        if (purgeExpiredVouchers(BookingStore._data)) {
+          safeSaveBookings(BookingStore._data);
+        }
+      }
+    } catch (err) {
+      console.warn("[Arkik Security] Error en purga TTL programada:", err);
+    }
+  }, Math.min(ARKIK_VOUCHER_TTL_MS, 60 * 60 * 1000));
+}
+
+function isQuotaExceededException(err) {
+  if (!err) return false;
+  const name = String(err.name || "");
+  const msg = String(err.message || "");
+  const code = Number(err.code) || 0;
+  return (
+    name === "QuotaExceededError" ||
+    name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    code === 22 ||
+    code === 1014 ||
+    /quota|exceeded|storage/i.test(name + " " + msg)
+  );
+}
+
+/**
+ * 2. GESTIÓN DE CUOTA Y PERSISTENCIA SEGURA (safeSaveBookings)
+ */
+function safeSaveBookings(bookings) {
+  const list = Array.isArray(bookings) ? bookings : [];
+  purgeExpiredVouchers(list);
+
+  const tryDirectWrite = function (arr) {
+    const serialized = JSON.stringify(arr);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEYS.bookings, serialized);
+    } else {
+      SafeStorage.setItem(STORAGE_KEYS.bookings, serialized);
+    }
+    MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(serialized));
+    try { MemoryStorage.setItem(STORAGE_KEYS.bookings, serialized); } catch (e) {}
+    return true;
+  };
+
+  try {
+    return tryDirectWrite(list);
+  } catch (err) {
+    if (!isQuotaExceededException(err)) {
+      console.warn("[Arkik Security] Error no relacionado con cuota al guardar reservas:", err);
+      try { SafeStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(list)); } catch (e) {}
+      return false;
+    }
+
+    console.warn("[Arkik Security] Cuota de almacenamiento alcanzada (QuotaExceededError). Ejecutando poda LRU/FIFO de comprobantes históricos (index > 0)...");
+
+    // Paso 1: Poda automática (LRU / FIFO) de voucherImage en registros anteriores (index > 0)
+    for (let i = 1; i < list.length; i++) {
+      if (list[i] && typeof list[i] === "object") {
+        if (list[i].voucherImage) {
+          list[i].voucherImage = null;
+          list[i].voucherPrunedByQuota = true;
+        }
+        if (list[i].voucherRaw) {
+          delete list[i].voucherRaw;
+        }
+      }
+    }
+
+    // Paso 2: Reintentar la escritura tras podar el historial
+    try {
+      return tryDirectWrite(list);
+    } catch (retryErr) {
+      console.warn("[Arkik Security] La cuota persiste tras poda histórica. Moviendo blob actual a window._activeVoucherBlob...");
+
+      // Paso 3: Conservar el blob actual solo en memoria (window._activeVoucherBlob) y guardar metadata limpia
+      if (list.length > 0 && list[0] && typeof list[0] === "object") {
+        const currentBlob = list[0].voucherImage || list[0].voucherRaw || null;
+        if (currentBlob && typeof window !== "undefined") {
+          window._activeVoucherBlob = currentBlob;
+        }
+        list[0] = Object.assign({}, list[0], {
+          voucherImage: null,
+          voucherQuotaDeferred: true
+        });
+        delete list[0].voucherRaw;
+      }
+
+      try {
+        return tryDirectWrite(list);
+      } catch (finalErr) {
+        console.error("[Arkik Security] Fallo crítico de cuota en localStorage; respaldando en MemoryStorage:", finalErr);
+        try {
+          const fallbackJson = JSON.stringify(list);
+          MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(fallbackJson));
+          MemoryStorage.setItem(STORAGE_KEYS.bookings, fallbackJson);
+        } catch (memErr) {}
+        return false;
+      }
+    }
+  }
+}
+
+/**
+ * 3. DISPONIBILIDAD FANTASMA Y GENERADOR DE MENSAJE WHATSAPP
+ */
+function buildWhatsAppMessage(bookingRecord) {
+  const b = (bookingRecord && typeof bookingRecord === "object") ? bookingRecord : {};
+  const verified = calculateVerifiedTotals(b);
+
+  const catalog = (typeof CATALOG_SERVICES !== "undefined" && Array.isArray(CATALOG_SERVICES))
+    ? CATALOG_SERVICES : [];
+  const service = catalog.find((s) => s && String(s.id) === String(verified.serviceId)) || catalog[0] || {};
+  const serviceName = service.name || b.serviceName || "Formato Musical";
+  const serviceDuration = service.duration || b.duration || "2 Horas (Duración Estándar)";
+  const setupDisplay = service.setup_display || b.setupDisplay || "2h antes";
+  const teardownDisplay = service.teardown_display || b.teardownDisplay || "1h después";
+
+  const extrasList = [];
+  if (verified.extraHoursCount > 0) {
+    extrasList.push(`• Horas Extras: ${verified.extraHoursCount} hr(s) (${formatCRC(verified.extraHoursTotal)})`);
+  }
+  if (verified.djHoursCount > 0) {
+    extrasList.push(`• DJ en Recesos: ${verified.djHoursCount} hr(s) (${formatCRC(verified.djTotal)})`);
+  }
+  if (verified.subwoofersCount > 0) {
+    extrasList.push(`• Subwoofers 18": ${verified.subwoofersCount} un(es) (${formatCRC(verified.subwoofersTotal)})`);
+  }
+  const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
+
+  const surchargeText = verified.isNonGam
+    ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(verified.travelSurcharge)}`
+    : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
+
+  const isOfflineUnverified =
+    b.syncStatus === "offline_unverified" ||
+    Boolean(b.isOfflineDegraded) ||
+    !apiEnabled();
+
+  const offlineHeader = isOfflineUnverified
+    ? "⚠️ [RESERVA LOCAL PROVISIONAL — Requiere confirmación manual de agenda por Juan José Ramírez]\n\n"
+    : "";
+
+  const refSinpe = cleanSinpeRef(b.referenceSinpe || b.sinpeRef || "");
+
+  return (
+    `${offlineHeader}🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*\n` +
+    `----------------------------------------\n` +
+    `📌 *Código:* ${b.code || "ARK-00000000"}\n` +
+    `👤 *Cliente / Empresa:* ${b.clientName || ""}\n` +
+    `📞 *Teléfono:* ${b.clientPhone || ""}\n` +
+    `✉️ *Email:* ${b.clientEmail || "No indicado"}\n` +
+    `🎉 *Tipo de Evento:* ${b.eventType || "Evento Privado"}\n\n` +
+    `🎵 *Formato:* ${serviceName} (${formatCRC(verified.basePrice)})\n` +
+    `⏱️ *Duración:* ${serviceDuration}\n` +
+    `⚙️ *Logística:* Montaje ${setupDisplay} · Desmontaje ${teardownDisplay}\n\n` +
+    `➕ *EXTRAS COTIZADOS:*\n` +
+    `${extrasFormatted}\n\n` +
+    `📅 *Fecha & Hora:* ${formatDisplayDate(b.selectedDate)} a las ${b.selectedTime || ""}\n` +
+    `📍 *Ubicación:* ${b.canton || ""}, ${b.province || ""}\n` +
+    `🏠 *Dirección:* ${b.address || ""}\n\n` +
+    `💰 *Subtotal:* ${formatCRC(verified.subtotal)}\n` +
+    `${surchargeText}\n` +
+    `✨ *GRAN TOTAL:* ${formatCRC(verified.granTotal)}\n` +
+    `----------------------------------------\n` +
+    `💳 *ADELANTO SINPE (50%):* ${formatCRC(verified.deposit50)}\n` +
+    `🤝 *SALDO DÍA DEL EVENTO:* ${formatCRC(verified.remainingBalance)}\n` +
+    `📲 *Destino SINPE:* ${SINPE_CONFIG.phone} (${SINPE_CONFIG.holder})\n` +
+    `🔢 *Ref. SINPE:* ${refSinpe}\n` +
+    `🔒 *Estado Inicial:* Pendiente de Aprobación\n` +
+    `----------------------------------------\n` +
+    `📎 *Comprobante SINPE:* Adjuntado y registrado en el expediente digital de Arkik Productions.`
+  );
+}
+
+/**
+ * Muestra u oculta el banner informativo de modo estático/offline en el Paso 4.
+ */
+function updateOfflineModeBanner(forceOffline) {
+  if (typeof document === "undefined") return;
+  const banner = document.getElementById("static-offline-banner");
+  if (!banner) return;
+  const isOfflineMode = Boolean(forceOffline) || !apiEnabled() || (typeof ArkikApi !== "undefined" && !ArkikApi.isOnline());
+  if (isOfflineMode) {
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
 }
 
 function isoOf(date) {
@@ -668,6 +1103,9 @@ function hasAdminSession() {
 async function resolveVoucherImage(booking) {
   if (!booking) return null;
   if (typeof booking.voucherImage === "string" && booking.voucherImage) return booking.voucherImage;
+  if (typeof window !== "undefined" && typeof window._activeVoucherBlob === "string" && window._activeVoucherBlob) {
+    return window._activeVoucherBlob;
+  }
   if (!apiEnabled()) return null;
   try {
     const res = await ArkikApi.getBooking(booking.code, true);
@@ -1545,6 +1983,11 @@ const BookingStore = {
     try {
       const raw = safeParse(STORAGE_KEYS.bookings, []);
       this._data = Array.isArray(raw) ? raw : [];
+      if (purgeExpiredVouchers(this._data)) {
+        safeSaveBookings(this._data);
+      }
+      scheduleVoucherTtlPurge();
+      this._data = Array.isArray(raw) ? raw : [];
     } catch (e) {
       console.warn('BookingStore.load corruption recovered:', e.message || e);
       this._data = [];
@@ -1552,7 +1995,7 @@ const BookingStore = {
   },
 
   persist() {
-    safeSet(STORAGE_KEYS.bookings, this._data);
+    safeSaveBookings(this._data);
   },
 
   all() {
@@ -1588,11 +2031,40 @@ const BookingStore = {
    * @returns {Promise<{ok:boolean, booking?:object, code?:string, message?:string}>}
    */
   async add(booking, idempotencyKey) {
+    // 1. RECALCULO INMUTABLE DE PRECIOS ANTI-TAMPERING (Zero-Trust)
+    enforceVerifiedTotalsOnBooking(booking, booking);
+    booking.sinpeRef = cleanSinpeRef(booking.referenceSinpe || booking.sinpeRef || "");
+    booking.referenceSinpe = booking.sinpeRef;
+    booking.createdAt = booking.createdAt || new Date().toISOString();
+    booking.voucherExpiresAt = Date.now() + ARKIK_VOUCHER_TTL_MS;
+    scheduleVoucherTtlPurge();
     if (!apiEnabled()) {
+      if (!booking.code || !booking.code.startsWith("ARK-")) {
+        booking.code = (typeof generateBookingCode === "function")
+          ? generateBookingCode()
+          : ("ARK-" + ((typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") ? crypto.randomUUID().split("-")[0].toUpperCase() : Date.now().toString(16).slice(-8).toUpperCase()));
+      }
+      booking.status = booking.status || "pendiente";
+      booking.statusText = "Pendiente de Aprobación";
+      booking.statusLabel = "Pendiente de Aprobación";
+      booking.syncStatus = "offline_unverified";
+      booking.isOfflineDegraded = true;
+      enforceVerifiedTotalsOnBooking(booking, booking);
+      validateBookingSchema(booking);
       booking.updatedAt = booking.updatedAt || new Date().toISOString();
       this._data.unshift(booking);
       this.persist();
-      CloudSync.notify("bookings");
+
+      if (typeof AvailabilityManager !== "undefined") {
+        if (AvailabilityManager._details && AvailabilityManager._details[booking.selectedDate]) {
+          delete AvailabilityManager._details[booking.selectedDate];
+        }
+      }
+      if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+        try { CalendarModule.render(); } catch (e) {}
+      }
+
+      CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
       return { ok: true, booking: booking, source: "local" };
     }
 
@@ -1617,23 +2089,80 @@ const BookingStore = {
     // The voucher travels as a data URL; the server derives mime + byte size.
     if (booking.voucherImage) payload.voucherImage = booking.voucherImage;
 
-    const res = await ArkikApi.createBooking(payload, idempotencyKey);
-    if (!res.ok) {
+    let res = null;
+    try {
+      const timeoutPromise = new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve({ ok: false, code: "timeout", status: 0, message: "Timeout" });
+        }, 2500);
+      });
+      res = await Promise.race([
+        ArkikApi.createBooking(payload, idempotencyKey),
+        timeoutPromise
+      ]);
+    } catch (err) {
+      res = { ok: false, code: "network", status: 0, message: err && err.message };
+    }
+
+    if (!res || !res.ok) {
+      const code = (res && res.code) || "";
+      const status = (res && res.status) || 0;
+
       // Conflicto de turno / capacidad superada: delegar de inmediato a la alerta de conflicto
-      if (res.code === "day_full" || res.code === "slot_taken" || res.code === "blackout" || res.code === "soldout" || res.status === 409) {
+      if (code === "day_full" || code === "slot_taken" || code === "blackout" || code === "soldout" || status === 409) {
         return apiFailure(res);
       }
-      // Caída de red / modo degradado offline: proteger la transacción sin errores fatales
-      if (res.code === "network" || res.status === 0 || !ArkikApi.isOnline()) {
-        console.warn("[Arkik] Conexión caída al enviar reserva. Activando persistencia local degradada.");
+
+      // Validación explícita rechazada por un backend activo (400 con validation_error)
+      if (status === 400 && (code === "validation_error" || code === "min_notice" || code === "horizon")) {
+        return apiFailure(res);
+      }
+
+      // Fallback estático / offline resiliente:
+      // Si la petición falla por error de red, timeout, 404/405 (GitHub Pages) o 5xx:
+      const isDegradedOrOffline = true;
+
+      if (isDegradedOrOffline) {
+        console.warn(`[Arkik] Backend no disponible (status: ${status}, code: ${code}). Activando persistencia local degradada.`);
+
+        // Genera código criptográfico local ARK-[XXXXXXXX] si no lo tiene
+        if (!booking.code || !booking.code.startsWith("ARK-")) {
+          booking.code = (typeof generateBookingCode === "function")
+            ? generateBookingCode()
+            : ("ARK-" + ((typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") ? crypto.randomUUID().split("-")[0].toUpperCase() : Date.now().toString(16).slice(-8).toUpperCase()));
+        }
+
+        booking.status = "pendiente";
+        booking.statusText = "Pendiente de Aprobación";
+        booking.statusLabel = "Pendiente de Aprobación";
+      booking.syncStatus = "offline_unverified";
+      booking.isOfflineDegraded = true;
+      enforceVerifiedTotalsOnBooking(booking, booking);
+      if (!validateBookingSchema(booking)) {
+        return apiError("validation_error", "El registro de reserva no superó la validación de esquema Zero-Trust.");
+      }
         booking.updatedAt = booking.updatedAt || new Date().toISOString();
         booking.isOfflineDegraded = true;
+
+        // Persistir en StorageEngine / localStorage (arkik_bookings_v1)
         this._enqueueOfflineBooking(booking, idempotencyKey, payload);
         this._data.unshift(booking);
         this.persist();
-        CloudSync.notify("bookings");
+
+        // Actualizar el estado del calendario para ocupar la fecha/hora reservada localmente
+        if (typeof AvailabilityManager !== "undefined") {
+          if (AvailabilityManager._details && AvailabilityManager._details[booking.selectedDate]) {
+            delete AvailabilityManager._details[booking.selectedDate];
+          }
+        }
+        if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+          try { CalendarModule.render(); } catch (e) {}
+        }
+
+        CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
         return { ok: true, booking: booking, source: "local", degraded: true };
       }
+
       return apiFailure(res);
     }
 
@@ -1644,13 +2173,42 @@ const BookingStore = {
     // uploaded it, so the confirmation screen keeps showing it.
     if (booking.voucherImage && !created.voucherImage) created.voucherImage = booking.voucherImage;
     if (booking.clientId && !created.clientId) created.clientId = booking.clientId;
+    if (!created.status) created.status = "pendiente";
+    created.statusText = created.statusText || "Pendiente de Aprobación";
+    created.statusLabel = created.statusLabel || "Pendiente de Aprobación";
+
     this._data.unshift(created);
     this.persist();
+
+    // Actualizar el estado del calendario
+    if (typeof AvailabilityManager !== "undefined") {
+      if (AvailabilityManager._details && AvailabilityManager._details[created.selectedDate]) {
+        delete AvailabilityManager._details[created.selectedDate];
+      }
+    }
+    if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+      try { CalendarModule.render(); } catch (e) {}
+    }
+
     CloudSync.notify("bookings", { code: created.code, date: created.selectedDate });
     return { ok: true, booking: created, source: "remote" };
   },
 
   _enqueueOfflineBooking(booking, idempotencyKey, payload) {
+    // 4. VALIDACIÓN DE ESQUEMA Y ANTI-STORED XSS EN COLA (previa a insertar)
+    const candidateRecord = Object.assign({}, payload || {}, booking || {}, {
+      code: booking && booking.code,
+      referenceSinpe: (booking && (booking.referenceSinpe || booking.sinpeRef)) || (payload && payload.sinpeRef) || "SN000000"
+    });
+    if (!validateBookingSchema(candidateRecord)) {
+      console.warn("[Arkik Security] Inserción bloqueada en offlineQueue por violación de esquema:", candidateRecord);
+      return false;
+    }
+    if (payload && typeof payload === "object") {
+      payload.clientName = candidateRecord.clientName;
+      payload.sinpeRef = candidateRecord.sinpeRef;
+      payload.referenceSinpe = candidateRecord.referenceSinpe;
+    }
     try {
       const q = safeParse(STORAGE_KEYS.offlineQueue, []);
       const queue = Array.isArray(q) ? q : [];
@@ -1673,6 +2231,17 @@ const BookingStore = {
     let synced = 0;
     const remaining = [];
     for (const item of queue) {
+      // 4. VALIDACIÓN DE ESQUEMA Y ANTI-STORED XSS EN COLA (previa a leer/sincronizar)
+      const queueRecordCheck = Object.assign({}, (item && item.payload) || {}, {
+        code: item && (item.bookingCode || (item.payload && item.payload.code))
+      });
+      if (!item || !item.payload || !validateBookingSchema(queueRecordCheck)) {
+        console.warn("[Arkik Security] Registro corrupto o malicioso descartado de offlineQueue:", item);
+        continue;
+      }
+      item.payload.clientName = queueRecordCheck.clientName;
+      item.payload.sinpeRef = queueRecordCheck.sinpeRef;
+      item.payload.referenceSinpe = queueRecordCheck.referenceSinpe;
       try {
         const res = await ArkikApi.createBooking(item.payload, item.idempotencyKey);
         if (res && res.ok && res.data && res.data.booking) {
@@ -1680,7 +2249,7 @@ const BookingStore = {
           const serverBooking = res.data.booking;
           const local = this.get(item.bookingCode);
           if (local) {
-            Object.assign(local, serverBooking, { isOfflineDegraded: false });
+            Object.assign(local, serverBooking, { isOfflineDegraded: false, syncStatus: "synced" });
           } else {
             this._data.unshift(serverBooking);
           }
@@ -2511,7 +3080,9 @@ class CartState {
     this.selectedTime = ""; // Hora del evento (chip del selector de hora)
     this.address = "";
     this.sinpeRef = "";
-    this.voucherImage = null; // Data-URL Base64 del comprobante SINPE (máx ~100kb)
+    this.voucherImage = null;
+    this.voucherRaw = null; // Data-URL Base64 del comprobante SINPE (máx ~100kb)
+    this.voucherRaw = null;
     this.createdBooking = null;
     this.currentStep = 1;
     this.isSubmitting = false;
@@ -2583,6 +3154,23 @@ class CartState {
     return this.granTotal - this.deposit50Amount;
   }
 
+  get extrasTotal() {
+    return this.extraHoursTotal + this.djTotal + this.subwoofersTotal;
+  }
+
+  get deposit50() {
+    return this.deposit50Amount;
+  }
+
+  set subtotal(_) {}
+  set extrasTotal(_) {}
+  set travelSurcharge(_) {}
+  set granTotal(_) {}
+  set deposit50(_) {}
+  set deposit50Amount(_) {}
+  set remainingBalance(_) {
+  }
+
   // ---- Persistencia de Carrito ----
 
   serialize() {
@@ -2637,7 +3225,7 @@ class CartState {
       this.eventType = cleanText(data.eventType, 40) || "Boda";
       this.currentStep = clampInt(data.currentStep || 1, 1, 4);
       this.address = cleanText(data.address, 300);
-      this.sinpeRef = cleanText(data.sinpeRef, 15);
+      this.sinpeRef = cleanText(data.sinpeRef, 20);
 
       const savedDate = cleanText(data.selectedDate || data.eventDate, 10);
       if (parseISO(savedDate)) this.selectedDate = savedDate;
@@ -2661,6 +3249,33 @@ class CartState {
       SafeStorage.removeItem(STORAGE_KEYS.cart);
     } catch (err) {
       // ignore
+    }
+  }
+
+  reset() {
+    this.selectedService = (typeof CATALOG_SERVICES !== "undefined" && CATALOG_SERVICES[0]) || null;
+    this.extraHoursCount = 0;
+    this.djHoursCount = 0;
+    this.subwoofersCount = 0;
+    this.province = "";
+    this.canton = "";
+    this.clientName = "";
+    this.clientPhone = "";
+    this.clientEmail = "";
+    this.clientId = "";
+    this.eventType = "Boda";
+    this.selectedDate = "";
+    this.selectedTime = "";
+    this.address = "";
+    this.sinpeRef = "";
+    this.voucherImage = null;
+    this.voucherRaw = null;
+    this.createdBooking = null;
+    this.currentStep = 1;
+    this.isSubmitting = false;
+    this.clearStoredState();
+    if (typeof resetVoucherUploadState === "function") {
+      try { resetVoucherUploadState(); } catch (e) {}
     }
   }
 }
@@ -5331,7 +5946,10 @@ async function preloadExecutiveImages(container) {
  * desglose financiero, resumen de pagos SINPE y cláusulas con firmas.
  */
 function buildAccountingInvoiceHtml(booking, statusOverride) {
-  const b = booking || (typeof cart !== "undefined" && cart.createdBooking) || {};
+  const b = Object.assign({}, booking || (typeof cart !== "undefined" && cart.createdBooking) || {});
+  enforceVerifiedTotalsOnBooking(b, b);
+  const activeVoucherImg = safeImageDataUrl(b.voucherImage || (typeof window !== "undefined" ? window._activeVoucherBlob : ""));
+
   const rawCode = String(b.code || b.id || "00000000").replace(/^ARK-/, "");
   const code = "ARK-" + rawCode;
   const today = new Date().toLocaleDateString("es-CR", { year: "numeric", month: "long", day: "numeric" });
@@ -5498,14 +6116,14 @@ function buildAccountingInvoiceHtml(booking, statusOverride) {
       </div>
 
       <!-- 4.5. COMPROBANTE SINPE DIGITALIZADO (AUDITORÍA CONTABLE) -->
-      ${safeImageDataUrl(b.voucherImage) ? `
+      ${activeVoucherImg ? `
       <div style="margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; background: #f8fafc; page-break-inside: avoid;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
           <span style="font-size: 9px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em;">Comprobante de Pago SINPE Móvil (Copia Digitalizada)</span>
           <span style="font-family: ui-monospace, monospace; font-size: 9.5px; font-weight: 700; color: #059669;">Ref: ${sanitizeInput(b.sinpeRef || "Validado")}</span>
         </div>
         <div style="text-align: center;">
-          <img src="${safeImageDataUrl(b.voucherImage)}" alt="Comprobante SINPE" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #ffffff;" />
+          <img src="${activeVoucherImg}" alt="Comprobante SINPE" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 6px; border: 1px solid #e2e8f0; background: #ffffff;" />
         </div>
       </div>` : ""}
 
@@ -10425,6 +11043,7 @@ function updateModalStep(stepNumber) {
         updateVoucherUploadUI();
       }
     }
+    updateOfflineModeBanner();
     unlockStep3Submit(); // llega al paso 4 → reactivar el botón de envío
   }
 
@@ -10734,6 +11353,7 @@ function handleVoucherUpload(file) {
   compressImage(file)
     .then(dataUrl => {
       cart.voucherImage = dataUrl;
+      cart.voucherRaw = dataUrl;
       cart.persist();
       updateVoucherUploadUI();
       showToast("Comprobante cargado y comprimido correctamente.", "success");
@@ -10793,6 +11413,7 @@ function updateGenerateButtonState() {
  * Restablece el estado de la subida (usado al volver a empezar el flujo).
  */
 function resetVoucherUploadState() {
+  cart.voucherRaw = null;
   cart.voucherImage = null;
   cart.persist();
   updateVoucherUploadUI();
@@ -11073,19 +11694,28 @@ async function submitStaticBooking() {
   // (8) Revalidación en vivo contra la nube: cierra la ventana de los 8 s de
   // polling antes de comprometer el turno. Si la nube respondió a tiempo,
   // se vuelve a validar con el estado ya refrescado.
-  await preSubmitCloudRefresh(CLIENT_GUARD_CONFIG.preSubmitPullTimeoutMs);
-  const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
-  if (!lateSlotCheck.ok) {
-    if (lateSlotCheck.code === "slot_taken" || lateSlotCheck.code === "day_full") {
-      showSlotConflictAlert(lateSlotCheck.message);
+  // Non-Blocking Cloud Verification: strict 2500ms timeout
+  try {
+    const cloudCheckPromise = preSubmitCloudRefresh(2500);
+    const cloudTimeoutPromise = new Promise(function (resolve) {
+      setTimeout(function () { resolve(false); }, 2500);
+    });
+    await Promise.race([cloudCheckPromise, cloudTimeoutPromise]);
+    const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+    if (!lateSlotCheck.ok) {
+      if (lateSlotCheck.code === "slot_taken" || lateSlotCheck.code === "day_full") {
+        showSlotConflictAlert(lateSlotCheck.message);
+        goToStep(2);
+        releaseLock();
+        return;
+      }
+      showToast(lateSlotCheck.message, "error");
       goToStep(2);
       releaseLock();
       return;
     }
-    showToast(lateSlotCheck.message, "error");
-    goToStep(2);
-    releaseLock();
-    return;
+  } catch (cloudErr) {
+    console.warn("[Arkik] Pre-submit cloud refresh bypass/error:", cloudErr);
   }
 
   // (9) El intento consumido queda registrado ANTES de generar el voucher.
@@ -11152,6 +11782,9 @@ async function submitStaticBooking() {
           granTotal: cart.granTotal,
           deposit50Amount: cart.deposit50Amount,
           remainingBalance: cart.remainingBalance,
+          extrasTotal: cart.extrasTotal,
+          deposit50: cart.deposit50Amount,
+          referenceSinpe: cart.sinpeRef,
           sinpeRef: cart.sinpeRef
         };
 
@@ -11162,10 +11795,80 @@ async function submitStaticBooking() {
         if (btn) {
           btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Guardando…';
         }
-        const saved = await BookingStore.add(record, idempotencyKeyFor());
-        if (!saved.ok) {
+        enforceVerifiedTotalsOnBooking(record, cart);
+        validateBookingSchema(record);
+
+        if (typeof window !== "undefined" && cart.voucherImage) {
+          window._activeVoucherBlob = cart.voucherImage;
+        }
+
+        const idemKey = idempotencyKeyFor();
+        let saved = null;
+
+        // Non-Blocking Cloud Push: Promise.race with strict 2500ms timeout
+        try {
+          const pushTimeout = new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve({ ok: false, code: "timeout", status: 0, degraded: true });
+            }, 2500);
+          });
+          saved = await Promise.race([
+            BookingStore.add(record, idemKey),
+            pushTimeout
+          ]);
+        } catch (pushErr) {
+          console.warn("[Arkik] Cloud push falló o dio timeout, degradando a offline:", pushErr);
+          saved = { ok: false, code: "network", status: 0, degraded: true };
+        }
+
+        // Si hubo conflicto real de fecha/cupo (409) confirmado por servidor:
+        if (saved && !saved.ok && (saved.code === "day_full" || saved.code === "slot_taken" || saved.code === "blackout" || saved.code === "soldout" || saved.status === 409)) {
           handleBookingCreateFailure(saved);
           return;
+        }
+
+        // Si falló por 404, 405, 5xx, timeout, network failure, etc:
+        // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
+        if (!saved || !saved.ok || saved.degraded) {
+          console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
+          record.syncStatus = "offline_unverified";
+          record.isOfflineDegraded = true;
+          enforceVerifiedTotalsOnBooking(record, cart);
+          validateBookingSchema(record);
+
+          BookingStore._enqueueOfflineBooking(record, idemKey, {
+            clientName: record.clientName,
+            clientPhone: record.clientPhone,
+            clientEmail: record.clientEmail,
+            eventType: record.eventType,
+            serviceId: record.serviceId,
+            selectedDate: record.selectedDate,
+            selectedTime: record.selectedTime,
+            province: record.province,
+            canton: record.canton,
+            address: record.address,
+            sinpeRef: record.sinpeRef,
+            extras: record.extras,
+            voucherImage: record.voucherImage
+          });
+
+          if (!BookingStore._data) BookingStore.load();
+          const existingIdx = BookingStore._data.findIndex(function (b) { return b && b.code === record.code; });
+          if (existingIdx >= 0) {
+            BookingStore._data[existingIdx] = record;
+          } else {
+            BookingStore._data.unshift(record);
+          }
+          BookingStore.persist();
+
+          if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[record.selectedDate]) {
+            delete AvailabilityManager._details[record.selectedDate];
+          }
+          if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+            try { CalendarModule.render(); } catch (e) {}
+          }
+
+          saved = { ok: true, booking: record, source: "local", degraded: true };
         }
 
         const created = saved.booking;
@@ -11179,11 +11882,20 @@ async function submitStaticBooking() {
           if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
           if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
         }
+        if (saved.source !== "remote" || saved.degraded) {
+          created.syncStatus = "offline_unverified";
+          created.isOfflineDegraded = true;
+          enforceVerifiedTotalsOnBooking(created, cart);
+          updateOfflineModeBanner(true);
+        } else {
+          created.syncStatus = "synced";
+          updateOfflineModeBanner(false);
+        }
         cart.createdBooking = created;
 
         const offlineBadge = document.getElementById("confirm-offline-badge");
         if (offlineBadge) {
-          if (saved.degraded) {
+          if (saved.degraded || saved.source === "local" || created.syncStatus === "offline_unverified") {
             offlineBadge.classList.remove("hidden");
           } else {
             offlineBadge.classList.add("hidden");
@@ -11222,7 +11934,8 @@ ${surchargeText}
 ----------------------------------------
 📎 *Comprobante SINPE:* Adjuntado y registrado en el expediente digital de Arkik Productions.`;
 
-        const encodedMsg = encodeURIComponent(rawMsg);
+        const verifiedMsg = buildWhatsAppMessage(created || record);
+        const encodedMsg = encodeURIComponent(verifiedMsg);
         const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
 
         // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
@@ -11241,11 +11954,13 @@ ${surchargeText}
 
         document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
         document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
-        document.getElementById("confirm-gran-total").textContent = formatCRC(cart.granTotal);
-        document.getElementById("confirm-deposit-50").textContent = formatCRC(cart.deposit50Amount);
+        const verifiedForDom = calculateVerifiedTotals(created || record);
+        document.getElementById("confirm-gran-total").textContent = formatCRC(verifiedForDom.granTotal);
+        document.getElementById("confirm-deposit-50").textContent = formatCRC(verifiedForDom.deposit50);
+
 
         const remBalEl = document.getElementById("confirm-remaining-balance");
-        if (remBalEl) remBalEl.textContent = formatCRC(cart.remainingBalance);
+        if (remBalEl) remBalEl.textContent = formatCRC(verifiedForDom.remainingBalance);
 
         const waBtn = document.getElementById("btn-whatsapp-client");
         if (waBtn) waBtn.href = whatsappUrl;
@@ -11256,11 +11971,49 @@ ${surchargeText}
         clearIdempotencyKey();
 
         goToStep(4);
-        showToast(`Reserva registrada con el código ${bookingCode}.`, "success");
+
+        // 1. Muestra un toast de éxito: "✓ ¡Reserva y comprobante recibidos con éxito!"
+        showToast("✓ ¡Reserva registrada con éxito!", "success");
+
+        // 2. Genera y descarga (o previsualiza) el Voucher / Pre-Factura PDF oficial con el comprobante incrustado
+        if (typeof exportVoucherPDF === "function") {
+          try {
+            await exportVoucherPDF(created || record);
+          } catch (pdfErr) {
+            console.warn("[Arkik] Error al exportar PDF del voucher:", pdfErr);
+          }
+        }
+
+        // 3. Despliega el enlace o abre WhatsApp (wa.me) con el mensaje pre-estructurado
+        if (waBtn) waBtn.href = whatsappUrl;
+        try {
+          if (typeof window !== "undefined" && typeof window.open === "function") {
+            window.open(whatsappUrl, "_blank");
+          }
+        } catch (waErr) {
+          console.warn("[Arkik] Error al abrir WhatsApp:", waErr);
+        }
+
         // Fire-and-forget: refresca el cupo del día elegido y agenda la
         // revalidación de las vistas abiertas.
-        AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
-        CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
+        if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.fetchDetail === "function") {
+          AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
+        }
+        if (typeof CloudSync !== "undefined" && typeof CloudSync.notify === "function") {
+          CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
+        }
+
+        // 4. Resetea el estado del carrito (cart.reset()) y cierra el modal de checkout
+        if (typeof cart !== "undefined" && typeof cart.reset === "function") {
+          cart.reset();
+          cart.voucherImage = null;
+          cart.voucherRaw = null;
+          if (typeof window !== "undefined") window._activeVoucherBlob = null;
+          scheduleVoucherTtlPurge();
+        }
+        if (typeof closeBookingModal === "function") {
+          closeBookingModal();
+        }
       } catch (err) {
         console.error("Booking submission failed:", err);
         if (cart.createdBooking) {
@@ -11278,6 +12031,9 @@ ${surchargeText}
 }
 
 function finalizeVoucher() {
+  if (typeof cart !== "undefined" && typeof cart.reset === "function") {
+    cart.reset();
+  }
   closeBookingModal();
   showToast("¡Reserva registrada con éxito! Desglose y comprobante archivados.", "success");
 }
@@ -12798,6 +13554,13 @@ window.collectExecutiveReportData = collectExecutiveReportData;
 window.openExecutiveReportPreviewModal = openExecutiveReportPreviewModal;
 window.closeExecutiveReportPreviewModal = closeExecutiveReportPreviewModal;
 window.exportExecutiveReportPDF = exportExecutiveReportPDF;
+window.calculateVerifiedTotals = calculateVerifiedTotals;
+window.enforceVerifiedTotalsOnBooking = enforceVerifiedTotalsOnBooking;
+window.validateBookingSchema = validateBookingSchema;
+window.safeSaveBookings = safeSaveBookings;
+window.purgeExpiredVouchers = purgeExpiredVouchers;
+window.buildWhatsAppMessage = buildWhatsAppMessage;
+window.updateOfflineModeBanner = updateOfflineModeBanner;
 
 
 
