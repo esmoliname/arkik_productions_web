@@ -2094,7 +2094,7 @@ const BookingStore = {
       const timeoutPromise = new Promise(function (resolve) {
         setTimeout(function () {
           resolve({ ok: false, code: "timeout", status: 0, message: "Timeout" });
-        }, 2500);
+        }, 2000);
       });
       res = await Promise.race([
         ArkikApi.createBooking(payload, idempotencyKey),
@@ -10410,6 +10410,7 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 
 let lastModalStep = 1;
+let originalModalStep4Html = null;
 
 function openBookingModal(serviceId) {
   trackModal(true);
@@ -11696,9 +11697,9 @@ async function submitStaticBooking() {
   // se vuelve a validar con el estado ya refrescado.
   // Non-Blocking Cloud Verification: strict 2500ms timeout
   try {
-    const cloudCheckPromise = preSubmitCloudRefresh(2500);
+    const cloudCheckPromise = preSubmitCloudRefresh(2000);
     const cloudTimeoutPromise = new Promise(function (resolve) {
-      setTimeout(function () { resolve(false); }, 2500);
+      setTimeout(function () { resolve(false); }, 2000);
     });
     await Promise.race([cloudCheckPromise, cloudTimeoutPromise]);
     const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
@@ -11810,7 +11811,7 @@ async function submitStaticBooking() {
           const pushTimeout = new Promise(function (resolve) {
             setTimeout(function () {
               resolve({ ok: false, code: "timeout", status: 0, degraded: true });
-            }, 2500);
+            }, 2000);
           });
           saved = await Promise.race([
             BookingStore.add(record, idemKey),
@@ -11972,27 +11973,7 @@ ${surchargeText}
 
         goToStep(4);
 
-        // 1. Muestra un toast de éxito: "✓ ¡Reserva y comprobante recibidos con éxito!"
         showToast("✓ ¡Reserva registrada con éxito!", "success");
-
-        // 2. Genera y descarga (o previsualiza) el Voucher / Pre-Factura PDF oficial con el comprobante incrustado
-        if (typeof exportVoucherPDF === "function") {
-          try {
-            await exportVoucherPDF(created || record);
-          } catch (pdfErr) {
-            console.warn("[Arkik] Error al exportar PDF del voucher:", pdfErr);
-          }
-        }
-
-        // 3. Despliega el enlace o abre WhatsApp (wa.me) con el mensaje pre-estructurado
-        if (waBtn) waBtn.href = whatsappUrl;
-        try {
-          if (typeof window !== "undefined" && typeof window.open === "function") {
-            window.open(whatsappUrl, "_blank");
-          }
-        } catch (waErr) {
-          console.warn("[Arkik] Error al abrir WhatsApp:", waErr);
-        }
 
         // Fire-and-forget: refresca el cupo del día elegido y agenda la
         // revalidación de las vistas abiertas.
@@ -12003,22 +11984,16 @@ ${surchargeText}
           CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
         }
 
-        // 4. Resetea el estado del carrito (cart.reset()) y cierra el modal de checkout
-        if (typeof cart !== "undefined" && typeof cart.reset === "function") {
-          cart.reset();
-          cart.voucherImage = null;
-          cart.voucherRaw = null;
-          if (typeof window !== "undefined") window._activeVoucherBlob = null;
-          scheduleVoucherTtlPurge();
-        }
-        if (typeof closeBookingModal === "function") {
-          closeBookingModal();
-        }
+        // Renderiza el voucher formal emitido en el Paso 4 sin cerrar el modal ni resetear el carrito
+        renderConfirmedVoucherScreen(created || record, whatsappUrl);
       } catch (err) {
         console.error("Booking submission failed:", err);
         if (cart.createdBooking) {
-          // La reserva ya quedó registrada: solo falló la pintura del voucher.
-          try { goToStep(4); } catch (err2) { /* noop */ }
+          try {
+            goToStep(4);
+            const wa = typeof whatsappUrl !== "undefined" ? whatsappUrl : "";
+            renderConfirmedVoucherScreen(cart.createdBooking, wa);
+          } catch (err2) { /* noop */ }
           clearIdempotencyKey();
           showToast(`Reserva registrada con el código ${cart.createdBooking.code || bookingCode}.`, "success");
         } else {
@@ -12030,12 +12005,220 @@ ${surchargeText}
       }
 }
 
+/**
+ * Renderiza la vista formal de confirmación y emisión del voucher en #modal-step-4.
+ * Muestra el código ARK-XXXXXXXX, el desglose contable estricto (Gran Total, 50% Adelanto, Saldo Pendiente),
+ * la miniatura del comprobante SINPE subido y botones de acción (Descargar PDF, Notificar WhatsApp, Finalizar y Volver).
+ * El modal solo se cierra cuando el usuario presiona "Finalizar y Volver".
+ * @param {object} booking Datos de la reserva confirmada
+ * @param {string} waUrl Enlace preformateado a WhatsApp
+ */
+function renderConfirmedVoucherScreen(booking, waUrl) {
+  const step4El = document.getElementById("modal-step-4");
+  if (!step4El) return;
+
+  // Respaldar la plantilla inicial del Paso 4 para poder reabrir el formulario limpio tras finalizar
+  if (!originalModalStep4Html) {
+    originalModalStep4Html = step4El.innerHTML;
+  }
+
+  const b = booking || (typeof cart !== "undefined" && cart.createdBooking) || {};
+  const code = sanitizeInput(b.code || (typeof generateBookingCode === "function" ? generateBookingCode() : "ARK-XXXXXXXX"));
+  const clientName = sanitizeInput(b.clientName || (typeof cart !== "undefined" ? cart.clientName : "-"));
+  const eventType = sanitizeInput(b.eventType || (typeof cart !== "undefined" ? cart.eventType : "Evento"));
+  const serviceName = sanitizeInput(b.serviceName || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.name : "Servicio"));
+  const setupDisplay = sanitizeInput(b.setupDisplay || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.setup_display : "2h antes"));
+  const teardownDisplay = sanitizeInput(b.teardownDisplay || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.teardown_display : "1h después"));
+  const dateStr = b.selectedDate || (typeof cart !== "undefined" ? cart.selectedDate : "");
+  const timeStr = b.selectedTime || (typeof cart !== "undefined" ? cart.selectedTime : "");
+  const dateDisplay = sanitizeInput(dateStr ? `${typeof formatDisplayDate === "function" ? formatDisplayDate(dateStr) : dateStr}${timeStr ? " a las " + timeStr : ""}` : "-");
+  const cantonStr = b.canton || (typeof cart !== "undefined" ? cart.canton : "");
+  const provinceStr = b.province || (typeof cart !== "undefined" ? cart.province : "");
+  const locationDisplay = sanitizeInput([cantonStr, provinceStr].filter(Boolean).join(", ") || "-");
+
+  const verified = (typeof calculateVerifiedTotals === "function")
+    ? calculateVerifiedTotals(b)
+    : {
+        granTotal: Number(b.granTotal) || 0,
+        deposit50: Number(b.deposit50Amount || b.deposit50) || 0,
+        remainingBalance: Number(b.remainingBalance) || 0
+      };
+
+  const rawImg = b.voucherImage || (typeof cart !== "undefined" ? cart.voucherImage : "") || (typeof window !== "undefined" ? window._activeVoucherBlob : "");
+  const safeImg = (typeof safeImageDataUrl === "function") ? safeImageDataUrl(rawImg) : (rawImg || "");
+  const safeWaLink = (typeof sanitizeUrl === "function") ? sanitizeUrl(waUrl || "#") : (waUrl || "#");
+  const isOffline = b.syncStatus === "offline_unverified" || b.isOfflineDegraded;
+
+  // Asegura persistencia en el contexto global de reservas para exportVoucherPDF
+  if (typeof cart !== "undefined") {
+    cart.createdBooking = b;
+  }
+  if (typeof window !== "undefined") {
+    window._lastCreatedBooking = b;
+    window._activeVoucherBlob = safeImg || rawImg;
+  }
+
+  // Activa panel del paso 4 e indicadores visuales del stepper
+  step4El.classList.remove("hidden");
+  for (let i = 1; i <= 4; i++) {
+    const pane = document.getElementById(`modal-step-${i}`);
+    if (pane && pane !== step4El) pane.classList.add("hidden");
+    const indicator = document.getElementById(`step-indicator-${i}`);
+    if (indicator) {
+      if (i === 4) {
+        indicator.classList.add("border-purple-500", "bg-purple-900/40", "text-purple-300");
+        indicator.classList.remove("border-gray-700", "text-gray-500", "border-emerald-500", "text-emerald-400");
+      } else {
+        indicator.classList.add("border-emerald-500", "bg-emerald-950/30", "text-emerald-400");
+        indicator.classList.remove("border-purple-500", "border-gray-700", "text-gray-500", "bg-purple-900/40");
+      }
+    }
+  }
+
+  const voucherThumbnailHtml = safeImg ? `
+    <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-500/20 text-center">
+      <span class="text-[10px] font-semibold text-gray-400 block mb-2">Comprobante SINPE Adjunto:</span>
+      <img src="${safeImg}" alt="Comprobante SINPE subido" class="max-h-36 max-w-full mx-auto rounded-lg border border-purple-500/40 object-contain shadow-md" />
+      ${b.sinpeRef ? `<p class="text-[10px] text-emerald-300 font-mono mt-1.5">Ref: ${sanitizeInput(b.sinpeRef)}</p>` : ''}
+    </div>
+  ` : (b.sinpeRef ? `
+    <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-500/20 text-center">
+      <span class="text-[10px] font-semibold text-gray-400 block mb-1">Referencia SINPE Registrada:</span>
+      <p class="text-xs text-emerald-300 font-mono font-bold">${sanitizeInput(b.sinpeRef)}</p>
+    </div>
+  ` : '');
+
+  step4El.innerHTML = `
+    <div id="confirmed-voucher-view" class="text-center space-y-6">
+      <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-900/40">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+        </svg>
+      </div>
+
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-semibold mb-2">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>Estado: Pendiente de Aprobación</span>
+        </div>
+        ${isOffline ? `
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold mb-2 ml-1">
+          <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+          <span>Modo Offline Resiliente</span>
+        </div>
+        ` : ''}
+        <h3 class="text-2xl font-extrabold text-white mt-1">Código: <span class="text-gradient-purple font-mono font-bold">${code}</span></h3>
+        <p class="text-xs text-gray-400 mt-1">Su reserva ha sido registrada formalmente. El comprobante SINPE fue archivado y la pre-factura generada con éxito.</p>
+      </div>
+
+      <!-- Tarjeta de Confirmación Formal y Desglose Contable -->
+      <div id="voucher-printable-area" class="glass-panel p-5 rounded-2xl text-left space-y-3 text-xs border border-purple-500/30 shadow-xl shadow-purple-950/40">
+        <div class="flex items-center justify-between border-b border-purple-500/20 pb-3">
+          <div class="flex items-center space-x-2">
+            <img src="img/arkik_logo.jpg" alt="Arkik Productions" class="h-8 w-auto rounded border border-purple-500/30">
+            <div>
+              <span class="font-extrabold text-white text-sm">Arkik Productions</span>
+              <p class="text-[9px] text-gray-400">Granadilla, SJ · +506 6227-4984</p>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-md bg-purple-900/50 border border-purple-500/40 font-mono font-bold text-purple-200 text-xs">${code}</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-b border-purple-500/10 pb-2">
+          <div>
+            <span class="text-gray-400 block text-[10px]">Cliente / Empresa:</span>
+            <span class="font-bold text-white text-xs">${clientName}</span>
+          </div>
+          <div>
+            <span class="text-gray-400 block text-[10px]">Tipo de Evento:</span>
+            <span class="font-bold text-white text-xs">${eventType}</span>
+          </div>
+        </div>
+
+        <div class="border-b border-purple-500/10 pb-2">
+          <span class="text-gray-400 block text-[10px]">Servicio & Logística:</span>
+          <span class="font-bold text-purple-300 text-xs">${serviceName}</span>
+          <p class="text-[10px] text-gray-400 mt-0.5">Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-purple-500/10 pb-2">
+          <div>
+            <span class="text-gray-400 block text-[10px]">Fecha del Show:</span>
+            <span class="font-bold text-white text-xs">${dateDisplay}</span>
+          </div>
+          <div>
+            <span class="text-gray-400 block text-[10px]">Ubicación:</span>
+            <span class="font-bold text-white text-xs">${locationDisplay}</span>
+          </div>
+        </div>
+
+        <!-- Desglose Contable -->
+        <div class="pt-1 space-y-1.5 border-b border-purple-500/10 pb-2.5">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-gray-400">Gran Total Cotizado:</span>
+            <span class="font-bold text-white text-sm">${typeof formatCRC === 'function' ? formatCRC(verified.granTotal) : '₡' + verified.granTotal}</span>
+          </div>
+          <div class="flex justify-between items-center text-emerald-400 font-extrabold text-sm border-t border-purple-500/20 pt-1.5">
+            <span>Adelanto SINPE (50%):</span>
+            <span>${typeof formatCRC === 'function' ? formatCRC(verified.deposit50) : '₡' + verified.deposit50}</span>
+          </div>
+          <div class="flex justify-between items-center text-gray-300 text-xs">
+            <span class="text-gray-400">Saldo Pendiente (Día del Evento):</span>
+            <span class="font-semibold text-purple-200">${typeof formatCRC === 'function' ? formatCRC(verified.remainingBalance) : '₡' + verified.remainingBalance}</span>
+          </div>
+        </div>
+
+        <!-- Miniatura del Comprobante Subido -->
+        ${voucherThumbnailHtml}
+      </div>
+
+      <!-- Acciones de Usuario -->
+      <div class="space-y-3 pt-2">
+        <!-- Descargar / Ver Pre-Factura PDF -->
+        <button type="button" id="btn-confirmed-download-pdf" onclick="exportVoucherPDF(cart.createdBooking || window._lastCreatedBooking)" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 tactile-btn">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>Descargar / Ver Pre-Factura PDF</span>
+        </button>
+
+        <!-- Notificar por WhatsApp -->
+        <a id="btn-confirmed-whatsapp" href="${safeWaLink}" target="_blank" rel="noopener" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 tactile-btn">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+          </svg>
+          <span>Notificar por WhatsApp</span>
+        </a>
+
+        <!-- Finalizar y Volver -->
+        <button type="button" id="btn-confirmed-finalize" onclick="finalizeVoucher()" class="w-full py-3 px-4 min-h-[44px] rounded-xl text-sm font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all tactile-btn">
+          Finalizar y Volver
+        </button>
+      </div>
+    </div>
+  `;
+
+  const modalCard = document.getElementById("modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+}
+
 function finalizeVoucher() {
   if (typeof cart !== "undefined" && typeof cart.reset === "function") {
     cart.reset();
+    cart.voucherImage = null;
+    cart.voucherRaw = null;
+    if (typeof window !== "undefined") window._activeVoucherBlob = null;
+    if (typeof scheduleVoucherTtlPurge === "function") scheduleVoucherTtlPurge();
   }
-  closeBookingModal();
-  showToast("¡Reserva registrada con éxito! Desglose y comprobante archivados.", "success");
+  if (typeof closeBookingModal === "function") {
+    closeBookingModal();
+  }
+  showToast("¡Reserva finalizada con éxito! Desglose y comprobante archivados.", "success");
+}
+
+if (typeof window !== "undefined") {
+  window.renderConfirmedVoucherScreen = renderConfirmedVoucherScreen;
+  window.finalizeVoucher = finalizeVoucher;
 }
 
 // ============================================================
