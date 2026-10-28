@@ -7481,4 +7481,17 @@ body.rack-preview-open {
 
 .process-step-card:hover::after {
   opacity: 1;
+}
+
+/* ============================================================
+   TYPOGRAPHY HARD OVERRIDE — MODAL POLÍTICAS TITLE
+   ============================================================ */
+#modal-politicas #politicas-modal-title,
+#modal-politicas h2,
+#modal-politicas .policy-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif !important;
+  font-stretch: 100% !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.025em !important;
+  text-transform: none !important;
 }
