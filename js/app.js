@@ -2290,13 +2290,29 @@ const BookingStore = {
         selectedDate: iso,
         selectedTime: selectedTime || b.selectedTime
       });
-      if (!res.ok) return apiFailure(res);
-      this._absorb(res.data && res.data.booking, code);
-      CloudSync.notify("bookings");
-      return { ok: true, booking: this.get(code), source: "remote" };
+      if (res.ok) {
+        this._absorb(res.data && res.data.booking, code);
+        CloudSync.notify("bookings");
+        return { ok: true, booking: this.get(code), source: "remote" };
+      }
+      const errCode = (res.error && res.error.code) || res.code || "";
+      if (
+        res.status === 409 ||
+        errCode === "day_full" ||
+        errCode === "slot_taken" ||
+        errCode === "blackout" ||
+        errCode === "soldout" ||
+        errCode === "min_notice" ||
+        errCode === "horizon" ||
+        errCode === "validation_error"
+      ) {
+        return apiFailure(res);
+      }
+      console.warn("[Arkik] Reprogramación remota no disponible, aplicando fallback local:", res);
     }
 
     b.selectedDate = iso;
+    if (selectedTime) b.selectedTime = selectedTime;
     b.updatedAt = new Date().toISOString();
     this.persist();
     if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
@@ -2314,15 +2330,31 @@ const BookingStore = {
 
     if (apiEnabled()) {
       const res = await ArkikApi.setStatus(code, status);
-      if (!res.ok) return apiFailure(res);
-      this._absorb(res.data && res.data.booking, code);
-      CloudSync.notify("bookings");
-      return { ok: true, booking: this.get(code), source: "remote" };
+      if (res.ok) {
+        this._absorb(res.data && res.data.booking, code);
+        CloudSync.notify("bookings");
+        return { ok: true, booking: this.get(code), source: "remote" };
+      }
+      const errCode = (res.error && res.error.code) || res.code || "";
+      if (
+        res.status === 409 ||
+        errCode === "day_full" ||
+        errCode === "slot_taken" ||
+        errCode === "blackout" ||
+        errCode === "soldout" ||
+        errCode === "validation_error"
+      ) {
+        return apiFailure(res);
+      }
+      console.warn("[Arkik] Cambio de estado remoto no disponible, aplicando fallback local:", res);
     }
 
     b.status = status;
     b.updatedAt = new Date().toISOString();
     this.persist();
+    if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+      StorageEngine.onDataChange("bookings");
+    }
     CloudSync.notify("bookings");
     return { ok: true, booking: b, source: "local" };
   },
@@ -2686,6 +2718,11 @@ const CloudSync = {
     } catch (err) { /* noop */ }
   }
 };
+const CloudSyncEngine = CloudSync;
+if (typeof window !== "undefined") {
+  window.CloudSync = CloudSync;
+  window.CloudSyncEngine = CloudSync;
+}
 
 // ============================================================
 // 5. SECURITY MODULE (verificación en dos niveles + anti fuerza bruta)
@@ -4450,6 +4487,7 @@ const AdminModule = {
     this.renderOwnerMetrics();
     this.renderOwnerSparkline();
     this.renderOwnerCalendar();
+    this.renderOwnerKpiStrip();
     this.renderOwnerFilters();
     this.renderOwnerBookings();
     // Consola RAG: reindexa desde BookingStore y repinta sus tres zonas.
@@ -4681,6 +4719,103 @@ const AdminModule = {
     }
   },
 
+  // ---- Top Executive KPI Mini-Strip (Above Reservations Feed) ----
+  renderOwnerKpiStrip() {
+    const stripEl = document.getElementById("admin-owner-kpi-strip");
+    if (!stripEl) return;
+
+    const list = bookingsInPeriod(this.periodFilter);
+    const active = list.filter(b => b.status !== "cancelada");
+
+    // Metric A: "Adelantos SINPE Validados" (Total 50% advance cash confirmed)
+    const validatedAdvance = active
+      .filter(b => b.status === "confirmada" || b.status === "realizada")
+      .reduce((sum, b) => sum + (Number(b.deposit50Amount) || 0), 0);
+    const confirmedCount = active.filter(b => b.status === "confirmada" || b.status === "realizada").length;
+
+    // Metric B: "Saldos Por Cobrar en Escena" (Remaining balance pending on event day)
+    const pendingBalances = active
+      .filter(b => b.status !== "realizada")
+      .reduce((sum, b) => sum + (Number(b.remainingBalance) || 0), 0);
+    const balanceEventsCount = active.filter(b => b.status !== "realizada" && (Number(b.remainingBalance) || 0) > 0).length;
+
+    // Metric C: "Pendientes de Aprobación" (Count of unconfirmed bookings with an alert pulse)
+    const pendingApprovalCount = list.filter(b => b.status === "pendiente").length;
+    const pulseDot = pendingApprovalCount > 0
+      ? `<span class="relative inline-flex h-2.5 w-2.5 shrink-0" title="Requiere verificación SINPE">
+           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+           <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
+         </span>`
+      : `<span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 shrink-0"></span>`;
+
+    stripEl.innerHTML = `
+      <!-- Metric A: Adelantos SINPE Validados -->
+      <div class="owner-kpi-strip-card bg-[#070510]/90 backdrop-blur-xl border border-emerald-500/25 rounded-2xl p-3.5 sm:p-4 shadow-[0_8px_25px_rgba(0,0,0,0.55)] flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Adelantos SINPE Validados</span>
+          <span class="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-300">50% Confirmado</span>
+        </div>
+        <p class="font-mono text-emerald-400 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${formatCRC(validatedAdvance)}</p>
+        <p class="text-[10px] text-slate-400 mt-1">${confirmedCount} reserva(s) con agenda congelada</p>
+      </div>
+
+      <!-- Metric B: Saldos Por Cobrar en Escena -->
+      <div class="owner-kpi-strip-card bg-[#070510]/90 backdrop-blur-xl border border-cyan-500/25 rounded-2xl p-3.5 sm:p-4 shadow-[0_8px_25px_rgba(0,0,0,0.55)] flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Saldos Por Cobrar en Escena</span>
+          <span class="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">Día del Evento</span>
+        </div>
+        <p class="font-mono text-emerald-400 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${formatCRC(pendingBalances)}</p>
+        <p class="text-[10px] text-slate-400 mt-1">${balanceEventsCount} evento(s) por liquidar 50% restante</p>
+      </div>
+
+      <!-- Metric C: Pendientes de Aprobación -->
+      <div class="owner-kpi-strip-card bg-[#070510]/90 backdrop-blur-xl border ${pendingApprovalCount > 0 ? "border-amber-500/40" : "border-white/10"} rounded-2xl p-3.5 sm:p-4 shadow-[0_8px_25px_rgba(0,0,0,0.55)] flex flex-col justify-between cursor-pointer transition-all hover:border-amber-400/60"
+           onclick="AdminModule.ownerFilter='pendiente'; AdminModule.renderOwnerFilters(); AdminModule.renderOwnerBookings();"
+           title="Filtrar reservas pendientes de aprobación">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            ${pulseDot}
+            <span>Pendientes de Aprobación</span>
+          </span>
+          <span class="px-2 py-0.5 rounded-md ${pendingApprovalCount > 0 ? "bg-amber-500/15 border border-amber-500/40 text-amber-300 animate-pulse" : "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"} text-[10px] font-mono font-semibold">
+            ${pendingApprovalCount > 0 ? "Por Validar" : "Al Día"}
+          </span>
+        </div>
+        <p class="font-mono text-emerald-400 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${pendingApprovalCount} <span class="text-xs font-normal text-slate-400">${pendingApprovalCount === 1 ? "reserva" : "reservas"}</span></p>
+        <p class="text-[10px] text-slate-400 mt-1">${pendingApprovalCount > 0 ? "Click para revisar depósitos SINPE" : "Sin aprobaciones pendientes"}</p>
+      </div>
+    `;
+  },
+
+  _matchesOwnerSearch(b, rawQuery) {
+    const q = String(rawQuery || "").trim().toLowerCase();
+    if (!q) return true;
+    const rawPhone = String(b.clientPhone || "");
+    const digitsPhone = rawPhone.replace(/\D/g, "");
+    const crPhonePlus = digitsPhone
+      ? (digitsPhone.startsWith("506") ? `+${digitsPhone}` : `+506${digitsPhone}`)
+      : "";
+    const crPhoneFormatted = digitsPhone.length >= 8
+      ? `+506 ${digitsPhone.slice(-8, -4)}-${digitsPhone.slice(-4)}`
+      : rawPhone;
+    const locationCombined = [b.canton, b.province, b.address].filter(Boolean).join(", ");
+    const haystacks = [
+      b.code,
+      b.clientName,
+      rawPhone,
+      digitsPhone,
+      crPhonePlus,
+      crPhoneFormatted,
+      b.canton,
+      b.province,
+      b.address,
+      locationCombined,
+      b.sinpeRef
+    ];
+    return haystacks.some(v => String(v || "").toLowerCase().includes(q));
+  },
+
   renderOwnerFilters() {
     const box = document.getElementById("admin-status-filters");
     if (!box) return;
@@ -4691,11 +4826,12 @@ const AdminModule = {
       ["realizada", "Realizadas"],
       ["cancelada", "Canceladas"]
     ];
-    const periodList = bookingsInPeriod(this.periodFilter);
+    const periodList = bookingsInPeriod(this.periodFilter)
+      .filter(b => this._matchesOwnerSearch(b, this.ownerQuery));
     box.innerHTML = statuses.map(([key, label]) => {
       const count = key === "todas" ? periodList.length : periodList.filter(b => b.status === key).length;
       const active = key === this.ownerFilter ? "pill-btn--active" : "";
-      return `<button type="button" data-filter="${key}" class="pill-btn ${active}">${label} <span class="pill-count">${count}</span></button>`;
+      return `<button type="button" role="tab" aria-selected="${key === this.ownerFilter ? "true" : "false"}" data-filter="${key}" class="pill-btn shrink-0 snap-start whitespace-nowrap ${active}">${label} <span class="pill-count font-mono">(${count})</span></button>`;
     }).join("");
   },
 
@@ -4703,16 +4839,11 @@ const AdminModule = {
     const box = document.getElementById("admin-bookings-list");
     if (!box) return;
     const periodList = bookingsInPeriod(this.periodFilter);
-    const q = String(this.ownerQuery || "").toLowerCase();
     const list = periodList
       .filter(b => this.ownerFilter === "todas" || b.status === this.ownerFilter)
-      .filter(b => {
-        if (!q) return true;
-        return [b.code, b.clientName, b.clientPhone, b.canton, b.province]
-          .some(v => String(v || "").toLowerCase().includes(q));
-      });
+      .filter(b => this._matchesOwnerSearch(b, this.ownerQuery));
     if (!list.length) {
-      box.innerHTML = `<div class="p-8 rounded-2xl bg-white/5 border border-white/10 text-center"><p class="text-xs text-gray-500">No hay reservas registradas en esta categoría.</p></div>`;
+      box.innerHTML = `<div class="p-8 rounded-2xl bg-white/5 border border-white/10 text-center"><p class="text-xs text-gray-400">No se encontraron reservas para los filtros o criterios de búsqueda seleccionados.</p></div>`;
       return;
     }
     box.innerHTML = list.map(bookingCard).join("");
@@ -5548,109 +5679,204 @@ function kpiCard(icon, label, value, accent, sub) {
     </div>`;
 }
 
+function buildOwnerStatusWhatsAppMessage(booking) {
+  const firstName = String(booking.clientName || "Cliente").split(" ")[0];
+  const dateLabel = `${formatDisplayDate(booking.selectedDate)}${booking.selectedTime ? " a las " + booking.selectedTime : ""}`;
+  const status = String(booking.status || "pendiente").toLowerCase();
+
+  if (status === "confirmada") {
+    return `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. ¡Tu reserva ${booking.code} para el ${dateLabel} (${booking.serviceName || "Música en Vivo"}) está CONFIRMADA y tu fecha congelada en agenda! Adelanto 50% validado (${formatCRC(booking.deposit50Amount)}). Saldo pendiente en escena: ${formatCRC(booking.remainingBalance)}.`;
+  }
+  if (status === "realizada") {
+    return `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. ¡Muchas gracias por confiar en nosotros para tu evento ${booking.code} del ${formatDisplayDate(booking.selectedDate)}! Fue un placer acompañarlos con nuestra música en vivo.`;
+  }
+  if (status === "cancelada") {
+    return `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. Te informamos que la reserva ${booking.code} (${formatDisplayDate(booking.selectedDate)}) figura como CANCELADA y el cupo de agenda fue liberado. Quedamos a tu disposición para futuras fechas.`;
+  }
+  return `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. Te contacto por tu reserva ${booking.code} (${dateLabel}). Quedamos atentos a la validación del adelanto del 50% (${formatCRC(booking.deposit50Amount)}) vía SINPE Móvil al ${SINPE_CONFIG.phone} para confirmar y congelar tu espacio en agenda.`;
+}
+
 function bookingCard(b) {
   const statusLabel = BOOKING_STATUSES[b.status] || b.status;
   const statusTone = {
-    pendiente: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-    confirmada: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-    cancelada: "bg-rose-500/10 text-rose-300 border-rose-500/20",
-    realizada: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
-    disabled: "bg-slate-500/10 text-slate-300 border-slate-500/20"
-  }[b.status] || "bg-slate-500/10 text-slate-300 border-slate-500/20";
+    pendiente: "bg-amber-500/15 text-amber-300 border-amber-500/35",
+    confirmada: "bg-emerald-500/15 text-emerald-300 border-emerald-500/35",
+    cancelada: "bg-rose-500/15 text-rose-300 border-rose-500/35",
+    realizada: "bg-indigo-500/15 text-indigo-300 border-indigo-500/35",
+    disabled: "bg-slate-500/15 text-slate-300 border-slate-500/35"
+  }[b.status] || "bg-slate-500/15 text-slate-300 border-slate-500/35";
+
   const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
   const setupDisplay = service ? service.setup_display : (b.setupDisplay || "2h antes");
   const teardownDisplay = service ? service.teardown_display : (b.teardownDisplay || "1h después");
+
+  // Cálculo de hora de llegada (montaje) y hora de desmontaje
+  const setupMins = (service && Number(service.setup_time_mins)) || ((parseHourDelta(setupDisplay) || 2) * 60);
+  const teardownMins = (service && Number(service.teardown_time_mins)) || ((parseHourDelta(teardownDisplay) || 1) * 60);
+  const showDurationMins = ((service && Number(service.durationMinutes)) || 120) +
+    (Number(b.extras && b.extras.extraHoursCount || 0) * 60);
+
+  const arrivalTime = b.selectedTime ? shiftTime(b.selectedTime, -setupMins) : null;
+  const showEndTime = b.selectedTime ? shiftTime(b.selectedTime, showDurationMins) : null;
+  const teardownEndTime = showEndTime ? shiftTime(showEndTime, teardownMins) : null;
+
+  const arrivalSpec = arrivalTime
+    ? `<span class="font-mono font-bold text-emerald-300">${arrivalTime}</span> <span class="text-slate-400">(-${setupMins}m · ${sanitizeInput(setupDisplay)})</span>`
+    : `<span class="font-mono text-slate-300">${sanitizeInput(setupDisplay)}</span>`;
+  const teardownSpec = teardownEndTime
+    ? `<span class="font-mono font-bold text-cyan-300">${showEndTime} → ${teardownEndTime}</span> <span class="text-slate-400">(+${teardownMins}m · ${sanitizeInput(teardownDisplay)})</span>`
+    : `<span class="font-mono text-slate-300">${sanitizeInput(teardownDisplay)}</span>`;
+
   const gam = isNonGamLocation(b.province, b.canton);
   const gamBadge = gam
-    ? `<span class="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/40 text-amber-300 text-[10px] font-bold">🚚 Fuera GAM · +12% (${formatCRC(b.travelSurcharge || 0)})</span>`
-    : `<span class="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">📍 GAM · Viáticos ₡0</span>`;
+    ? `<span class="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-300 text-[10px] font-bold whitespace-nowrap">🚚 Fuera GAM · +12% (${formatCRC(b.travelSurcharge || 0)})</span>`
+    : `<span class="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold whitespace-nowrap">📍 GAM · Viáticos ₡0</span>`;
 
-  const waLink = whatsappClientUrl(b, `Hola ${String(b.clientName || "").split(" ")[0]}, soy Juan José Ramírez de Arkik Productions. Te contacto por tu reserva ${b.code}.`);
+  const rawPhone = String(b.clientPhone || "");
+  const digitsOnly = rawPhone.replace(/\D/g, "");
+  const displayPhone = digitsOnly.length >= 8
+    ? `+506 ${digitsOnly.slice(-8, -4)}-${digitsOnly.slice(-4)}`
+    : (rawPhone || "S/N");
 
-  const actions = [];
-  if (b.status === "pendiente") {
-    actions.push(`<button type="button" data-action="confirm" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Validar Pago Bancario</button>`);
-  }
-  if (b.status === "confirmada") {
-    actions.push(`<button type="button" data-action="complete" class="bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">✅ Marcar Realizada</button>`);
-  }
-  // El listado nunca trae la imagen (solo hasVoucher): con el caché local
-  // la tarjeta la muestra al instante y, si no, el clic la baja del servidor.
-  if (b.voucherImage || b.hasVoucher) {
-    actions.push(`<button type="button" data-action="view" class="bg-purple-900/50 border border-purple-500/50 hover:bg-purple-800 transition-all rounded-lg px-4 py-2 flex items-center justify-center gap-2 text-purple-200 text-xs font-semibold">👁️ Ver Comprobante SINPE</button>`);
-  }
-  if (b.status === "pendiente" || b.status === "confirmada") {
-    actions.push(`<button type="button" data-action="cancel" class="bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 rounded-xl py-2.5 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-all">❌ Rechazar / Cancelar</button>`);
-  }
-  if (b.status !== "cancelada") {
-    actions.push(`<button type="button" data-action="voucher" class="bg-blue-900/50 border border-blue-500/50 hover:bg-blue-800 text-blue-200 rounded-lg px-4 py-2 text-xs font-semibold flex items-center justify-center gap-2 transition-all">📄 Descargar Prefactura PDF</button>`);
-  }
-  actions.push(`<button type="button" data-action="whatsapp" class="col-span-1 sm:col-span-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all">💬 Notificar WhatsApp</button>`);
+  const waMessage = buildOwnerStatusWhatsAppMessage(b);
+  const waLink = whatsappClientUrl(b, waMessage);
 
-return `
-  <div class="admin-booking-row rack-data-card bg-[#0b0816]/95 border border-white/10 rounded-2xl p-5 sm:p-6 mb-4 shadow-xl transition-all hover:border-purple-500/30" data-id="${b.code}">
-    <!-- Encabezado: código + estado + GAM/Viáticos + fecha/hora -->
-    <div class="flex flex-wrap items-center gap-2 mb-4">
-      <span class="admin-booking-code font-mono text-xs font-bold text-slate-200 bg-white/10 px-2.5 py-1 rounded-lg border border-white/15">${b.code}</span>
-      <span class="px-2.5 py-1 rounded-lg text-xs font-medium border ${statusTone}">${statusLabel}</span>
+  const hasVoucherAttached = Boolean(b.voucherImage || b.hasVoucher);
+  const isConfirmedOrDone = b.status === "confirmada" || b.status === "realizada";
+  const isCancelled = b.status === "cancelada";
+
+  const voucherThumbBadge = b.voucherImage
+    ? `<img src="${b.voucherImage}" alt="Miniatura SINPE" class="w-4 h-4 rounded object-cover border border-purple-400/50 shrink-0">`
+    : `<span>🖼️</span>`;
+  const voucherMissingWarn = hasVoucherAttached
+    ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono">Adjunto</span>`
+    : `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold">⚠️ Sin adjunto</span>`;
+
+  return `
+  <div class="admin-booking-row rack-data-card bg-[#0b0816]/95 border border-white/10 rounded-2xl p-4 sm:p-5 mb-4 shadow-xl transition-all hover:border-purple-500/35" data-id="${b.code}">
+    <!-- ROW 1: Uniform Header (ARK-XXXXXXXX purple-bordered mono badge, Status Pill, GAM Tag, Date/Time, Previsualizar Prefactura) -->
+    <div class="flex flex-wrap items-center gap-2 pb-3.5 border-b border-white/10">
+      <span class="admin-booking-code font-mono text-xs font-bold text-purple-200 bg-purple-950/50 px-2.5 py-1 rounded-lg border border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.2)]">${sanitizeInput(b.code)}</span>
+      <span class="px-2.5 py-1 rounded-lg text-xs font-semibold border ${statusTone}">${statusLabel}</span>
       ${gamBadge}
-      <span class="text-xs font-semibold text-slate-200 flex items-center gap-1">📅 ${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
-      <button type="button" onclick="openRackPreview('${b.code}')"
-        class="ml-auto rack-preview-btn px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-purple-500/30 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[44px]"
-        aria-label="Previsualizar detalles de la reserva ${b.code}">
-        <span>👁️</span>
-        <span>Previsualizar</span>
+      <span class="text-xs font-mono font-semibold text-slate-200 flex items-center gap-1.5 bg-white/[0.03] px-2.5 py-1 rounded-lg border border-white/10">
+        <span>📅</span>
+        <span>${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
+      </span>
+      <button type="button" data-action="preview-invoice" onclick="openPreInvoicePreview('${b.code}')"
+        class="ml-auto rack-preview-btn px-3.5 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/35 hover:border-purple-400 text-purple-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[36px] shadow-sm"
+        aria-label="Previsualizar Prefactura de la reserva ${b.code}">
+        <span>📄</span>
+        <span>Previsualizar Prefactura</span>
       </button>
     </div>
 
-    <div class="admin-booking-cols grid grid-cols-1 md:grid-cols-3 gap-3 my-4 py-3 border-y border-white/10">
-      <!-- COL 1: Cliente / Empresa -->
-      <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Cliente / Empresa</p>
-        <p class="text-base font-bold text-slate-200 tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
-        ${b.clientId ? `<p class="text-xs text-slate-400 font-mono mt-0.5">ID: ${sanitizeInput(b.clientId)}</p>` : ""}
-        ${b.voucherImage || b.hasVoucher
-      ? ""
-      : `<p class="mt-2 text-[10px] text-amber-300/80">⚠️ comprobante SINPE no adjuntado</p>`}
+    <!-- ROW 2: Grid 3 Cols (Col 1: Client & Location | Col 2: Format & Logistics Arrival/Teardown | Col 3: Contact & SINPE) -->
+    <div class="admin-booking-cols grid grid-cols-1 md:grid-cols-3 gap-3.5 my-3.5 py-1">
+      <!-- COL 1: Cliente / Empresa & Ubicación -->
+      <div class="admin-booking-col bg-white/[0.02] border border-white/5 rounded-xl p-3">
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Cliente / Ubicación</p>
+        <p class="text-sm sm:text-base font-bold text-white tracking-wide leading-snug">${sanitizeInput(b.clientName)}</p>
+        ${b.clientId ? `<p class="text-[11px] text-slate-400 font-mono mt-0.5">ID: ${sanitizeInput(b.clientId)}</p>` : ""}
+        <p class="text-xs text-slate-300 mt-1.5 flex items-center gap-1.5">
+          <span>📍</span>
+          <span class="font-medium">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</span>
+        </p>
+        ${b.address ? `<p class="text-[11px] text-slate-400 mt-0.5 truncate" title="${sanitizeInput(b.address)}">${sanitizeInput(b.address)}</p>` : ""}
       </div>
 
-      <!-- COL 2: Formato y Horarios -->
-      <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Formato & Horarios</p>
-        <p class="text-sm sm:text-base font-bold text-slate-200">${sanitizeInput(b.serviceName)}<span class="text-slate-400"> · ${sanitizeInput(b.eventType || "")}</span></p>
-        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1">⏱️ Montaje ${sanitizeInput(setupDisplay)} · Desmontaje ${sanitizeInput(teardownDisplay)}</p>
-        <p class="text-xs text-slate-300 flex items-center gap-1">📍 ${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
+      <!-- COL 2: Formato & Logística (Hora de Llegada y Desmontaje calculadas) -->
+      <div class="admin-booking-col bg-white/[0.02] border border-white/5 rounded-xl p-3">
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Formato &amp; Logística</p>
+        <p class="text-sm sm:text-base font-bold text-white leading-snug">
+          ${sanitizeInput(b.serviceName)}<span class="text-purple-300 font-medium text-xs"> · ${sanitizeInput(b.eventType || "Evento")}</span>
+        </p>
+        <p class="text-xs text-slate-300 mt-1.5 flex items-center gap-1.5 flex-wrap">
+          <span>🚚 Llegada:</span> ${arrivalSpec}
+        </p>
+        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
+          <span>🔧 Desmontaje:</span> ${teardownSpec}
+        </p>
       </div>
 
-      <!-- COL 3: Contacto y SINPE -->
-      <div class="admin-booking-col">
-        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Contacto & SINPE</p>
-        <p class="text-xs text-slate-200 flex items-center gap-1.5">💬 <span>${sanitizeInput(b.clientPhone)}</span></p>
-        <a href="${waLink}" target="_blank" rel="noopener noreferrer" class="text-xs mt-0.5 font-semibold text-slate-200 hover:text-emerald-400 transition-colors">💬 WhatsApp</a>
-        <p class="text-xs text-slate-200 mt-0.5 truncate flex items-center gap-1.5">✉️ <span>${sanitizeInput(b.clientEmail || "S/N")}</span></p>
-        <p class="text-xs text-slate-200 mt-1 flex items-center gap-1.5">💳 <span>Ref. SINPE: <span class="font-bold text-white font-mono">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></span></p>
+      <!-- COL 3: Contacto (Teléfono 1-Click WhatsApp, Email, Ref SINPE) -->
+      <div class="admin-booking-col bg-white/[0.02] border border-white/5 rounded-xl p-3">
+        <p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1">Contacto &amp; SINPE</p>
+        <a href="${waLink}" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors group"
+           title="Abrir chat de WhatsApp en 1 clic">
+          <span>📱</span>
+          <span class="underline decoration-emerald-500/40 group-hover:decoration-emerald-300">${sanitizeInput(displayPhone)}</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-sans">1-Click WA ↗</span>
+        </a>
+        <p class="text-xs text-slate-300 mt-1.5 truncate flex items-center gap-1.5" title="${sanitizeInput(b.clientEmail || "S/N")}">
+          <span>✉️</span>
+          <span>${sanitizeInput(b.clientEmail || "S/N")}</span>
+        </p>
+        <p class="text-xs text-slate-300 mt-1 flex items-center gap-1.5">
+          <span>💳</span>
+          <span>Ref. SINPE: <span class="font-bold text-emerald-400 font-mono">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></span>
+        </p>
       </div>
     </div>
 
-    <!-- Mini-grid financiera 3 columnas: Gran Total / Adelanto / Saldo con tipografía monetaria y fondo sobrio -->
-    <div class="admin-booking-fin grid grid-cols-3 gap-2 bg-[#05020c]/90 p-3 rounded-xl border border-white/5">
-      <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Gran Total</p>
-        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.granTotal)}</p>
-      </div>
-      <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Adelanto SINPE (50%)</p>
-        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.deposit50Amount)}</p>
-      </div>
-      <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Saldo Pendiente</p>
-        <p class="text-white font-mono font-bold text-base sm:text-lg tabular-nums break-words">${formatCRC(b.remainingBalance)}</p>
-      </div>
+    <!-- ROW 3: Financial Breakdown Table (Gran Total, Adelanto 50%, Saldo Pendiente) -->
+    <div class="admin-booking-fin overflow-hidden rounded-xl border border-white/10 bg-[#05020c]/90">
+      <table class="w-full text-left border-collapse" aria-label="Desglose financiero de la reserva ${sanitizeInput(b.code)}">
+        <thead>
+          <tr class="border-b border-white/10 bg-white/[0.02] text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <th class="py-2 px-3">Gran Total</th>
+            <th class="py-2 px-3 border-x border-white/10">Adelanto 50%</th>
+            <th class="py-2 px-3">Saldo Pendiente</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="divide-x divide-white/10">
+            <td class="py-2.5 px-3 font-mono font-bold text-sm sm:text-base text-white tabular-nums">${formatCRC(b.granTotal)}</td>
+            <td class="py-2.5 px-3 font-mono font-bold text-sm sm:text-base text-emerald-400 tabular-nums">${formatCRC(b.deposit50Amount)}</td>
+            <td class="py-2.5 px-3 font-mono font-bold text-sm sm:text-base text-amber-300 tabular-nums">${formatCRC(b.remainingBalance)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    <!-- Deck de acciones touch -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-3 border-t border-white/5">
-      ${actions.join("")}
+    <!-- ROW 4: Compact Owner Action Toolbar -->
+    <div class="owner-action-toolbar flex flex-wrap items-center gap-2 mt-3.5 pt-3 border-t border-white/10" role="toolbar" aria-label="Acciones de reserva ${sanitizeInput(b.code)}">
+      <!-- 1. Validar Depósito SINPE (50%) -->
+      <button type="button" data-action="confirm" ${isConfirmedOrDone ? "disabled" : ""}
+        class="owner-toolbar-btn ${isConfirmedOrDone ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-400/60 cursor-default" : "bg-emerald-950/40 hover:bg-emerald-900/60 border-emerald-500/40 text-emerald-300 hover:text-white"} border rounded-xl py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all">
+        <span>✅</span>
+        <span>${isConfirmedOrDone ? "Depósito SINPE Validado (50%)" : "Validar Depósito SINPE (50%)"}</span>
+      </button>
+
+      <!-- 2. Rechazar / Cancelar -->
+      <button type="button" data-action="cancel" ${isCancelled ? "disabled" : ""}
+        class="owner-toolbar-btn ${isCancelled ? "bg-rose-950/20 border-rose-500/20 text-rose-400/50 cursor-default" : "bg-rose-950/35 hover:bg-rose-900/55 border-rose-500/35 text-rose-300 hover:text-white"} border rounded-xl py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all">
+        <span>❌</span>
+        <span>Rechazar / Cancelar</span>
+      </button>
+
+      <!-- 3. Reprogramar -->
+      <button type="button" data-action="reschedule"
+        class="owner-toolbar-btn bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/35 text-indigo-200 hover:text-white rounded-xl py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all">
+        <span>📅</span>
+        <span>Reprogramar</span>
+      </button>
+
+      <!-- 4. Comprobante SINPE -->
+      <button type="button" data-action="view"
+        class="owner-toolbar-btn bg-purple-950/40 hover:bg-purple-900/60 border ${hasVoucherAttached ? "border-purple-500/40 text-purple-200" : "border-amber-500/40 text-amber-200"} hover:text-white rounded-xl py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all">
+        ${voucherThumbBadge}
+        <span>Comprobante SINPE</span>
+        ${voucherMissingWarn}
+      </button>
+
+      <!-- 5. WhatsApp Compact Button -->
+      <button type="button" data-action="whatsapp"
+        class="owner-toolbar-btn ml-auto bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/45 text-emerald-300 hover:text-white rounded-xl py-2 px-3.5 text-xs font-bold flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.18)] transition-all">
+        <span>💬</span>
+        <span>WhatsApp</span>
+      </button>
     </div>
   </div>`;
 }
@@ -6372,172 +6598,264 @@ function buildVoucherHtml(b) {
 let currentPreInvoiceBooking = null;
 
 /**
- * Genera el documento HTML formateado para la tarjeta de previsualización
- * y exportación A4 bounded (794px max-width, 28px padding).
+ * Genera el documento HTML formateado para el lienzo A4 oficial
+ * (#a4-canvas-container, 794px × 1123px, padding 40px).
  */
 function buildPreInvoiceCardHtml(b) {
   if (!b) return "";
-  const code = b.code || b.id || "ARK-00000000";
+  const rawCode = String(b.code || b.id || "00000000").replace(/^ARK-/, "");
+  const code = `ARK-${rawCode}`;
   const today = new Date().toLocaleDateString("es-CR", { year: "numeric", month: "long", day: "numeric" });
   const timeNow = new Date().toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" });
   const statusLabel = (typeof BOOKING_STATUSES !== "undefined" && BOOKING_STATUSES[b.status])
     ? BOOKING_STATUSES[b.status]
-    : (b.depositSettled ? "Adelanto Verificado" : "Pendiente de Aprobación");
-  const isPaid = b.depositSettled || b.status === "confirmado";
-  const badgeBg = isPaid ? "#ecfdf5" : "#fef3c7";
-  const badgeBorder = isPaid ? "#a7f3d0" : "#fde68a";
-  const badgeText = isPaid ? "#047857" : "#b45309";
+    : (b.depositSettled ? "Confirmada — Adelanto Verificado" : "Pendiente de Aprobación");
+  const isPaid = b.depositSettled || b.status === "confirmado" || b.status === "realizada";
+  const isCancelled = b.status === "cancelado" || b.status === "cancelada";
+  const badgeBg = isCancelled ? "#fef2f2" : (isPaid ? "#ecfdf5" : "#fef3c7");
+  const badgeBorder = isCancelled ? "#fecaca" : (isPaid ? "#a7f3d0" : "#fde68a");
+  const badgeText = isCancelled ? "#b91c1c" : (isPaid ? "#047857" : "#b45309");
 
   const service = typeof CATALOG_SERVICES !== "undefined"
     ? CATALOG_SERVICES.find(s => s.id === b.serviceId)
     : null;
   const setupDisplay = service ? (service.setup_display || "2h antes") : "2h antes";
   const teardownDisplay = service ? (service.teardown_display || "1h después") : "1h después";
+  const logisticsInfo = (typeof calculateBookingLogistics === "function")
+    ? calculateBookingLogistics(b)
+    : { arrivalDisplay: setupDisplay, teardownDisplay: teardownDisplay };
 
   const extras = b.extras || {};
-  let extrasHtml = "";
-  if (extras.extraHoursCount > 0) {
-    extrasHtml += `<tr><td style="padding: 6px 0; color: #475569;">• Horas Adicionales de Show (${extras.extraHoursCount} hr)</td><td style="padding: 6px 0; text-align: right; font-weight: 700; font-family: 'JetBrains Mono', monospace;">${formatCRC(extras.extraHoursTotal)}</td></tr>`;
-  }
-  if (extras.djHoursCount > 0) {
-    extrasHtml += `<tr><td style="padding: 6px 0; color: #475569;">• Servicio de DJ en Recesos (${extras.djHoursCount} hr)</td><td style="padding: 6px 0; text-align: right; font-weight: 700; font-family: 'JetBrains Mono', monospace;">${formatCRC(extras.djTotal)}</td></tr>`;
-  }
-  if (extras.subwoofersCount > 0) {
-    extrasHtml += `<tr><td style="padding: 6px 0; color: #475569;">• Subwoofers Extra 18" (${extras.subwoofersCount} un)</td><td style="padding: 6px 0; text-align: right; font-weight: 700; font-family: 'JetBrains Mono', monospace;">${formatCRC(extras.subwoofersTotal)}</td></tr>`;
-  }
-  if (b.travelSurcharge > 0) {
-    extrasHtml += `<tr><td style="padding: 6px 0; color: #475569;">• Viáticos y Traslado (${sanitizeInput(b.province)} — Fuera GAM)</td><td style="padding: 6px 0; text-align: right; font-weight: 700; font-family: 'JetBrains Mono', monospace;">+${formatCRC(b.travelSurcharge)}</td></tr>`;
-  }
+  const extraHoursCount = Number(extras.extraHoursCount || 0);
+  const extraHoursTotal = Number(extras.extraHoursTotal || 0);
+  const djHoursCount = Number(extras.djHoursCount || 0);
+  const djTotal = Number(extras.djTotal || 0);
+  const subwoofersCount = Number(extras.subwoofersCount || 0);
+  const subwoofersTotal = Number(extras.subwoofersTotal || 0);
+  const travelSurcharge = Number(b.travelSurcharge || 0);
+  const isGAM = travelSurcharge <= 0 && ["San José", "Alajuela", "Cartago", "Heredia"].includes(b.province || "San José");
 
+  const extrasSum = extraHoursTotal + djTotal + subwoofersTotal;
+  const granTotal = Number(b.granTotal || 0);
   const basePrice = (typeof PriceManager !== "undefined" && service)
     ? PriceManager.getServicePrice(service)
-    : (b.basePrice || (b.granTotal - (b.travelSurcharge || 0)));
+    : (b.basePrice || Math.max(0, granTotal - extrasSum - travelSurcharge));
+  const deposit50Amount = Number(b.deposit50Amount || Math.round(granTotal * 0.5));
+  const remainingBalance = Number(b.remainingBalance || (granTotal - deposit50Amount));
+
+  const logoSrc = (typeof ArkikAssets !== "undefined" && (ArkikAssets.logoBase64 || ArkikAssets.getLogo())) || "img/arkik_logo.jpg";
+
+  let extrasRowsHtml = "";
+  if (extraHoursCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 12px; color: #334155;">Extra: Horas Adicionales de Show (${extraHoursCount} hr)</td>
+        <td style="padding: 10px 12px; text-align: center; color: #64748b; font-variant-numeric: tabular-nums;">${extraHoursCount}</td>
+        <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">${formatCRC(extraHoursTotal)}</td>
+      </tr>`;
+  }
+  if (djHoursCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 12px; color: #334155;">Extra: Servicio de DJ en Recesos (${djHoursCount} hr)</td>
+        <td style="padding: 10px 12px; text-align: center; color: #64748b; font-variant-numeric: tabular-nums;">${djHoursCount}</td>
+        <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">${formatCRC(djTotal)}</td>
+      </tr>`;
+  }
+  if (subwoofersCount > 0) {
+    extrasRowsHtml += `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 12px; color: #334155;">Extra: Subwoofers Adicionales 18" (${subwoofersCount} un)</td>
+        <td style="padding: 10px 12px; text-align: center; color: #64748b; font-variant-numeric: tabular-nums;">${subwoofersCount}</td>
+        <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">${formatCRC(subwoofersTotal)}</td>
+      </tr>`;
+  }
+  if (!extrasRowsHtml) {
+    extrasRowsHtml = `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 12px; color: #64748b;">Extras Desglosados (Horas extra / DJ / Subwoofers)</td>
+        <td style="padding: 10px 12px; text-align: center; color: #94a3b8; font-variant-numeric: tabular-nums;">0</td>
+        <td style="padding: 10px 12px; text-align: right; font-weight: 600; color: #64748b; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">₡0</td>
+      </tr>`;
+  }
 
   return `
-    <div style="font-family: 'Plus Jakarta Sans', Arial, sans-serif; color: #0f172a; line-height: 1.45;">
-      
-      <!-- 1. BUSINESS HEADER -->
-      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #8b5cf6; padding-bottom: 14px; margin-bottom: 14px; gap: 16px;">
-        <div style="display: flex; align-items: center; gap: 14px;">
-          <img src="${ArkikAssets.getLogo()}" alt="Arkik Productions" style="height: 56px; width: auto; max-width: 140px; object-fit: contain; border-radius: 8px; border: 1px solid #e9d5ff;" />
+    <div style="font-family: 'Inter', 'Plus Jakarta Sans', Arial, sans-serif; color: #0f172a; line-height: 1.5; display: flex; flex-direction: column; justify-content: space-between; min-height: 1040px;">
+      <div>
+        <!-- 1. HEADER: ARKIK LOGO (BASE64), CÉDULA/UBICACIÓN, CONTACTO -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #6d28d9; padding-bottom: 18px; margin-bottom: 18px; gap: 16px;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <img src="${logoSrc}" alt="Arkik Productions" style="height: 68px; width: auto; max-width: 160px; object-fit: contain; border-radius: 10px; border: 1px solid #ddd6fe; background: #0f172a; padding: 4px;" />
+            <div>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 900; color: #3b0764; letter-spacing: 0.4px;">ARKIK PRODUCTIONS</h1>
+              <p style="margin: 2px 0 0; font-size: 11px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.9px;">Música en Vivo & Ingeniería de Sonido Profesional</p>
+              <p style="margin: 3px 0 0; font-size: 10.5px; color: #475569;"><strong>Cédula Jurídica:</strong> 3-101-884920 · <strong>Ubicación:</strong> Granadilla, San José, Costa Rica</p>
+              <p style="margin: 2px 0 0; font-size: 10.5px; color: #475569;"><strong>Contacto Oficial:</strong> +506 6227-4984 · arkikproduc2023@gmail.com</p>
+            </div>
+          </div>
+          <div style="text-align: right; flex-shrink: 0;">
+            <div style="display: inline-block; background: #faf5ff; border: 1.5px solid #d8b4fe; border-radius: 10px; padding: 8px 14px;">
+              <div style="font-size: 9px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.8px;">Código de Reserva</div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 900; color: #4c1d95; margin-top: 2px; font-variant-numeric: tabular-nums;">${sanitizeInput(code)}</div>
+              <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">${today} · ${timeNow}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. TITLE BLOCK: PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #7c3aed; border-radius: 8px; padding: 10px 14px;">
           <div>
-            <h1 style="margin: 0; font-size: 20px; font-weight: 900; color: #4c1d95; letter-spacing: 0.5px;">ARKIK PRODUCTIONS</h1>
-            <p style="margin: 2px 0 0; font-size: 11px; font-weight: 700; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.8px;">Música en Vivo & Sonido Profesional · Costa Rica</p>
-            <p style="margin: 2px 0 0; font-size: 10px; color: #64748b;">Razón Social: Arkik Productions · Céd. Jurídica: 3-101-884920</p>
-            <p style="margin: 1px 0 0; font-size: 10px; color: #64748b;">Sede: Granadilla, Curridabat, San José · Tel: +506 6227-4984 · arkikproduc2023@gmail.com</p>
+            <div style="font-size: 13px; font-weight: 900; color: #0f172a; letter-spacing: 0.5px; text-transform: uppercase;">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</div>
+            <div style="font-size: 10.5px; color: #475569; margin-top: 2px;">Expediente Comercial <strong style="font-family: 'JetBrains Mono', monospace; color: #5b21b6;">${sanitizeInput(code)}</strong> · Emitido el ${today} a las ${timeNow}</div>
+          </div>
+          <div>
+            <span style="display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: ${badgeBg}; border: 1px solid ${badgeBorder}; color: ${badgeText};">
+              ${statusLabel}
+            </span>
           </div>
         </div>
-        <div style="text-align: right; flex-shrink: 0;">
-          <div style="display: inline-block; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 6px 12px;">
-            <div style="font-size: 9px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.8px;">N° Comprobante / Orden</div>
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 900; color: #5b21b6; margin-top: 2px;">${sanitizeInput(code)}</div>
-            <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">Emisión: ${today} ${timeNow}</div>
+
+        <!-- 3. CLIENT & EVENT GRID -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px;">
+          <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 12px 14px;">
+            <div style="font-size: 9.5px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;">Datos del Cliente / Empresa</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <tr>
+                <td style="padding: 3px 0; color: #64748b; width: 38%;">Nombre / Empresa:</td>
+                <td style="padding: 3px 0; font-weight: 800; color: #0f172a;">${sanitizeInput(b.clientName || "Cliente General")}</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">WhatsApp:</td>
+                <td style="padding: 3px 0; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">${sanitizeInput(b.clientPhone || "Sin registrar")}</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">Correo Electrónico:</td>
+                <td style="padding: 3px 0; font-weight: 600; color: #0f172a;">${sanitizeInput(b.clientEmail || "No especificado")}</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">Ubicación Evento:</td>
+                <td style="padding: 3px 0; font-weight: 700; color: #0f172a;">${sanitizeInput([b.canton, b.province].filter(Boolean).join(", "))}${b.address ? " — " + sanitizeInput(b.address) : ""}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
+            <div style="font-size: 9.5px; font-weight: 800; color: #334155; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Especificaciones del Evento y Logística</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <tr>
+                <td style="padding: 3px 0; color: #64748b; width: 38%;">Formato Musical:</td>
+                <td style="padding: 3px 0; font-weight: 800; color: #4c1d95;">${sanitizeInput(b.serviceName || b.serviceId || "Formato Musical")} (${sanitizeInput(b.eventType || "Evento")})</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">Fecha y Horario:</td>
+                <td style="padding: 3px 0; font-weight: 800; color: #0f172a;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">Logística Montaje:</td>
+                <td style="padding: 3px 0; font-weight: 700; color: #0f172a;">Llegada técnica ${sanitizeInput(logisticsInfo.arrivalDisplay || setupDisplay)} (${sanitizeInput(setupDisplay)})</td>
+              </tr>
+              <tr>
+                <td style="padding: 3px 0; color: #64748b;">Logística Desmontaje:</td>
+                <td style="padding: 3px 0; font-weight: 700; color: #0f172a;">Retiro de equipo ${sanitizeInput(logisticsInfo.teardownDisplay || teardownDisplay)} (${sanitizeInput(teardownDisplay)})</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. FINANCIAL TABLE (TABULAR NUMS) -->
+        <div style="border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; margin-bottom: 18px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums;">
+            <thead style="background: #1e293b; color: #ffffff;">
+              <tr>
+                <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;">Concepto / Desglose de Servicio</th>
+                <th style="padding: 10px 12px; text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; width: 85px;">Cant.</th>
+                <th style="padding: 10px 12px; text-align: right; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; width: 150px;">Importe (CRC)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid #e2e8f0; background: #ffffff;">
+                <td style="padding: 10px 12px; font-weight: 800; color: #0f172a;">
+                  Tarifa Base — ${sanitizeInput(b.serviceName || "Formato Musical en Vivo")}
+                  <div style="font-size: 10px; font-weight: 500; color: #64748b;">Incluye músicos en escena, backline profesional y PA de alta fidelidad</div>
+                </td>
+                <td style="padding: 10px 12px; text-align: center; color: #475569; font-weight: 700;">1</td>
+                <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: #0f172a; font-family: 'JetBrains Mono', monospace;">${formatCRC(basePrice)}</td>
+              </tr>
+              ${extrasRowsHtml}
+              <tr style="border-bottom: 1px solid #cbd5e1; background: #f8fafc;">
+                <td style="padding: 10px 12px; font-weight: 700; color: #334155;">
+                  Viáticos y Logística de Transporte (${isGAM ? "Zona GAM — Exento ₡0" : "Fuera de GAM — Recargo Logístico +12%"})
+                  <div style="font-size: 10px; font-weight: 500; color: #64748b;">Destino: ${sanitizeInput([b.canton, b.province].filter(Boolean).join(", "))}</div>
+                </td>
+                <td style="padding: 10px 12px; text-align: center; color: #64748b; font-weight: 600;">${isGAM ? "GAM" : "No-GAM"}</td>
+                <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace;">${travelSurcharge > 0 ? "+" + formatCRC(travelSurcharge) : "₡0"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 5. FINANCIAL SUMMARY BREAKDOWN (SUBTOTAL BRUTO, ADELANTO SINPE 50%, SALDO EN ESCENARIO 50%) -->
+        <div style="display: flex; justify-content: space-between; align-items: stretch; gap: 16px; margin-bottom: 18px;">
+          <div style="flex: 1; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; font-size: 10.5px; color: #475569;">
+            <div style="font-size: 9.5px; font-weight: 800; color: #4c1d95; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 6px;">Instrucciones Oficiales de Pago SINPE Móvil</div>
+            <p style="margin: 0 0 4px;"><strong>Teléfono SINPE Móvil:</strong> <span style="font-family: 'JetBrains Mono', monospace; font-weight: 800; color: #0f172a;">${SINPE_CONFIG.phone}</span></p>
+            <p style="margin: 0 0 4px;"><strong>Titular de Cuenta:</strong> ${SINPE_CONFIG.holder}</p>
+            <p style="margin: 0 0 4px;"><strong>Comprobante SINPE Registrado:</strong> <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #5b21b6;">${sanitizeInput(b.sinpeRef || "Pendiente de validación")}</span></p>
+            <p style="margin: 0; font-size: 9.5px; color: #64748b;">Remita el comprobante de transferencia al WhatsApp +506 6227-4984 indicando el código <strong>${sanitizeInput(code)}</strong>.</p>
+          </div>
+
+          <div style="width: 340px; flex-shrink: 0;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; background: #faf5ff; border: 1.5px solid #d8b4fe; border-radius: 10px; overflow: hidden; font-variant-numeric: tabular-nums;">
+              <tr style="border-bottom: 1px solid #e9d5ff;">
+                <td style="padding: 9px 14px; color: #334155; font-weight: 800;">Subtotal Bruto:</td>
+                <td style="padding: 9px 14px; text-align: right; font-weight: 900; font-size: 14px; color: #0f172a; font-family: 'JetBrains Mono', monospace;">${formatCRC(granTotal)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #a7f3d0; background: #ecfdf5;">
+                <td style="padding: 9px 14px; font-weight: 800; color: #047857;">Adelanto SINPE (50%):</td>
+                <td style="padding: 9px 14px; text-align: right; font-weight: 900; font-size: 14px; color: #047857; font-family: 'JetBrains Mono', monospace;">${formatCRC(deposit50Amount)}</td>
+              </tr>
+              <tr style="background: #fffbeb;">
+                <td style="padding: 9px 14px; font-weight: 800; color: #b45309;">Saldo en Escenario (50%):</td>
+                <td style="padding: 9px 14px; text-align: right; font-weight: 900; font-size: 14px; color: #b45309; font-family: 'JetBrains Mono', monospace;">${formatCRC(remainingBalance)}</td>
+              </tr>
+            </table>
           </div>
         </div>
       </div>
 
-      <!-- 2. DOCUMENT TITLE & STATUS -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px;">
-        <div>
-          <span style="font-size: 12px; font-weight: 900; color: #1e293b; letter-spacing: 0.4px; text-transform: uppercase;">PREFACTURA Y COMPROBANTE DE RESERVA</span>
-          <span style="margin-left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #6b21a8;">#${sanitizeInput(code)}</span>
-        </div>
-        <div>
-          <span style="display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: ${badgeBg}; border: 1px solid ${badgeBorder}; color: ${badgeText};">
-            ${statusLabel}
-          </span>
-        </div>
-      </div>
-
-      <!-- 3. CUSTOMER & EVENT SUMMARY GRID -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
-        <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 10px 12px;">
-          <div style="font-size: 9px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Información del Cliente</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-            <tr><td style="padding: 2px 0; color: #64748b; width: 35%;">Cliente:</td><td style="padding: 2px 0; font-weight: 800; color: #1e293b;">${sanitizeInput(b.clientName || "Sin especificar")}</td></tr>
-            <tr><td style="padding: 2px 0; color: #64748b;">WhatsApp:</td><td style="padding: 2px 0; font-weight: 600; color: #1e293b; font-family: 'JetBrains Mono', monospace;">${sanitizeInput(b.clientPhone || "Sin registrar")}</td></tr>
-            <tr><td style="padding: 2px 0; color: #64748b;">Correo:</td><td style="padding: 2px 0; font-weight: 600; color: #1e293b;">${sanitizeInput(b.clientEmail || "No especificado")}</td></tr>
-          </table>
-        </div>
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
-          <div style="font-size: 9px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Detalles del Evento</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-            <tr><td style="padding: 2px 0; color: #64748b; width: 35%;">Tipo de Evento:</td><td style="padding: 2px 0; font-weight: 800; color: #1e293b;">${sanitizeInput(b.eventType || "Evento")}</td></tr>
-            <tr><td style="padding: 2px 0; color: #64748b;">Fecha & Hora:</td><td style="padding: 2px 0; font-weight: 800; color: #7c3aed;">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</td></tr>
-            <tr><td style="padding: 2px 0; color: #64748b;">Ubicación:</td><td style="padding: 2px 0; font-weight: 600; color: #1e293b;">${sanitizeInput([b.canton, b.province].filter(Boolean).join(", "))}${b.address ? " — " + sanitizeInput(b.address) : ""}</td></tr>
-          </table>
+      <!-- 6. FOOTER: LEGAL CLAUSES (50% NON-REFUNDABLE DEPOSIT) & DIGITAL SIGNATURE -->
+      <div style="border-top: 2px solid #e2e8f0; padding-top: 14px; margin-top: 12px;">
+        <div style="display: grid; grid-template-columns: 1.4fr 0.6fr; gap: 20px; align-items: end;">
+          <div style="font-size: 9.5px; color: #475569; line-height: 1.45;">
+            <div style="font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Cláusulas Legales y Condiciones de Reserva</div>
+            <p style="margin: 0 0 3px;"><strong>1. Reserva y Adelanto No Reembolsable (50%):</strong> Toda fecha queda formalmente bloqueada en agenda únicamente tras la recepción y validación del adelanto del 50% vía SINPE Móvil. En caso de cancelación unilateral por parte del contratante, el adelanto del 50% no es reembolsable por concepto de lucro cesante y bloqueo de agenda.</p>
+            <p style="margin: 0 0 3px;"><strong>2. Liquidación de Saldo en Escenario (50%):</strong> El 50% restante deberá ser cancelado en su totalidad el día del evento antes del inicio de la presentación musical.</p>
+            <p style="margin: 0;"><strong>3. Reprogramaciones:</strong> Sujetas a disponibilidad de calendario con un preaviso mínimo de 72 horas.</p>
+          </div>
+          <div style="text-align: center; border-top: 1.5px solid #4c1d95; padding-top: 6px;">
+            <div style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; font-weight: 900; color: #3b0764; letter-spacing: 0.5px;">ARKIK PRODUCTIONS</div>
+            <div style="font-size: 9.5px; font-weight: 700; color: #6d28d9;">Firma Digital Autorizada · Dirección General</div>
+            <div style="font-size: 8.5px; color: #64748b; font-family: 'JetBrains Mono', monospace; margin-top: 2px;">Sello Verificado · ${sanitizeInput(code)}</div>
+          </div>
         </div>
       </div>
-
-      <!-- 4. LOGISTICS TIMELINE SUMMARY -->
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px; font-size: 10px;">
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;"><span style="font-weight: 800; color: #334155;">Formato:</span> ${sanitizeInput(b.serviceName || b.serviceId || "Formato Musical")}</div>
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;"><span style="font-weight: 800; color: #334155;">Montaje:</span> ${sanitizeInput(setupDisplay)}</div>
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;"><span style="font-weight: 800; color: #334155;">Show:</span> ${b.selectedTime ? sanitizeInput(b.selectedTime) : "Según agenda"}</div>
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;"><span style="font-weight: 800; color: #334155;">Desmontaje:</span> ${sanitizeInput(teardownDisplay)}</div>
-      </div>
-
-      <!-- 5. FINANCIAL TABLE -->
-      <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 14px;">
-        <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
-          <thead style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
-            <tr>
-              <th style="padding: 8px 10px; text-align: left; font-size: 9.5px; text-transform: uppercase; color: #475569; letter-spacing: 0.5px;">Concepto / Detalle Contratado</th>
-              <th style="padding: 8px 10px; text-align: right; font-size: 9.5px; text-transform: uppercase; color: #475569; letter-spacing: 0.5px;">Monto ₡</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 10px; font-weight: 700; color: #1e293b;">Servicio Principal: ${sanitizeInput(b.serviceName || "Música en Vivo")}</td>
-              <td style="padding: 8px 10px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono', monospace;">${formatCRC(basePrice)}</td>
-            </tr>
-            ${extrasHtml}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 6. FINANCIAL RECAP MATRIX -->
-      <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
-        <table style="width: 320px; border-collapse: collapse; font-size: 12px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px;">
-          <tr style="border-bottom: 1px solid #e9d5ff;">
-            <td style="padding: 8px 12px; color: #475569; font-weight: 600;">Total Contrato:</td>
-            <td style="padding: 8px 12px; text-align: right; font-weight: 900; font-size: 13.5px; color: #1e293b; font-family: 'JetBrains Mono', monospace;">${formatCRC(b.granTotal)}</td>
-          </tr>
-          <tr style="border-bottom: 1px solid #e9d5ff; background: #ecfdf5;">
-            <td style="padding: 8px 12px; font-weight: 800; color: #047857;">Depósito SINPE (50%):</td>
-            <td style="padding: 8px 12px; text-align: right; font-weight: 900; font-size: 13.5px; color: #047857; font-family: 'JetBrains Mono', monospace;">${formatCRC(b.deposit50Amount)}</td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 12px; font-weight: 800; color: #be123c;">Saldo Pendiente (Día del Show):</td>
-            <td style="padding: 8px 12px; text-align: right; font-weight: 900; font-size: 13.5px; color: #be123c; font-family: 'JetBrains Mono', monospace;">${formatCRC(b.remainingBalance)}</td>
-          </tr>
-        </table>
-      </div>
-
-      <!-- 7. BANK INSTRUCTIONS & POLICIES -->
-      <div style="border-top: 1px dashed #cbd5e1; padding-top: 10px; font-size: 9.5px; color: #64748b; line-height: 1.5;">
-        <p style="margin: 0 0 3px;"><strong>Instrucciones SINPE Móvil:</strong> Transferir el 50% al número <strong>${SINPE_CONFIG.phone}</strong> a nombre de <strong>${SINPE_CONFIG.holder}</strong>. Enviar comprobante al WhatsApp oficial para congelar fecha en la agenda.</p>
-        <p style="margin: 0 0 3px;"><strong>Cláusulas de Contratación:</strong> ${SINPE_CONFIG.policyText} · El saldo del 50% se liquida en el lugar del evento previo al inicio del espectáculo.</p>
-        <p style="margin: 0; color: #94a3b8;">Documento comercial emitido por Arkik Productions · Sede Granadilla, San José · Ref. SINPE: <strong>${sanitizeInput(b.sinpeRef || "S/N")}</strong></p>
-      </div>
-
     </div>
   `;
 }
 
 /**
- * Abre el visor de Prefactura / Comprobante de reserva (#preInvoicePreviewModal)
- * con la hoja bounded A4 de 794px max-width.
+ * Abre el visor interactivo A4 de Pre-Factura (#preInvoicePreviewModal)
+ * garantizando que ArkikAssets.logoBase64 esté cargado sincrónicamente/previamente.
  */
-function openPreInvoicePreview(bookingOrId) {
+async function openPreInvoicePreviewModal(bookingPayload) {
   let b = null;
-  if (bookingOrId && typeof bookingOrId === "object") {
-    b = bookingOrId;
-  } else if (typeof bookingOrId === "string") {
-    b = (typeof BookingStore !== "undefined" && (BookingStore.get(bookingOrId) || BookingStore.find(bookingOrId))) || null;
+  if (bookingPayload && typeof bookingPayload === "object") {
+    b = bookingPayload;
+  } else if (typeof bookingPayload === "string") {
+    b = (typeof BookingStore !== "undefined" && (BookingStore.get(bookingPayload) || BookingStore.find(bookingPayload))) || null;
   }
   if (!b) {
-    b = (typeof cart !== "undefined" && cart.createdBooking) || null;
+    b = currentPreInvoiceBooking || (typeof cart !== "undefined" && cart.createdBooking) || null;
   }
   if (!b) {
     showToast("No hay una reserva seleccionada para previsualizar.", "error");
@@ -6546,13 +6864,31 @@ function openPreInvoicePreview(bookingOrId) {
 
   currentPreInvoiceBooking = b;
 
-  const card = document.getElementById("preInvoicePreviewCard");
-  if (card) {
-    card.innerHTML = buildPreInvoiceCardHtml(b);
-    preloadExecutiveImages(card).catch(() => {});
+  // Ensure ArkikAssets.logoBase64 is fully loaded before rendering the modal content
+  if (typeof ArkikAssets !== "undefined") {
+    if (!ArkikAssets.logoBase64 && typeof ArkikAssets.init === "function") {
+      try {
+        await ArkikAssets.init();
+      } catch (e) { /* fallback handled by ArkikAssets */ }
+    }
+  }
+
+  const canvasContainer = document.getElementById("a4-canvas-container") || document.getElementById("preInvoicePreviewCard");
+  if (canvasContainer) {
+    canvasContainer.innerHTML = buildPreInvoiceCardHtml(b);
+    if (typeof preloadExecutiveImages === "function") {
+      await preloadExecutiveImages(canvasContainer).catch(() => {});
+    }
   }
 
   ModalController.open("preInvoicePreviewModal");
+}
+
+/**
+ * Alias compatible para llamadas a openPreInvoicePreview(bookingOrId)
+ */
+function openPreInvoicePreview(bookingOrId) {
+  return openPreInvoicePreviewModal(bookingOrId);
 }
 
 /** Cierra el visor de prefactura */
@@ -6562,19 +6898,68 @@ function closePreInvoicePreview() {
 
 /** Alias para compatibilidad con llamadas existentes */
 function openInvoicePreview(bookingOrId) {
-  openPreInvoicePreview(bookingOrId);
+  return openPreInvoicePreviewModal(bookingOrId);
 }
 
 function closeInvoicePreview() {
   closePreInvoicePreview();
 }
 
-/** Disparadores desde los botones del modal */
-function triggerPreInvoicePDFDownload() {
-  if (currentPreInvoiceBooking) {
-    exportVoucherPDF(currentPreInvoiceBooking);
-  } else {
-    exportVoucherPDF();
+/**
+ * Acción del botón "📥 Imprimir / Descargar PDF Oficial" dentro del modal (#preInvoicePreviewModal).
+ * Ejecuta html2pdf.js apuntando exclusivamente a #a4-canvas-container.
+ */
+async function triggerPreInvoicePDFDownload() {
+  const booking = currentPreInvoiceBooking || (typeof cart !== "undefined" && cart.createdBooking) || null;
+  if (!booking) {
+    showToast("No hay una reserva activa para descargar en PDF.", "error");
+    return;
+  }
+
+  if (typeof ArkikAssets !== "undefined" && !ArkikAssets.logoBase64 && typeof ArkikAssets.init === "function") {
+    try {
+      await ArkikAssets.init();
+    } catch (e) { /* noop */ }
+  }
+
+  const targetCanvas = document.getElementById("a4-canvas-container");
+  if (!targetCanvas) {
+    showToast("No se encontró el lienzo A4 para exportar.", "error");
+    return;
+  }
+
+  if (!targetCanvas.innerHTML.trim()) {
+    targetCanvas.innerHTML = buildPreInvoiceCardHtml(booking);
+  }
+
+  if (typeof preloadExecutiveImages === "function") {
+    await preloadExecutiveImages(targetCanvas).catch(() => {});
+  }
+
+  const rawCode = String(booking.code || booking.id || "ARK-00000000");
+  const normalizedCode = rawCode.startsWith("ARK-") ? rawCode : `ARK-${rawCode}`;
+  booking.code = normalizedCode;
+
+  if (typeof html2pdf === "undefined") {
+    showToast("Librería PDF no disponible, abriendo impresión nativa...", "info");
+    window.print();
+    return;
+  }
+
+  showToast("Generando PDF Oficial A4...", "info");
+  try {
+    await html2pdf().set({
+      margin: 0,
+      filename: 'Prefactura_' + booking.code + '.pdf',
+      image: { type: 'jpeg', quality: 1.0 },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
+    }).from(document.getElementById('a4-canvas-container')).save();
+    showToast("¡PDF Oficial descargado con éxito!", "success");
+  } catch (err) {
+    console.error("[PDF Export Error]:", err);
+    showToast("Error al generar PDF, abriendo diálogo de impresión...", "error");
+    window.print();
   }
 }
 
@@ -6587,25 +6972,24 @@ function triggerPreInvoiceDOCXDownload() {
 }
 
 /**
- * PDF Export Engine: Exporta la Prefactura/Comprobante A4 usando el contenedor
- * real #invoice-print-container y html2pdf.js con la plantilla contable oficial.
+ * Intercepta la acción de descarga de PDF para mostrar siempre primero el visor
+ * interactivo A4 (#preInvoicePreviewModal) en lugar de una descarga silenciosa.
  */
-async function exportVoucherPDF(bookingId) {
+async function exportVoucherPDF(bookingPayload) {
   let booking = null;
-  if (bookingId && typeof bookingId === "object") {
-    booking = bookingId;
-  } else if (typeof bookingId === "string") {
-    booking = (typeof BookingStore !== "undefined" && (BookingStore.get(bookingId) || BookingStore.find(bookingId))) || null;
+  if (bookingPayload && typeof bookingPayload === "object") {
+    booking = bookingPayload;
+  } else if (typeof bookingPayload === "string") {
+    booking = (typeof BookingStore !== "undefined" && (BookingStore.get(bookingPayload) || BookingStore.find(bookingPayload))) || null;
   }
   if (!booking) {
     booking = currentPreInvoiceBooking || (typeof cart !== "undefined" && cart.createdBooking) || null;
   }
   if (!booking) {
-    showToast("No hay una reserva para exportar a PDF.", "error");
+    showToast("No hay una reserva para previsualizar en PDF.", "error");
     return;
   }
 
-  // Pull voucher image from window._activeVoucherBlob if cart.voucherImage was pruned due to quota safeguards
   if (!booking.voucherImage && typeof window !== "undefined" && window._activeVoucherBlob) {
     booking.voucherImage = window._activeVoucherBlob;
   }
@@ -6613,13 +6997,7 @@ async function exportVoucherPDF(bookingId) {
     cart.voucherImage = window._activeVoucherBlob;
   }
 
-  const rawCode = String(booking.code || booking.id || "RESERVA").replace(/^ARK-/, "");
-  const filename = `ARK-${rawCode}-PREFACTURA.pdf`;
-  showToast("Generando PDF Oficial A4...", "info");
-  const success = await renderAndSaveAccountingPDF(booking, filename);
-  if (success) {
-    showToast("¡PDF Oficial descargado con éxito!", "success");
-  }
+  await openPreInvoicePreviewModal(booking);
 }
 
 /**
@@ -6825,23 +7203,15 @@ function sendBookingEmail(btnEl) {
 }
 
 /**
- * Descarga el voucher PDF de una reserva ya registrada (Portal del Propietario).
+ * Intercepta la descarga del voucher de una reserva registrada (Portal del Propietario)
+ * y abre el visor interactivo A4 (#preInvoicePreviewModal).
  */
 function downloadBookingVoucher(b) {
   if (!b) {
     showToast("Reserva no encontrada.", "error");
     return;
   }
-  const container = buildExecutiveInvoiceHtml(b);
-  showToast("Generando Pre-Factura PDF...", "info");
-  const filename = `PreFactura_${b.code}.pdf`;
-  saveExecutiveInvoicePDF(container, filename).then(() => {
-    showToast("¡Pre-Factura PDF descargada con éxito!", "success");
-  }).catch((err) => {
-    console.warn("PDF export fallback:", err);
-    showToast("Error al exportar PDF con html2pdf, abriendo vista de impresión.", "error");
-    printFallback(container.innerHTML, `PreFactura_${b.code}`);
-  });
+  openPreInvoicePreviewModal(b);
 }
 
 /**
@@ -9428,13 +9798,19 @@ function setupEventListeners() {
       if (!booking) return;
 
       const action = btn.getAttribute("data-action");
+      if (action === "preview-invoice") {
+        return; // Manejado por openPreInvoicePreview(code)
+      }
       if (action === "whatsapp") {
-        const firstName = String(booking.clientName || "Cliente").split(" ")[0];
-        window.open(whatsappClientUrl(booking, `Hola ${firstName}, soy Juan José Ramírez de Arkik Productions. Te contacto para confirmar los detalles de tu evento con código ${booking.code}.`), "_blank", "noopener");
+        window.open(whatsappClientUrl(booking, buildOwnerStatusWhatsAppMessage(booking)), "_blank", "noopener");
+        return;
+      }
+      if (action === "reschedule") {
+        AdminModule.openRescheduleModal(booking.code);
         return;
       }
       if (action === "confirm") {
-        // El PDF y el modal salen solo tras el OK del servidor.
+        // El PDF y el modal salen solo tras el OK del servidor (o fallback local).
         await validateBankPayment(booking);
         return;
       }
@@ -9457,6 +9833,10 @@ function setupEventListeners() {
           window.open(whatsappClientUrl(booking, rejectMsg), "_blank", "noopener");
         }
       } else if (action === "view") {
+        if (!booking.voucherImage && !booking.hasVoucher) {
+          showToast(`⚠️ La reserva ${booking.code} no tiene comprobante SINPE adjunto.`, "info");
+          return;
+        }
         const image = await resolveVoucherImage(booking);
         if (image) AdminModule.openVoucherPreview(image);
         return;
@@ -9468,6 +9848,19 @@ function setupEventListeners() {
     });
   }
 
+  // --- Admin: Buscador instantáneo en tiempo real (#admin-booking-search) ---
+  const bookingSearchInput = document.getElementById("admin-booking-search");
+  if (bookingSearchInput) {
+    const handleOwnerSearch = (e) => {
+      AdminModule.ownerQuery = e.target.value || "";
+      AdminModule.renderOwnerFilters();
+      AdminModule.renderOwnerBookings();
+    };
+    bookingSearchInput.addEventListener("keyup", handleOwnerSearch);
+    bookingSearchInput.addEventListener("input", handleOwnerSearch);
+    bookingSearchInput.addEventListener("search", handleOwnerSearch);
+  }
+
   // --- Admin: Filtros de estado ---
   const statusFilters = document.getElementById("admin-status-filters");
   if (statusFilters) {
@@ -9475,7 +9868,8 @@ function setupEventListeners() {
       const btn = e.target.closest("[data-filter]");
       if (!btn) return;
       AdminModule.ownerFilter = btn.getAttribute("data-filter");
-      AdminModule.renderOwner();
+      AdminModule.renderOwnerFilters();
+      AdminModule.renderOwnerBookings();
     });
   }
 

@@ -7502,4 +7502,88 @@ body.rack-preview-open {
   color: transparent !important;
   /* Subtle chiseled ambient depth */
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.35)) !important;
-}
+}
+
+/* ============================================================
+   OWNER DASHBOARD OVERHAUL — KPI MINI-STRIP, PILLS & CARD SUITE
+   ============================================================ */
+#adminSessionInfo {
+  background: linear-gradient(135deg, rgba(12, 8, 24, 0.92), rgba(7, 5, 16, 0.96));
+  border: 1px solid rgba(168, 85, 247, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+#tarjetasReservas {
+  position: relative;
+}
+
+.owner-kpi-ministrip .owner-kpi-strip-card {
+  background: linear-gradient(155deg, rgba(11, 8, 22, 0.94) 0%, rgba(6, 4, 14, 0.98) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.owner-kpi-ministrip .owner-kpi-strip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65), 0 0 18px rgba(16, 185, 129, 0.14);
+}
+
+#admin-status-filters {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+#admin-status-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.owner-action-toolbar .owner-toolbar-btn {
+  min-height: 38px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .owner-action-toolbar .owner-toolbar-btn {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+  .owner-action-toolbar .owner-toolbar-btn[data-action="whatsapp"] {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}
+
+/* ============================================================
+   INTERACTIVE A4 PRE-INVOICE VIEWER (#preInvoicePreviewModal & #a4-canvas-container)
+   ============================================================ */
+#a4-canvas-container {
+  font-variant-numeric: tabular-nums;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #preInvoicePreviewModal,
+  #preInvoicePreviewModal #a4-canvas-container,
+  #preInvoicePreviewModal #a4-canvas-container * {
+    visibility: visible !important;
+  }
+  #preInvoicePreviewModal {
+    position: absolute !important;
+    inset: 0 !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #a4-canvas-container {
+    margin: 0 auto !important;
+    box-shadow: none !important;
+  }
+}
+
+
