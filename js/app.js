@@ -2386,7 +2386,25 @@ const BookingStore = {
   },
 
   replace(list) {
-    this._data = Array.isArray(list) ? list : [];
+    const incoming = Array.isArray(list) ? list : [];
+    const existing = Array.isArray(this._data) ? this._data : [];
+    const incomingCodes = new Set(incoming.map(b => b && b.code).filter(Boolean));
+    const localVoucherMap = {};
+    existing.forEach(b => {
+      if (b && b.code && b.voucherImage) {
+        localVoucherMap[b.code] = b.voucherImage;
+      }
+    });
+    const pendingLocal = existing.filter(b =>
+      b && b.code && !incomingCodes.has(b.code) &&
+      (b.isOfflineDegraded || b.syncStatus === "offline_unverified")
+    );
+    this._data = pendingLocal.concat(incoming.map(b => {
+      if (b && b.code && !b.voucherImage && localVoucherMap[b.code]) {
+        return Object.assign({}, b, { voucherImage: localVoucherMap[b.code] });
+      }
+      return b;
+    }));
     this.persist();
     if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
       StorageEngine.onDataChange("bookings");
@@ -2453,6 +2471,7 @@ const CloudSync = {
       enabled: this._enabled,
       driver: this._enabled ? "arkik-api" : "local",
       endpoint: this._enabled ? "/api" : "",
+      supabaseEndpoint: "/rest/v1/arkik_sync",
       ready: this._ready,
       revision: this._rev,
       dirty: this._dirty,
@@ -2577,7 +2596,12 @@ const CloudSync = {
         }
       }
 
-      // 2) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa
+      // 2) Reconciliar cola offline ANTES de hidratar reservas para no sobrescribir cambios locales
+      if (ok && typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
+        await BookingStore.syncOfflineQueue().catch(function () {});
+      }
+
+      // 3) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa preservando pendientes locales
       if (ok && this._adminSessionActive()) {
         const bookings = await BookingStore.hydrate(true);
         if (bookings && bookings.ok === false) {
@@ -2586,11 +2610,6 @@ const CloudSync = {
             failCode = bookings.code || "network";
           }
         }
-      }
-
-      // 3) Reconciliar cola offline si la conexión responde
-      if (ok && typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
-        BookingStore.syncOfflineQueue().catch(function () {});
       }
 
       this._lastSyncAt = Date.now();
@@ -6906,7 +6925,7 @@ function closeInvoicePreview() {
 }
 
 /**
- * Acción del botón "📥 Imprimir / Descargar PDF Oficial" dentro del modal (#preInvoicePreviewModal).
+ * Acción del botón "📥 Descargar PDF Oficial" dentro del modal (#preInvoicePreviewModal).
  * Ejecuta html2pdf.js apuntando exclusivamente a #a4-canvas-container.
  */
 async function triggerPreInvoicePDFDownload() {
@@ -6947,12 +6966,13 @@ async function triggerPreInvoicePDFDownload() {
   }
 
   showToast("Generando PDF Oficial A4...", "info");
+  targetCanvas.classList.add("pdf-exporting");
   try {
     await html2pdf().set({
       margin: 0,
       filename: 'Prefactura_' + booking.code + '.pdf',
       image: { type: 'jpeg', quality: 1.0 },
-      html2canvas: { scale: 2, useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0 },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 794 },
       jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
     }).from(document.getElementById('a4-canvas-container')).save();
     showToast("¡PDF Oficial descargado con éxito!", "success");
@@ -6960,7 +6980,22 @@ async function triggerPreInvoicePDFDownload() {
     console.error("[PDF Export Error]:", err);
     showToast("Error al generar PDF, abriendo diálogo de impresión...", "error");
     window.print();
+  } finally {
+    targetCanvas.classList.remove("pdf-exporting");
   }
+}
+
+/**
+ * Acción del botón "🖨️ Imprimir" dentro del modal (#preInvoicePreviewModal).
+ */
+function printPreInvoiceCanvas() {
+  const modal = document.getElementById("preInvoicePreviewModal");
+  if (!modal || modal.classList.contains("hidden")) {
+    showToast("Abra primero la vista previa de la Pre-Factura.", "error");
+    return;
+  }
+  showToast("Abriendo diálogo de impresión...", "info");
+  window.print();
 }
 
 function triggerPreInvoiceDOCXDownload() {

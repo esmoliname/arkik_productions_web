@@ -7562,6 +7562,37 @@ body.rack-preview-open {
   font-variant-numeric: tabular-nums;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  transform-origin: top center;
+  transition: transform 0.2s ease;
+}
+
+@media (max-width: 840px) {
+  #preInvoicePaperStage {
+    overflow-x: hidden;
+  }
+  #a4-canvas-container:not(.pdf-exporting) {
+    transform: scale(0.82);
+    margin-bottom: -180px !important;
+  }
+}
+
+@media (max-width: 680px) {
+  #a4-canvas-container:not(.pdf-exporting) {
+    transform: scale(0.64);
+    margin-bottom: -380px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  #a4-canvas-container:not(.pdf-exporting) {
+    transform: scale(0.45);
+    margin-bottom: -590px !important;
+  }
+}
+
+#a4-canvas-container.pdf-exporting {
+  transform: none !important;
+  margin: 0 auto !important;
 }
 
 @media print {
@@ -7581,6 +7612,7 @@ body.rack-preview-open {
     margin: 0 !important;
   }
   #a4-canvas-container {
+    transform: none !important;
     margin: 0 auto !important;
     box-shadow: none !important;
   }
