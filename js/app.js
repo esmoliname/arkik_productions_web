@@ -5782,7 +5782,7 @@ function bookingCard(b) {
         <span>📅</span>
         <span>${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
       </span>
-      <button type="button" data-action="preview-invoice" onclick="openPreInvoicePreview('${b.code}')"
+      <button type="button" data-action="preview-invoice" onclick="openPreInvoicePreviewModal('${b.code}')"
         class="ml-auto rack-preview-btn px-3.5 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/35 hover:border-purple-400 text-purple-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[36px] shadow-sm"
         aria-label="Previsualizar Prefactura de la reserva ${b.code}">
         <span>📄</span>
@@ -12619,11 +12619,11 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
       <!-- Acciones de Usuario -->
       <div class="space-y-3 pt-2">
         <!-- Descargar / Ver Pre-Factura PDF -->
-        <button type="button" id="btn-confirmed-download-pdf" onclick="exportVoucherPDF(cart.createdBooking || window._lastCreatedBooking)" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 tactile-btn">
+        <button type="button" id="btn-confirmed-download-pdf" onclick="openPreInvoicePreviewModal(cart.createdBooking || window._lastCreatedBooking)" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 tactile-btn">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <span>Descargar / Ver Pre-Factura PDF</span>
+          <span>👁️ Previsualizar / Descargar Pre-Factura A4</span>
         </button>
 
         <!-- Notificar por WhatsApp -->

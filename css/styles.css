@@ -7590,6 +7590,13 @@ body.rack-preview-open {
   }
 }
 
+@media (max-width: 390px) {
+  #a4-canvas-container:not(.pdf-exporting) {
+    transform: scale(0.39);
+    margin-bottom: -660px !important;
+  }
+}
+
 #a4-canvas-container.pdf-exporting {
   transform: none !important;
   margin: 0 auto !important;
