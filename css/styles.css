@@ -7526,7 +7526,14 @@ body.rack-preview-open {
 /* ============================================================
    INTERACTIVE A4 PRE-INVOICE VIEWER (#preInvoicePreviewModal & #a4-canvas-container)
    ============================================================ */
+#preInvoicePaperStage {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 #a4-canvas-container {
+  width: 794px;
+  min-height: 1123px;
   font-variant-numeric: tabular-nums;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -7534,39 +7541,39 @@ body.rack-preview-open {
   transition: transform 0.2s ease;
 }
 
-@media (max-width: 840px) {
+@media (max-width: 820px) {
   #preInvoicePaperStage {
     overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
+
   #a4-canvas-container:not(.pdf-exporting) {
-    transform: scale(0.82);
-    margin-bottom: -180px !important;
+    max-width: none !important;
+    transform: scale(calc((100vw - 2rem) / 794));
+    transform-origin: top center;
+    margin-bottom: calc(1123px * ((100vw - 2rem) / 794) - 1123px + 2rem) !important;
   }
 }
 
-@media (max-width: 680px) {
-  #a4-canvas-container:not(.pdf-exporting) {
-    transform: scale(0.64);
-    margin-bottom: -380px !important;
+@media (max-width: 767px) {
+  #preInvoicePreviewModal {
+    justify-content: flex-end;
   }
-}
 
-@media (max-width: 520px) {
-  #a4-canvas-container:not(.pdf-exporting) {
-    transform: scale(0.45);
-    margin-bottom: -590px !important;
-  }
-}
-
-@media (max-width: 390px) {
-  #a4-canvas-container:not(.pdf-exporting) {
-    transform: scale(0.39);
-    margin-bottom: -660px !important;
+  #preInvoiceSheetShell {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    max-height: 94dvh;
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.85);
   }
 }
 
 #a4-canvas-container.pdf-exporting {
   transform: none !important;
+  max-width: none !important;
+  width: 794px !important;
   margin: 0 auto !important;
 }
 
@@ -7584,6 +7591,8 @@ body.rack-preview-open {
   }
   #invoicePreviewModal #invoicePreviewTopBar,
   #invoicePreviewModal #invoicePreviewTopBar *,
+  #preInvoicePreviewModal #preInvoiceTopBar,
+  #preInvoicePreviewModal #preInvoiceTopBar *,
   #invoicePreviewModal button,
   #preInvoicePreviewModal button {
     display: none !important;
@@ -7598,10 +7607,15 @@ body.rack-preview-open {
     margin: 0 !important;
     overflow: visible !important;
   }
-  #invoicePreviewStage {
+  #invoicePreviewStage,
+  #preInvoicePaperStage,
+  #preInvoiceSheetShell {
     overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
   }
   #invoicePreviewPaper,
   #a4-canvas-container {
