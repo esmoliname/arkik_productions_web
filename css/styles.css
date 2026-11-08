@@ -4,12 +4,13 @@
    @import es un download extra en el critical path del LCP. */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-html, body {
+html, body, h1, h2, h3, h4, h5, h6, button, .btn, .rag-action, .rag-pill-btn, #a4-canvas-container, #invoicePreviewPaper {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
-code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .rag-studio-count, .rag-studio-badge, .monetary, [data-monetary] {
+code, kbd, samp, pre, .font-mono, .rag-code, .rag-fin-value, .rag-kpi-metric, .rag-studio-count, .rag-studio-badge, .admin-booking-code, .admin-booking-fin, .owner-kpi-strip-value, .monetary, [data-monetary] {
   font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ============================================================
@@ -7573,22 +7574,46 @@ body.rack-preview-open {
   body * {
     visibility: hidden;
   }
-  #preInvoicePreviewModal,
-  #preInvoicePreviewModal #a4-canvas-container,
-  #preInvoicePreviewModal #a4-canvas-container * {
+  #invoicePreviewModal:not(.hidden),
+  #invoicePreviewModal:not(.hidden) #invoicePreviewPaper,
+  #invoicePreviewModal:not(.hidden) #invoicePreviewPaper *,
+  #preInvoicePreviewModal:not(.hidden),
+  #preInvoicePreviewModal:not(.hidden) #a4-canvas-container,
+  #preInvoicePreviewModal:not(.hidden) #a4-canvas-container * {
     visibility: visible !important;
   }
+  #invoicePreviewModal #invoicePreviewTopBar,
+  #invoicePreviewModal #invoicePreviewTopBar *,
+  #invoicePreviewModal button,
+  #preInvoicePreviewModal button {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  #invoicePreviewModal,
   #preInvoicePreviewModal {
     position: absolute !important;
     inset: 0 !important;
     background: #ffffff !important;
     padding: 0 !important;
     margin: 0 !important;
+    overflow: visible !important;
   }
+  #invoicePreviewStage {
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #invoicePreviewPaper,
   #a4-canvas-container {
     transform: none !important;
     margin: 0 auto !important;
+    padding: 24px !important;
+    max-width: 100% !important;
+    width: 100% !important;
     box-shadow: none !important;
+    border-radius: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 
@@ -7624,6 +7649,7 @@ body.rack-preview-open {
 .glass-3d-danger { border-top: 1px solid rgba(244, 63, 94, 0.4); text-shadow: 0 0 10px rgba(244, 63, 94, 0.3); }
 .glass-3d-info { border-top: 1px solid rgba(96, 165, 250, 0.4); text-shadow: 0 0 10px rgba(96, 165, 250, 0.3); }
 .glass-3d-purple { border-top: 1px solid rgba(192, 132, 252, 0.4); text-shadow: 0 0 10px rgba(192, 132, 252, 0.3); }
+
 
 
 

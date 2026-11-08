@@ -102,11 +102,11 @@ const MemoryStorage = (function () {
       store.set(String(key), String(value));
     },
     removeItem(key) {
-    if (typeof MemoryCache !== 'undefined') MemoryCache.delete(key);
+      if (typeof MemoryCache !== 'undefined') MemoryCache.delete(key);
       store.delete(String(key));
     },
     clear() {
-    if (typeof MemoryCache !== 'undefined') MemoryCache.clear();
+      if (typeof MemoryCache !== 'undefined') MemoryCache.clear();
       store.clear();
     },
     key(index) {
@@ -436,7 +436,7 @@ const ArkikAssets = {
   getLogo() {
     if (this.logoBase64) return this.logoBase64;
     // Trigger async load but return fallback immediately for sync callers
-    if (!this._loading) this.init().catch(() => {});
+    if (!this._loading) this.init().catch(() => { });
     return this._generateFallbackLogo();
   }
 };
@@ -457,7 +457,7 @@ function cleanText(value, maxLen) {
 
 // Validación estricta de teléfonos Costa Rica: 8 dígitos con prefijo opcional (+506 o 506)
 function isValidCRPhone(phone) {
-  return /^(\+?506)?\s?[2678]\d{3}[-\s]?\d{4}$/.test(String(phone || "").trim());
+  return /^(?:\+?506)?\s?[2678]\d{3}[-\s]?\d{4}$/.test(String(phone || "").trim());
 }
 
 /**
@@ -793,7 +793,7 @@ function safeSaveBookings(bookings) {
       SafeStorage.setItem(STORAGE_KEYS.bookings, serialized);
     }
     MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(serialized));
-    try { MemoryStorage.setItem(STORAGE_KEYS.bookings, serialized); } catch (e) {}
+    try { MemoryStorage.setItem(STORAGE_KEYS.bookings, serialized); } catch (e) { }
     return true;
   };
 
@@ -802,7 +802,7 @@ function safeSaveBookings(bookings) {
   } catch (err) {
     if (!isQuotaExceededException(err)) {
       console.warn("[Arkik Security] Error no relacionado con cuota al guardar reservas:", err);
-      try { SafeStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(list)); } catch (e) {}
+      try { SafeStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(list)); } catch (e) { }
       return false;
     }
 
@@ -848,7 +848,7 @@ function safeSaveBookings(bookings) {
           const fallbackJson = JSON.stringify(list);
           MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(fallbackJson));
           MemoryStorage.setItem(STORAGE_KEYS.bookings, fallbackJson);
-        } catch (memErr) {}
+        } catch (memErr) { }
         return false;
       }
     }
@@ -993,7 +993,7 @@ function generateBookingCode() {
       if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         suffix = crypto.randomUUID().split("-")[0].toUpperCase();
       }
-    } catch (err) {}
+    } catch (err) { }
     if (!suffix || suffix.length !== 8) {
       if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
         const buf = new Uint8Array(4);
@@ -1083,7 +1083,7 @@ function apiError(code, message, status) {
 // login admin, así que los visitantes anónimos jamás deben dispararlo.
 function hasAdminSession() {
   if (typeof ADMIN_SESSION !== "undefined" && ADMIN_SESSION &&
-      ADMIN_SESSION.role && ADMIN_SESSION.token) {
+    ADMIN_SESSION.role && ADMIN_SESSION.token) {
     return true;
   }
   try {
@@ -1157,6 +1157,108 @@ const StorageEngine = {
     try { BookingStore.load(); } catch (e) { console.warn('BookingStore.load failed:', e); }
     try { this.loadGallery(); } catch (e) { console.warn('StorageEngine.loadGallery failed:', e); }
     try { this.loadConfig(); } catch (e) { console.warn('StorageEngine.loadConfig failed:', e); }
+  },
+
+  /**
+   * Sanitiza y valida el esquema de un registro de reserva para garantizar que
+   * ningún dato corrupto o incompleto pueda provocar un fallo en el renderizador A4.
+   */
+  _sanitizeBookingRecord(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const rawCode = String(raw.code || raw.id || "ARK-00000000").trim();
+    const code = rawCode.startsWith("ARK-") ? rawCode : `ARK-${rawCode}`;
+    const id = String(raw.id || code).trim();
+    const toSafeNum = (val, def = 0) => {
+      const n = Number(val);
+      return Number.isFinite(n) && n >= 0 ? Math.round(n) : def;
+    };
+    const extrasRaw = (raw.extras && typeof raw.extras === "object") ? raw.extras : {};
+    const extraHoursCount = toSafeNum(extrasRaw.extraHoursCount, 0);
+    const extraHoursTotal = toSafeNum(extrasRaw.extraHoursTotal, 0);
+    const djHoursCount = toSafeNum(extrasRaw.djHoursCount, 0);
+    const djTotal = toSafeNum(extrasRaw.djTotal, 0);
+    const subwoofersCount = toSafeNum(extrasRaw.subwoofersCount, 0);
+    const subwoofersTotal = toSafeNum(extrasRaw.subwoofersTotal, 0);
+    const travelSurcharge = toSafeNum(raw.travelSurcharge, 0);
+    const granTotal = toSafeNum(raw.granTotal, toSafeNum(raw.subtotal, 0) + travelSurcharge);
+    const deposit50Amount = toSafeNum(raw.deposit50Amount, Math.round(granTotal * 0.5));
+    const remainingBalance = toSafeNum(raw.remainingBalance, Math.max(0, granTotal - deposit50Amount));
+
+    return Object.assign({}, raw, {
+      id,
+      code,
+      clientName: String(raw.clientName || "Cliente General"),
+      clientEmail: String(raw.clientEmail || ""),
+      clientPhone: String(raw.clientPhone || ""),
+      province: String(raw.province || "San José"),
+      canton: String(raw.canton || "Central"),
+      address: String(raw.address || ""),
+      selectedDate: String(raw.selectedDate || ""),
+      selectedTime: String(raw.selectedTime || ""),
+      serviceId: String(raw.serviceId || ""),
+      serviceName: String(raw.serviceName || "Formato Musical"),
+      eventType: String(raw.eventType || "Evento"),
+      status: String(raw.status || "pendiente"),
+      sinpeRef: String(raw.sinpeRef || raw.referenceSinpe || ""),
+      granTotal,
+      deposit50Amount,
+      remainingBalance,
+      travelSurcharge,
+      extras: {
+        extraHoursCount,
+        extraHoursTotal,
+        djHoursCount,
+        djTotal,
+        subwoofersCount,
+        subwoofersTotal
+      }
+    });
+  },
+
+  /**
+   * Lectura segura con validación estricta de JSON y normalización de esquema.
+   * Garantiza estabilidad frente a corrupción de localStorage.
+   */
+  safeGet(key, fallback = []) {
+    const targetKey = String(key || STORAGE_KEYS.bookings);
+    let parsed = null;
+    try {
+      const raw = SafeStorage.getItem(targetKey);
+      if (raw !== null && raw !== "") {
+        parsed = JSON.parse(raw);
+      }
+    } catch (err) {
+      console.warn("[StorageEngine.safeGet] JSON corrupto en clave:", targetKey, err);
+      parsed = null;
+    }
+
+    if (targetKey === STORAGE_KEYS.bookings || targetKey === "arkik_bookings_v1") {
+      let list = Array.isArray(parsed) ? parsed : [];
+      if (!list.length && typeof BookingStore !== "undefined" && Array.isArray(BookingStore._data) && BookingStore._data.length) {
+        list = BookingStore._data.slice();
+      }
+      const normalized = [];
+      const seen = new Set();
+      list.forEach(item => {
+        const clean = this._sanitizeBookingRecord(item);
+        if (clean && !seen.has(clean.code)) {
+          seen.add(clean.code);
+          normalized.push(clean);
+        }
+      });
+      if (typeof BookingStore !== "undefined" && Array.isArray(BookingStore._data)) {
+        BookingStore._data.forEach(item => {
+          const clean = this._sanitizeBookingRecord(item);
+          if (clean && !seen.has(clean.code)) {
+            seen.add(clean.code);
+            normalized.push(clean);
+          }
+        });
+      }
+      return normalized;
+    }
+
+    return parsed !== null && parsed !== undefined ? parsed : fallback;
   },
 
   // Auto-reparación de semillas de producción (self-healing).
@@ -2061,7 +2163,7 @@ const BookingStore = {
         }
       }
       if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-        try { CalendarModule.render(); } catch (e) {}
+        try { CalendarModule.render(); } catch (e) { }
       }
 
       CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
@@ -2135,12 +2237,12 @@ const BookingStore = {
         booking.status = "pendiente";
         booking.statusText = "Pendiente de Aprobación";
         booking.statusLabel = "Pendiente de Aprobación";
-      booking.syncStatus = "offline_unverified";
-      booking.isOfflineDegraded = true;
-      enforceVerifiedTotalsOnBooking(booking, booking);
-      if (!validateBookingSchema(booking)) {
-        return apiError("validation_error", "El registro de reserva no superó la validación de esquema Zero-Trust.");
-      }
+        booking.syncStatus = "offline_unverified";
+        booking.isOfflineDegraded = true;
+        enforceVerifiedTotalsOnBooking(booking, booking);
+        if (!validateBookingSchema(booking)) {
+          return apiError("validation_error", "El registro de reserva no superó la validación de esquema Zero-Trust.");
+        }
         booking.updatedAt = booking.updatedAt || new Date().toISOString();
         booking.isOfflineDegraded = true;
 
@@ -2156,7 +2258,7 @@ const BookingStore = {
           }
         }
         if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-          try { CalendarModule.render(); } catch (e) {}
+          try { CalendarModule.render(); } catch (e) { }
         }
 
         CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
@@ -2187,7 +2289,7 @@ const BookingStore = {
       }
     }
     if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-      try { CalendarModule.render(); } catch (e) {}
+      try { CalendarModule.render(); } catch (e) { }
     }
 
     CloudSync.notify("bookings", { code: created.code, date: created.selectedDate });
@@ -2449,7 +2551,7 @@ const CloudSync = {
         return;
       }
       this._ready = true;
-      this.sync("boot").catch(function () {});
+      this.sync("boot").catch(function () { });
       this._startTimer();
       this._bindVisibility();
       this._bindBroadcast();
@@ -2493,7 +2595,7 @@ const CloudSync = {
         this._channel = new BroadcastChannel("arkik_realtime_sync");
         this._channel.onmessage = function (ev) {
           if (ev && ev.data && ev.data.type) {
-            self.refresh("broadcast_" + ev.data.type).catch(function () {});
+            self.refresh("broadcast_" + ev.data.type).catch(function () { });
           }
         };
       } catch (e) {
@@ -2504,19 +2606,19 @@ const CloudSync = {
     window.addEventListener("storage", function (e) {
       if (!e || !e.key) return;
       if (e.key === STORAGE_KEYS.bookings || e.key === STORAGE_KEYS.availability || e.key === STORAGE_KEYS.syncMeta) {
-        self.refresh("storage").catch(function () {});
+        self.refresh("storage").catch(function () { });
       }
     }, { passive: true });
 
     window.addEventListener("online", function () {
       if (typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
-        BookingStore.syncOfflineQueue().catch(function () {});
+        BookingStore.syncOfflineQueue().catch(function () { });
       }
-      self.refresh("online").catch(function () {});
+      self.refresh("online").catch(function () { });
     }, { passive: true });
 
     window.addEventListener("focus", function () {
-      self.refresh("focus").catch(function () {});
+      self.refresh("focus").catch(function () { });
     }, { passive: true });
   },
 
@@ -2539,7 +2641,7 @@ const CloudSync = {
     const self = this;
     this._debounce = setTimeout(function () {
       self._debounce = null;
-      self.refresh(domain || "notify").catch(function () {});
+      self.refresh(domain || "notify").catch(function () { });
     }, 400);
   },
 
@@ -2598,7 +2700,7 @@ const CloudSync = {
 
       // 2) Reconciliar cola offline ANTES de hidratar reservas para no sobrescribir cambios locales
       if (ok && typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
-        await BookingStore.syncOfflineQueue().catch(function () {});
+        await BookingStore.syncOfflineQueue().catch(function () { });
       }
 
       // 3) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa preservando pendientes locales
@@ -2631,7 +2733,7 @@ const CloudSync = {
       if (this._queued) {
         this._queued = false;
         const self = this;
-        setTimeout(function () { self.refresh("queued").catch(function () {}); }, 300);
+        setTimeout(function () { self.refresh("queued").catch(function () { }); }, 300);
       }
     }
   },
@@ -2698,7 +2800,7 @@ const CloudSync = {
     if (typeof document === "undefined" || !document.addEventListener) return;
     const self = this;
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState === "visible") self.sync("visible").catch(function () {});
+      if (document.visibilityState === "visible") self.sync("visible").catch(function () { });
     }, { passive: true });
   },
 
@@ -2723,14 +2825,14 @@ const CloudSync = {
     } catch (err) { /* noop */ }
     try {
       if (typeof ModalController !== "undefined" && ModalController.isOpen("adminPortalModal") &&
-          typeof AdminModule !== "undefined" && AdminModule.renderDashboard) {
+        typeof AdminModule !== "undefined" && AdminModule.renderDashboard) {
         AdminModule.renderDashboard();
       }
     } catch (err) { /* noop */ }
     try {
       const step = typeof lastModalStep !== "undefined" ? lastModalStep : 1;
       if (typeof ModalController !== "undefined" && ModalController.isOpen("booking-modal") &&
-          step < 4 && typeof cart !== "undefined" && cart.selectedDate && cart.selectedTime) {
+        step < 4 && typeof cart !== "undefined" && cart.selectedDate && cart.selectedTime) {
         const check = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
         if (!check.ok) showSlotConflictAlert(check.message);
       }
@@ -3218,12 +3320,12 @@ class CartState {
     return this.deposit50Amount;
   }
 
-  set subtotal(_) {}
-  set extrasTotal(_) {}
-  set travelSurcharge(_) {}
-  set granTotal(_) {}
-  set deposit50(_) {}
-  set deposit50Amount(_) {}
+  set subtotal(_) { }
+  set extrasTotal(_) { }
+  set travelSurcharge(_) { }
+  set granTotal(_) { }
+  set deposit50(_) { }
+  set deposit50Amount(_) { }
   set remainingBalance(_) {
   }
 
@@ -3331,7 +3433,7 @@ class CartState {
     this.isSubmitting = false;
     this.clearStoredState();
     if (typeof resetVoucherUploadState === "function") {
-      try { resetVoucherUploadState(); } catch (e) {}
+      try { resetVoucherUploadState(); } catch (e) { }
     }
   }
 }
@@ -3819,7 +3921,7 @@ const CalendarModule = {
           renderTimeSelector();
           this.renderSummary();
         }
-      }).catch(function () {});
+      }).catch(function () { });
     }
 
     // Renderizar chips de hora disponibles para el día (0, 1 o 2 eventos).
@@ -4159,7 +4261,7 @@ const AdminModule = {
     }
     // Candado vivo + claves heredadas de rate limiting: todas se retiran.
     [STORAGE_KEYS.admin].concat(ADMIN_LEGACY_RATE_KEYS).forEach(k => {
-      try { SafeStorage.removeItem(k); } catch(e){}
+      try { SafeStorage.removeItem(k); } catch (e) { }
     });
     SecurityModule.clearLockState({ persist: false });
     resetLoginTrap();
@@ -4249,9 +4351,9 @@ const AdminModule = {
       this.openPortal();
       // Con el nivel 1 el servidor ya emitió la cookie de sesión: se aprovecha
       // ese mismo contexto para traer reservas, disponibilidad y tarifarios.
-      BookingStore.hydrate(true).catch(function () {});
-      AvailabilityManager.fetchMap().catch(function () {});
-      PriceManager.loadRemote().catch(function () {});
+      BookingStore.hydrate(true).catch(function () { });
+      AvailabilityManager.fetchMap().catch(function () { });
+      PriceManager.loadRemote().catch(function () { });
       showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
       return;
     }
@@ -4416,9 +4518,9 @@ const AdminModule = {
     this.openPortal();
     // Los datos del portal salen del caché inmediatamente y se revalidan
     // en segundo plano contra el servidor.
-    BookingStore.hydrate(true).catch(function () {});
-    AvailabilityManager.fetchMap().catch(function () {});
-    PriceManager.loadRemote().catch(function () {});
+    BookingStore.hydrate(true).catch(function () { });
+    AvailabilityManager.fetchMap().catch(function () { });
+    PriceManager.loadRemote().catch(function () { });
   },
 
   startIntegrityMonitor() {
@@ -4445,7 +4547,7 @@ const AdminModule = {
     // Logout en el servidor (fire-and-forget): borra la cookie HttpOnly.
     // Aunque la red falle, la sesión local ya se destruye aquí y el cookie
     // caducará por sí solo en el servidor.
-    if (apiEnabled()) ArkikApi.admin.logout().catch(function () {});
+    if (apiEnabled()) ArkikApi.admin.logout().catch(function () { });
     this.clearInactivityTimer();
     this.clearIntegrityMonitor();
     this.clearSession();
@@ -4622,14 +4724,14 @@ const AdminModule = {
       const maxVal = Math.max(...entries.map(e => e[1]), 1);
       const bars = entries.length
         ? entries.map(([name, total]) => {
-            const h = Math.max(8, Math.round((total / maxVal) * 100));
-            const short = name.length > 12 ? name.slice(0, 12) + "…" : name;
-            return `
+          const h = Math.max(8, Math.round((total / maxVal) * 100));
+          const short = name.length > 12 ? name.slice(0, 12) + "…" : name;
+          return `
             <div class="flex-1 flex flex-col items-center gap-1.5 min-w-0" title="${name}: ${formatCRC(total)}">
               <div class="w-full rounded-t-lg bg-gradient-to-t from-purple-700 via-indigo-500 to-cyan-400 light-bar" style="height:${h}%"></div>
               <span class="text-[9px] text-slate-500 truncate w-full text-center">${sanitizeInput(short)}</span>
             </div>`;
-          }).join("")
+        }).join("")
         : `<div class="w-full h-full flex items-center justify-center"><p class="text-xs text-slate-500">Sin eventos en el período.</p></div>`;
       barBox.innerHTML = `
         <div class="relative overflow-hidden p-5 rounded-2xl bg-[#0e0a1a]/70 backdrop-blur-xl border border-purple-500/15 hover:border-purple-500/30 transition-all shadow-lg">
@@ -4714,11 +4816,11 @@ const AdminModule = {
       };
       const rows = recent.length
         ? recent.map(b => {
-            const statusLabel = BOOKING_STATUSES[b.status] || b.status;
-            const statusDot = b.status === "cancelada" ? "bg-rose-400"
-              : (b.status === "pendiente" ? "bg-amber-400"
-                : (b.status === "realizada" ? "bg-indigo-400" : "bg-emerald-400"));
-            return `
+          const statusLabel = BOOKING_STATUSES[b.status] || b.status;
+          const statusDot = b.status === "cancelada" ? "bg-rose-400"
+            : (b.status === "pendiente" ? "bg-amber-400"
+              : (b.status === "realizada" ? "bg-indigo-400" : "bg-emerald-400"));
+          return `
             <div class="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0">
               <span class="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-base shrink-0">${formatEmoji(b.serviceId)}</span>
               <div class="min-w-0 flex-1">
@@ -4730,7 +4832,7 @@ const AdminModule = {
                 <p class="text-[10px] flex items-center justify-end gap-1 text-slate-400"><span class="w-1.5 h-1.5 rounded-full ${statusDot} inline-block"></span>${statusLabel}</p>
               </div>
             </div>`;
-          }).join("")
+        }).join("")
         : `<div class="py-6 text-center"><p class="text-xs text-slate-500">Sin reservas recientes en el período.</p></div>`;
       recBox.innerHTML = `
         <div class="relative overflow-hidden p-5 rounded-2xl bg-[#0e0a1a]/70 backdrop-blur-xl border border-purple-500/15 hover:border-purple-500/30 transition-all shadow-lg">
@@ -5057,7 +5159,7 @@ const AdminModule = {
       this.renderOwner();
       return;
     }
-    AvailabilityManager.fetchDetail(newIso).catch(function () {});
+    AvailabilityManager.fetchDetail(newIso).catch(function () { });
     showToast(`Reserva ${code} reprogramada para el ${formatDisplayDate(newIso)}.`, "success");
     this.closeRescheduleModal();
     this.renderOwner();
@@ -5413,14 +5515,14 @@ const AdminModule = {
       { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const logRows = events.length
       ? events.slice(0, 20).map(ev => {
-          const type = LOG_TYPES.includes(ev.type) ? ev.type : "login";
-          return `
+        const type = LOG_TYPES.includes(ev.type) ? ev.type : "login";
+        return `
             <div class="it-log-row">
               <span class="it-log-time">${fmtTime(ev.at)}</span>
               <span class="it-log-type it-log-type--${type}">${type}</span>
               <span class="it-log-message">${sanitizeInput(ev.message)}</span>
             </div>`;
-        }).join("")
+      }).join("")
       : audit.logins.slice(0, 20).map(l => `
           <div class="it-log-row">
             <span class="it-log-time">${fmtTime(l.at)}</span>
@@ -5784,11 +5886,11 @@ function bookingCard(b) {
         <span>📅</span>
         <span>${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
       </span>
-      <button type="button" data-action="preview-invoice" onclick="openPreInvoicePreviewModal('${b.code}')"
-        class="ml-auto rack-preview-btn px-3.5 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/35 hover:border-purple-400 text-purple-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all min-h-[36px] shadow-sm"
-        aria-label="Previsualizar Prefactura de la reserva ${b.code}">
-        <span>📄</span>
-        <span>Previsualizar Prefactura</span>
+      <button type="button" data-action="preview-invoice" onclick="openInvoicePreview('${sanitizeInput(b.id || b.code)}')"
+        class="ml-auto rack-preview-btn bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+        aria-label="Visualizar Pre-Factura de la reserva ${sanitizeInput(b.code)}">
+        <span aria-hidden="true">👁️</span>
+        <span>Visualizar Pre-Factura</span>
       </button>
     </div>
 
@@ -5865,7 +5967,7 @@ function bookingCard(b) {
     <div class="owner-action-toolbar flex flex-wrap items-center gap-2 mt-3.5 pt-3 border-t border-white/10" role="toolbar" aria-label="Acciones de reserva ${sanitizeInput(b.code)}">
       <!-- 1. Validar Depósito SINPE (50%) -->
       <button type="button" data-action="confirm" ${isConfirmedOrDone ? "disabled" : ""}
-        class="glass-3d-btn glass-3d-success px-4 py-2.5 text-xs sm:text-sm flex items-center gap-2 ${isConfirmedOrDone ? "opacity-60 cursor-default" : ""}">
+        class="glass-3d-btn glass-3d-success bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-5 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] ${isConfirmedOrDone ? "opacity-60 cursor-default" : ""}">
         <span>✅</span>
         <span>${isConfirmedOrDone ? "Depósito SINPE Validado (50%)" : "Validar Depósito SINPE (50%)"}</span>
       </button>
@@ -5915,7 +6017,7 @@ function whatsappClientUrl(booking, message) {
  * El Propietario usa esta carpeta para archivar Pre-Facturas VALIDADAS y su
  * Expediente JSON, con control de acceso propio de su cuenta Drive.
  */
-const ARKIK_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1A0zOpNvxCkhlSUZMxsV4G2tr5S5EWNEH?usp=drive_link";
+const ARKIK_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1A0zOpNvxCkhlSUZMxsV4G2tr5S5EWNEH";
 
 /**
  * Estado de verificación bancaria de una reserva para la Pre-Factura.
@@ -6701,7 +6803,7 @@ function buildPreInvoiceCardHtml(b) {
   }
 
   return `
-    <div style="font-family: 'Inter', 'Plus Jakarta Sans', Arial, sans-serif; color: #0f172a; line-height: 1.5; display: flex; flex-direction: column; justify-content: space-between; min-height: 1040px;">
+    <div style="font-family: 'Plus Jakarta Sans', Arial, sans-serif; color: #0f172a; line-height: 1.5; display: flex; flex-direction: column; justify-content: space-between; min-height: 1040px;">
       <div>
         <!-- 1. HEADER: ARKIK LOGO (BASE64), CÉDULA/UBICACIÓN, CONTACTO -->
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #6d28d9; padding-bottom: 18px; margin-bottom: 18px; gap: 16px;">
@@ -6718,7 +6820,7 @@ function buildPreInvoiceCardHtml(b) {
             <div style="display: inline-block; background: #faf5ff; border: 1.5px solid #d8b4fe; border-radius: 10px; padding: 8px 14px;">
               <div style="font-size: 9px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.8px;">Código de Reserva</div>
               <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 900; color: #4c1d95; margin-top: 2px; font-variant-numeric: tabular-nums;">${sanitizeInput(code)}</div>
-              <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">${today} · ${timeNow}</div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #64748b; margin-top: 2px; font-variant-numeric: tabular-nums;">${today} · ${timeNow}</div>
             </div>
           </div>
         </div>
@@ -6727,7 +6829,7 @@ function buildPreInvoiceCardHtml(b) {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #7c3aed; border-radius: 8px; padding: 10px 14px;">
           <div>
             <div style="font-size: 13px; font-weight: 900; color: #0f172a; letter-spacing: 0.5px; text-transform: uppercase;">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</div>
-            <div style="font-size: 10.5px; color: #475569; margin-top: 2px;">Expediente Comercial <strong style="font-family: 'JetBrains Mono', monospace; color: #5b21b6;">${sanitizeInput(code)}</strong> · Emitido el ${today} a las ${timeNow}</div>
+            <div style="font-size: 10.5px; color: #475569; margin-top: 2px;">Expediente Comercial <strong style="font-family: 'JetBrains Mono', monospace; color: #5b21b6; font-variant-numeric: tabular-nums;">${sanitizeInput(code)}</strong> · Emitido el <span style="font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;">${today} a las ${timeNow}</span></div>
           </div>
           <div>
             <span style="display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: ${badgeBg}; border: 1px solid ${badgeBorder}; color: ${badgeText};">
@@ -6898,11 +7000,16 @@ async function openPreInvoicePreviewModal(bookingPayload) {
   if (canvasContainer) {
     canvasContainer.innerHTML = buildPreInvoiceCardHtml(b);
     if (typeof preloadExecutiveImages === "function") {
-      await preloadExecutiveImages(canvasContainer).catch(() => {});
+      await preloadExecutiveImages(canvasContainer).catch(() => { });
     }
   }
 
-  ModalController.open("preInvoicePreviewModal");
+  const modal = document.getElementById("preInvoicePreviewModal");
+  if (modal) {
+    ModalController.open("preInvoicePreviewModal");
+    modal.classList.remove("hidden", "opacity-0", "pointer-events-none", "invisible");
+    modal.classList.add("flex", "opacity-100", "pointer-events-auto", "visible");
+  }
 }
 
 /**
@@ -6914,16 +7021,329 @@ function openPreInvoicePreview(bookingOrId) {
 
 /** Cierra el visor de prefactura */
 function closePreInvoicePreview() {
+  const modal = document.getElementById("preInvoicePreviewModal");
+  if (modal) {
+    modal.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+    modal.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+  }
   ModalController.close("preInvoicePreviewModal");
 }
 
-/** Alias para compatibilidad con llamadas existentes */
-function openInvoicePreview(bookingOrId) {
-  return openPreInvoicePreviewModal(bookingOrId);
+/**
+ * Construye la estructura interna A4 del visor estilo Google Drive (#invoicePreviewModal)
+ * con datos reales hidratados y formato monetario .toLocaleString('es-CR').
+ */
+function buildDriveInvoicePreviewHtml(bookingRecord) {
+  const b = (typeof StorageEngine !== "undefined" && StorageEngine._sanitizeBookingRecord)
+    ? (StorageEngine._sanitizeBookingRecord(bookingRecord) || bookingRecord || {})
+    : (bookingRecord || {});
+
+  const rawCode = String(b.code || b.id || "00000000").replace(/^ARK-/, "");
+  const code = `ARK-${rawCode}`;
+  const fmtMoney = (val) => `₡${Math.max(0, Math.round(Number(val) || 0)).toLocaleString('es-CR')}`;
+  const issueDate = new Date().toLocaleDateString('es-CR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const service = (typeof CATALOG_SERVICES !== "undefined" && Array.isArray(CATALOG_SERVICES))
+    ? CATALOG_SERVICES.find(s => String(s.id) === String(b.serviceId))
+    : null;
+  const setupDisplay = service ? (service.setup_display || "2h antes") : (b.setupDisplay || "2h antes");
+  const teardownDisplay = service ? (service.teardown_display || "1h después") : (b.teardownDisplay || "1h después");
+  const logisticsInfo = (typeof calculateBookingLogistics === "function")
+    ? calculateBookingLogistics(b)
+    : { arrivalDisplay: setupDisplay, teardownDisplay: teardownDisplay };
+
+  const extras = (b.extras && typeof b.extras === "object") ? b.extras : {};
+  const extraHoursCount = Number(extras.extraHoursCount || 0);
+  const extraHoursTotal = Number(extras.extraHoursTotal || 0);
+  const djHoursCount = Number(extras.djHoursCount || 0);
+  const djTotal = Number(extras.djTotal || 0);
+  const subwoofersCount = Number(extras.subwoofersCount || 0);
+  const subwoofersTotal = Number(extras.subwoofersTotal || 0);
+  const travelSurcharge = Number(b.travelSurcharge || 0);
+  const isGAM = travelSurcharge <= 0 && ["San José", "Alajuela", "Cartago", "Heredia"].includes(b.province || "San José");
+
+  const extrasSum = extraHoursTotal + djTotal + subwoofersTotal;
+  const granTotal = Number(b.granTotal || 0);
+  const basePrice = (typeof PriceManager !== "undefined" && service)
+    ? PriceManager.getServicePrice(service)
+    : Number(b.basePrice || Math.max(0, granTotal - extrasSum - travelSurcharge));
+  const deposit50Amount = Number(b.deposit50Amount || Math.round(granTotal * 0.5));
+  const remainingBalance = Number(b.remainingBalance || Math.max(0, granTotal - deposit50Amount));
+
+  const isPaid = Boolean(b.depositSettled || b.status === "confirmada" || b.status === "confirmado" || b.status === "realizada");
+  const isCancelled = b.status === "cancelada" || b.status === "cancelado";
+  const statusBadgeText = isCancelled
+    ? "CANCELADA"
+    : (isPaid ? "CONFIRMADA · SINPE VALIDADO" : "PENDIENTE DE VALIDACIÓN SINPE");
+  const statusBadgeClasses = isCancelled
+    ? "bg-rose-50 text-rose-700 border-rose-200"
+    : (isPaid ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200");
+
+  let extrasLedgerRows = "";
+  if (extraHoursCount > 0) {
+    extrasLedgerRows += `
+      <tr class="border-b border-gray-200">
+        <td class="py-3 px-4 text-sm text-gray-800">Extra: Horas Adicionales de Show (${extraHoursCount} hr)</td>
+        <td class="py-3 px-4 text-center text-xs font-mono text-gray-600">${extraHoursCount}</td>
+        <td class="py-3 px-4 text-right text-sm font-mono font-semibold text-gray-900">${fmtMoney(extraHoursTotal)}</td>
+      </tr>`;
+  }
+  if (djHoursCount > 0) {
+    extrasLedgerRows += `
+      <tr class="border-b border-gray-200">
+        <td class="py-3 px-4 text-sm text-gray-800">Extra: Servicio de DJ en Recesos (${djHoursCount} hr)</td>
+        <td class="py-3 px-4 text-center text-xs font-mono text-gray-600">${djHoursCount}</td>
+        <td class="py-3 px-4 text-right text-sm font-mono font-semibold text-gray-900">${fmtMoney(djTotal)}</td>
+      </tr>`;
+  }
+  if (subwoofersCount > 0) {
+    extrasLedgerRows += `
+      <tr class="border-b border-gray-200">
+        <td class="py-3 px-4 text-sm text-gray-800">Extra: Subwoofers Adicionales 18" (${subwoofersCount} un)</td>
+        <td class="py-3 px-4 text-center text-xs font-mono text-gray-600">${subwoofersCount}</td>
+        <td class="py-3 px-4 text-right text-sm font-mono font-semibold text-gray-900">${fmtMoney(subwoofersTotal)}</td>
+      </tr>`;
+  }
+  if (!extrasLedgerRows) {
+    extrasLedgerRows = `
+      <tr class="border-b border-gray-200">
+        <td class="py-3 px-4 text-sm text-gray-500">Extras Desglosados (Horas extra / DJ / Subwoofers)</td>
+        <td class="py-3 px-4 text-center text-xs font-mono text-gray-400">0</td>
+        <td class="py-3 px-4 text-right text-sm font-mono font-semibold text-gray-500">${fmtMoney(0)}</td>
+      </tr>`;
+  }
+
+  const eventDateLabel = b.selectedDate ? formatDisplayDate(b.selectedDate) : "Por definir";
+  const eventScheduleLabel = `${eventDateLabel}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}`;
+  const setupScheduleLabel = `Montaje: ${sanitizeInput(logisticsInfo.arrivalDisplay || setupDisplay)} | Desmontaje: ${sanitizeInput(logisticsInfo.teardownDisplay || teardownDisplay)}`;
+
+  return `
+    <div class="drive-invoice-document text-gray-900 font-sans leading-relaxed">
+      <!-- 1. HEADER: Official Logo, Company Name & Contact -->
+      <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b-2 border-purple-900">
+        <div class="flex items-center gap-4">
+          <img src="img/arkik_logo.jpg" alt="Arkik Productions" class="h-16 w-auto rounded-md object-contain border border-gray-200 bg-gray-950 p-1" />
+          <div>
+            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-gray-900">
+              ARKIK PRODUCTIONS - Servicios Musicales &amp; Audiovisuales
+            </h1>
+            <p class="text-xs font-semibold text-purple-800 uppercase tracking-wider mt-0.5">
+              Producción Musical en Vivo &amp; Ingeniería de Sonido Profesional
+            </p>
+            <p class="text-xs text-gray-600 mt-1 font-mono">
+              +506 6227-4984 / San José · Granadilla, Curridabat · Cédula Jurídica 3-101-884920
+            </p>
+          </div>
+        </div>
+        <div class="text-left sm:text-right shrink-0">
+          <span class="inline-block px-3 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase border ${statusBadgeClasses}">
+            ${statusBadgeText}
+          </span>
+        </div>
+      </header>
+
+      <!-- 2. META-BAR: ARK-XXXXXXXX cryptographic code, Date, and PRE-FACTURA COMERCIAL -->
+      <div class="my-5 px-4 py-3 rounded-lg bg-gray-900 text-white flex flex-wrap justify-between items-center gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="text-[11px] uppercase tracking-widest text-purple-300 font-bold">PRE-FACTURA COMERCIAL</span>
+          <span class="text-gray-500">·</span>
+          <span class="font-mono text-sm sm:text-base font-bold text-emerald-400 tracking-wide">${sanitizeInput(code)}</span>
+        </div>
+        <div class="text-xs font-mono text-gray-300">
+          Fecha de Emisión: <strong class="text-white">${sanitizeInput(issueDate)}</strong>
+        </div>
+      </div>
+
+      <!-- 3. CLIENT & LOGISTICS: 2-Column Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
+        <!-- Col 1: Client Details -->
+        <div class="p-4 rounded-lg bg-gray-50 border border-gray-200">
+          <h2 class="text-[11px] font-extrabold uppercase tracking-wider text-purple-900 border-b border-gray-200 pb-2 mb-3">
+            Datos del Cliente &amp; Contacto
+          </h2>
+          <dl class="space-y-1.5 text-xs">
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Cliente / Empresa:</dt>
+              <dd class="font-bold text-gray-900 text-right">${sanitizeInput(b.clientName || "Cliente General")}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Correo Electrónico:</dt>
+              <dd class="font-semibold text-gray-800 text-right break-all">${sanitizeInput(b.clientEmail || "No especificado")}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Teléfono WhatsApp:</dt>
+              <dd class="font-mono font-bold text-gray-900 text-right">${sanitizeInput(b.clientPhone || "Sin registrar")}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Provincia / Cantón:</dt>
+              <dd class="font-semibold text-gray-900 text-right">${sanitizeInput([b.province, b.canton].filter(Boolean).join(" / ") || "San José / Central")}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- Col 2: Logistics & Schedule -->
+        <div class="p-4 rounded-lg bg-gray-50 border border-gray-200">
+          <h2 class="text-[11px] font-extrabold uppercase tracking-wider text-purple-900 border-b border-gray-200 pb-2 mb-3">
+            Logística &amp; Cronograma Técnico
+          </h2>
+          <dl class="space-y-1.5 text-xs">
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Formato Contratado:</dt>
+              <dd class="font-bold text-purple-900 text-right">${sanitizeInput(b.serviceName || "Formato Musical")} (${sanitizeInput(b.eventType || "Evento")})</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Fecha y Hora del Show:</dt>
+              <dd class="font-mono font-bold text-gray-900 text-right">${eventScheduleLabel}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Cronograma Montaje / Desmontaje:</dt>
+              <dd class="font-mono font-semibold text-gray-800 text-right">${setupScheduleLabel}</dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-gray-500 font-medium">Referencia SINPE:</dt>
+              <dd class="font-mono font-bold text-purple-800 text-right">${sanitizeInput(b.sinpeRef || "Pendiente")}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <!-- 4. FINANCIAL LEDGER (Table) -->
+      <div class="my-6 border border-gray-300 rounded-lg overflow-hidden">
+        <table class="w-full border-collapse text-left">
+          <thead>
+            <tr class="bg-gray-900 text-white text-[11px] uppercase tracking-wider">
+              <th class="py-3 px-4 font-bold">Concepto / Desglose Financiero</th>
+              <th class="py-3 px-4 font-bold text-center w-24">Zona / Cant.</th>
+              <th class="py-3 px-4 font-bold text-right w-40">Importe (₡)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            <tr class="bg-white">
+              <td class="py-3 px-4">
+                <div class="text-sm font-bold text-gray-900">Precio Base del Formato — ${sanitizeInput(b.serviceName || "Formato Musical")}</div>
+                <div class="text-xs text-gray-500">Presentación musical en vivo, sistema de audio PA y backline profesional</div>
+              </td>
+              <td class="py-3 px-4 text-center text-xs font-mono font-semibold text-gray-700">1</td>
+              <td class="py-3 px-4 text-right text-sm font-mono font-bold text-gray-900">${fmtMoney(basePrice)}</td>
+            </tr>
+            ${extrasLedgerRows}
+            <tr class="bg-gray-50">
+              <td class="py-3 px-4">
+                <div class="text-sm font-semibold text-gray-800">Recargo de Transporte y Viáticos (${isGAM ? "GAM — Exento" : "No-GAM — Fuera de GAM +12%"})</div>
+                <div class="text-xs text-gray-500">Cobertura logística: ${sanitizeInput([b.canton, b.province].filter(Boolean).join(", "))}</div>
+              </td>
+              <td class="py-3 px-4 text-center text-xs font-mono font-bold ${isGAM ? "text-emerald-700" : "text-amber-700"}">${isGAM ? "GAM" : "No-GAM"}</td>
+              <td class="py-3 px-4 text-right text-sm font-mono font-bold text-gray-900">${fmtMoney(travelSurcharge)}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="bg-gray-100 border-t-2 border-gray-300">
+              <td colspan="2" class="py-3 px-4 text-sm font-extrabold text-gray-900 uppercase tracking-wide">Subtotal Bruto del Contrato</td>
+              <td class="py-3 px-4 text-right text-base font-mono font-extrabold text-gray-900">${fmtMoney(granTotal)}</td>
+            </tr>
+            <tr class="bg-emerald-50 border-t border-emerald-200">
+              <td colspan="2" class="py-3 px-4 text-sm font-extrabold text-emerald-900">
+                Adelanto SINPE Requerido (50% Reserva Oficial · SINPE Móvil ${SINPE_CONFIG.phone})
+              </td>
+              <td class="py-3 px-4 text-right text-base font-mono font-extrabold text-emerald-800">${fmtMoney(deposit50Amount)}</td>
+            </tr>
+            <tr class="bg-amber-50 border-t border-amber-200">
+              <td colspan="2" class="py-3 px-4 text-sm font-extrabold text-amber-900">
+                Saldo Restante en Escenario (50% Día del Evento)
+              </td>
+              <td class="py-3 px-4 text-right text-base font-mono font-extrabold text-amber-900">${fmtMoney(remainingBalance)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- 5. FOOTER: Digital Authorization Signature Block -->
+      <footer class="mt-8 pt-6 border-t-2 border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-6 items-end">
+        <div class="sm:col-span-2 text-[11px] text-gray-600 space-y-1 leading-snug">
+          <p class="font-bold text-gray-900 uppercase tracking-wider">Condiciones de Validez Comercial y Bloqueo de Agenda</p>
+          <p>1. El bloqueo definitivo de la fecha requiere la confirmación del adelanto del 50% vía SINPE Móvil al <strong>+506 6227-4984</strong> (Titular: ${sanitizeInput(SINPE_CONFIG.holder)}).</p>
+          <p>2. El saldo restante del 50% se liquida antes del inicio de la presentación en el lugar del evento.</p>
+        </div>
+        <div class="text-center border-t-2 border-purple-900 pt-2">
+          <p class="text-xs font-extrabold text-gray-900 tracking-wide">ARKIK PRODUCTIONS</p>
+          <p class="text-[11px] font-semibold text-purple-800">Firma de Autorización Digital</p>
+          <p class="text-[10px] font-mono text-gray-500 mt-0.5">Hash: ${sanitizeInput(code)}</p>
+        </div>
+      </footer>
+    </div>
+  `;
+}
+
+/**
+ * Hidrata y abre el visor ejecutivo estilo Google Drive (#invoicePreviewModal)
+ * consultando la base de datos local unificada vía StorageEngine.safeGet('arkik_bookings_v1').
+ */
+function openInvoicePreview(bookingId) {
+  const bookings = StorageEngine.safeGet('arkik_bookings_v1');
+  let booking = null;
+
+  if (bookingId && typeof bookingId === "object") {
+    booking = StorageEngine._sanitizeBookingRecord
+      ? StorageEngine._sanitizeBookingRecord(bookingId)
+      : bookingId;
+  } else if (typeof bookingId === "string" && bookingId.trim()) {
+    const targetId = bookingId.trim();
+    const normalizedTarget = targetId.startsWith("ARK-") ? targetId : `ARK-${targetId}`;
+    booking = bookings.find(b => b.id === bookingId || b.code === bookingId || b.id === normalizedTarget || b.code === normalizedTarget) || null;
+    if (!booking && typeof BookingStore !== "undefined") {
+      const fallback = BookingStore.get(targetId) || BookingStore.find(targetId);
+      if (fallback) {
+        booking = StorageEngine._sanitizeBookingRecord ? StorageEngine._sanitizeBookingRecord(fallback) : fallback;
+      }
+    }
+  }
+
+  if (!booking) {
+    booking = currentPreInvoiceBooking
+      || (typeof cart !== "undefined" && cart.createdBooking)
+      || (bookings.length ? bookings[0] : null);
+  }
+
+  if (!booking) {
+    showToast("No se encontró la reserva solicitada para visualizar la Pre-Factura.", "error");
+    return;
+  }
+
+  currentPreInvoiceBooking = booking;
+
+  const contentEl = document.getElementById("invoicePreviewContent");
+  if (contentEl) {
+    contentEl.innerHTML = buildDriveInvoicePreviewHtml(booking);
+  }
+
+  const titleEl = document.getElementById("invoice-preview-title");
+  if (titleEl) {
+    titleEl.textContent = `📄 Pre-Factura Formal - Vista Previa (${booking.code || booking.id})`;
+  }
+
+  const modal = document.getElementById("invoicePreviewModal");
+  if (modal) {
+    if (typeof ModalController !== "undefined" && typeof ModalController.open === "function") {
+      ModalController.open("invoicePreviewModal");
+    }
+    modal.classList.remove("hidden", "opacity-0", "pointer-events-none", "invisible");
+    modal.classList.add("flex", "opacity-100", "pointer-events-auto", "visible");
+  }
 }
 
 function closeInvoicePreview() {
-  closePreInvoicePreview();
+  const modal = document.getElementById("invoicePreviewModal");
+  if (modal) {
+    modal.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+    modal.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+    if (typeof ModalController !== "undefined" && typeof ModalController.close === "function") {
+      ModalController.close("invoicePreviewModal");
+    }
+  }
 }
 
 /**
@@ -6954,7 +7374,7 @@ async function triggerPreInvoicePDFDownload() {
   }
 
   if (typeof preloadExecutiveImages === "function") {
-    await preloadExecutiveImages(targetCanvas).catch(() => {});
+    await preloadExecutiveImages(targetCanvas).catch(() => { });
   }
 
   const rawCode = String(booking.code || booking.id || "ARK-00000000");
@@ -7011,8 +7431,10 @@ function triggerPreInvoiceDOCXDownload() {
 /**
  * Intercepta la acción de descarga de PDF para mostrar siempre primero el visor
  * interactivo A4 (#preInvoicePreviewModal) en lugar de una descarga silenciosa.
+ * Cuando se invoca desde el gancho de validación administrativa con
+ * `{ backgroundDownload: true, filename }`, compila y descarga el PDF validado en segundo plano.
  */
-async function exportVoucherPDF(bookingPayload) {
+async function exportVoucherPDF(bookingPayload, options = {}) {
   let booking = null;
   if (bookingPayload && typeof bookingPayload === "object") {
     booking = bookingPayload;
@@ -7032,6 +7454,12 @@ async function exportVoucherPDF(bookingPayload) {
   }
   if (typeof cart !== "undefined" && !cart.voucherImage && typeof window !== "undefined" && window._activeVoucherBlob) {
     cart.voucherImage = window._activeVoucherBlob;
+  }
+
+  if (options && options.backgroundDownload) {
+    const rawCode = String(booking.code || booking.id || "RESERVA").replace(/^ARK-/, "");
+    const pdfFilename = options.filename || `ARK-${rawCode}-VALIDADO.pdf`;
+    return renderAndSaveAccountingPDF(booking, pdfFilename, "Validado");
   }
 
   await openPreInvoicePreviewModal(booking);
@@ -7103,8 +7531,15 @@ function printInvoicePreview() {
     showToast("Abra primero la vista previa de la Pre-Factura.", "error");
     return;
   }
-  showToast("Abriendo diálogo de impresión del navegador...", "info");
+  showToast("Abriendo diálogo de impresión / guardado en PDF...", "info");
+  document.body.classList.add("printing-invoice-preview");
+  const cleanup = () => {
+    document.body.classList.remove("printing-invoice-preview");
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
   window.print();
+  setTimeout(cleanup, 1500);
 }
 
 /**
@@ -7354,12 +7789,12 @@ async function validateBankPayment(b) {
   // `_absorb` reemplaza el objeto dentro del store: el `b` del llamador queda
   // obsoleto, así que de aquí en adelante se usa la fila devuelta.
   const confirmed = res.booking || b;
-  showToast(`Depósito bancario validado. Reserva ${confirmed.code} CONFIRMADA.`, "success");
+  showToast("Reserva confirmada. El comprobante PDF ha sido generado.", "success");
 
-  // 1) Descarga automática de la Pre-Factura VALIDADA: ARK-[CODIGO]-VALIDADO.pdf
+  // 1) Generación automática en segundo plano de la Pre-Factura VALIDADA: ARK-[CODIGO]-VALIDADO.pdf
   const rawCode = String(confirmed.code || confirmed.id || "RESERVA").replace(/^ARK-/, "");
   const validatedPdfName = `ARK-${rawCode}-VALIDADO.pdf`;
-  renderAndSaveAccountingPDF(confirmed, validatedPdfName, "Validado")
+  exportVoucherPDF(confirmed, { backgroundDownload: true, filename: validatedPdfName })
     .then(() => showToast(`Archivo ${validatedPdfName} descargado.`, "success"))
     .catch((err) => {
       console.warn("PDF validado fallback:", err);
@@ -7714,11 +8149,11 @@ function buildOwnerExecutiveReportHtml(periodFilter, metrics, bookingsList) {
       <div style="margin: 0 0 8px 0; font-size: 10px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px;">1. Resumen Ejecutivo de KPIs</div>
       <div style="display: flex; gap: 8px; width: 100%; box-sizing: border-box;">
         ${kpiFlex("Facturación Total Proyectada", formatCRC(total), "Suma de cotizaciones del período",
-          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 22px; font-weight: 800; color: #0f172a;")}
+    "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 22px; font-weight: 800; color: #0f172a;")}
         ${kpiFlex("Adelantos Cobrados (50% SINPE)", formatCRC(deposits), "Depósitos verificados & pendientes",
-          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #047857;")}
+      "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #047857;")}
         ${kpiFlex("Saldos Pendientes por Cobrar", formatCRC(pending), "A cobrar en sitio el día del evento",
-          "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #3730a3;")}
+        "font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 18px; font-weight: 800; color: #3730a3;")}
         ${kpiFlex("Volumen de Reservas", String(volume), `Tasa de Ocupación: ${occupancy}% · Máx. ${DEFAULT_MAX_EVENTS_PER_DAY}/día`,
           "font-size: 22px; font-weight: 900; color: #0f172a;")}
       </div>
@@ -8083,7 +8518,7 @@ async function openExecutiveReportPreviewModal() {
   if (stage && typeof stage.scrollTo === "function") stage.scrollTo({ left: 0, top: 0 });
 
   // 4. Las imágenes del documento deben estar decodificadas antes del clic de exportación.
-  preloadExecutiveImages(canvas).catch(() => {});
+  preloadExecutiveImages(canvas).catch(() => { });
 }
 
 /**
@@ -9149,7 +9584,7 @@ function initApp() {
   // Guardia de rendimiento móvil: difiere renders de nube durante el scroll.
   PerfGuard.init();
   // Inicializar cache de assets (logo Base64) ANTES de renderizar vistas
-  ArkikAssets.init().catch(() => {});
+  ArkikAssets.init().catch(() => { });
   normalizeSpaPath();
   renderCatalog(CATALOG_SERVICES);
   renderGalleryFilters();
@@ -9164,9 +9599,9 @@ function initApp() {
   // Remote-first boot: la primera pintura sale del caché local y, en paralelo,
   // se revalidan precios, disponibilidad y (si hay sesión) reservas. Nada de
   // esto bloquea el render ni tira una excepción si la API está caída.
-  PriceManager.loadPublic().catch(function () {});
-  CloudSync.refresh("boot").catch(function () {});
-  AdminModule.restoreSession().catch(function () {});
+  PriceManager.loadPublic().catch(function () { });
+  CloudSync.refresh("boot").catch(function () { });
+  AdminModule.restoreSession().catch(function () { });
   // Motores Canvas 60 FPS aislados en viewport
   initHeroStringsEffect();
   initFooterParticlesEffect();
@@ -9961,12 +10396,12 @@ function setupEventListeners() {
         }
         const endISO = to
           ? (() => {
-              const [ty, tm, td] = to.split("-").map(Number);
-              const d = new Date(ty, tm - 1, td);
-              if (Number.isNaN(d.getTime())) return null;
-              if (d.getFullYear() !== ty || d.getMonth() !== tm - 1 || d.getDate() !== td) return null;
-              return d;
-            })()
+            const [ty, tm, td] = to.split("-").map(Number);
+            const d = new Date(ty, tm - 1, td);
+            if (Number.isNaN(d.getTime())) return null;
+            if (d.getFullYear() !== ty || d.getMonth() !== tm - 1 || d.getDate() !== td) return null;
+            return d;
+          })()
           : null;
         if (to && !endISO) {
           showToast("La fecha final no es una fecha real.", "error");
@@ -11080,21 +11515,17 @@ function goToStep(stepNumber) {
       updateModalStep(2);
       return;
     }
-    const form = document.getElementById("booking-form-step3");
-    if (form && !form.checkValidity()) {
-      form.reportValidity();
-      updateModalStep(3);
-      return;
-    }
     if (!validateClientData()) {
       updateModalStep(3);
       return;
     }
     if (!validatePoliciesAcceptance()) {
+      showStep3ErrorBanner("Debe aceptar los Términos y Condiciones de Contratación y Políticas de Cancelación para continuar al Paso 4.");
       showToast("⚠️ Debe aceptar los Términos y Condiciones para continuar.", "error");
       updateModalStep(3);
       return;
     }
+    clearStep3ErrorBanner();
     saveClientAndLocationValues();
   }
 
@@ -11126,24 +11557,21 @@ function handleStep3Submit(event) {
 
   if (isHoneypotTriggered()) return; // neutralización silenciosa de bots
 
-  // Mismas validaciones que goToStep(4): si algo falla, no bloqueamos el botón.
+  // Mismas validaciones que goToStep(4): si algo falla, mostramos el banner de error y bloqueamos el Paso 4.
   if (!validateCalendarSelection()) {
     updateModalStep(2);
-    return;
-  }
-  const form = document.getElementById("booking-form-step3");
-  if (form && !form.checkValidity()) {
-    form.reportValidity();
     return;
   }
   if (!validateClientData()) return;
 
   // T&C de contratación: obligatorio marcar la casilla para avanzar al pago.
   if (!validatePoliciesAcceptance()) {
+    showStep3ErrorBanner("Debe aceptar los Términos y Condiciones de Contratación y Políticas de Cancelación para continuar al Paso 4.");
     showToast("⚠️ Debe aceptar los Términos y Condiciones para continuar.", "error");
     return;
   }
 
+  clearStep3ErrorBanner();
   lockStep3Submit();
   goToStep(4); // goToStep re-valida (mismo estado) y hace la transición formal
 }
@@ -11190,14 +11618,52 @@ function validateCalendarSelection() {
 }
 
 /**
- * Nombre/empresa estricto: mínimo 2 palabras y 6 caracteres en total.
- * Bloquea datos dummy tipo "aaa", "juan", "x y" (1 palabra o < 6 chars).
+ * Inyecta o actualiza el banner de error del Paso 3 (#step3-error-banner)
+ * con estética glassmórfica roja y bloquea el avance al Paso 4.
+ */
+function showStep3ErrorBanner(message) {
+  let banner = document.getElementById("step3-error-banner");
+  if (!banner) {
+    const form = document.getElementById("booking-form-step3");
+    if (!form) return;
+    banner = document.createElement("div");
+    banner.id = "step3-error-banner";
+    banner.setAttribute("role", "alert");
+    banner.setAttribute("aria-live", "assertive");
+    banner.className = "bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs p-3 rounded-xl shadow-lg mt-3";
+    const submitRow = form.querySelector("#btn-continue-pay")?.parentElement;
+    if (submitRow) {
+      form.insertBefore(banner, submitRow);
+    } else {
+      form.appendChild(banner);
+    }
+  }
+  banner.textContent = "⚠️ " + message;
+  banner.classList.remove("hidden");
+}
+
+function clearStep3ErrorBanner() {
+  const banner = document.getElementById("step3-error-banner");
+  if (banner) {
+    banner.textContent = "";
+    banner.classList.add("hidden");
+  }
+}
+
+/**
+ * Nombre/empresa estricto: mínimo 2 palabras y >= 6 caracteres en total.
+ * Rechaza entradas triviales o repetitivas como "aaa", "aaa aaaa", "xx yy".
  */
 function isValidClientName(value) {
   const v = String(value || "").trim();
   if (v.length < 6) return false;
   const words = v.split(/\s+/).filter(Boolean);
-  return words.length >= 2;
+  if (words.length < 2) return false;
+  if (words.filter(w => w.length >= 2).length < 2) return false;
+  const compact = v.replace(/\s+/g, "").toLowerCase();
+  if (/^(.)\1+$/.test(compact)) return false;
+  if (words.every(w => /^(.)\1+$/i.test(w))) return false;
+  return true;
 }
 
 function isValidClientLocation() {
@@ -11210,7 +11676,9 @@ function validateClientData() {
   const nameEl = document.getElementById("client-name");
   const nameVal = nameEl ? nameEl.value.trim() : "";
   if (!isValidClientName(nameVal)) {
-    nameEl && showFieldError(nameEl, "El nombre o empresa debe tener al menos 2 palabras y 6 caracteres (ej. 'Carlos Rodríguez').");
+    const msg = "Nombre inválido: debe ingresar nombre completo o empresa con al menos 2 palabras y 6 caracteres reales (ej. 'Carlos Rodríguez').";
+    nameEl && showFieldError(nameEl, msg);
+    showStep3ErrorBanner(msg);
     if (nameEl) { nameEl.focus(); triggerFieldShake(nameEl); }
     return false;
   }
@@ -11218,7 +11686,9 @@ function validateClientData() {
 
   const phoneEl = document.getElementById("client-phone");
   if (phoneEl && !isValidCRPhone(phoneEl.value)) {
-    showFieldError(phoneEl, "Teléfono inválido: use formato 8888-8888 o +506 8888-8888.");
+    const msg = "Teléfono de Costa Rica inválido: debe contener 8 dígitos iniciando con 2, 6, 7 u 8 (formato 8888-8888 o +506 8888-8888).";
+    showFieldError(phoneEl, msg);
+    showStep3ErrorBanner(msg);
     phoneEl.focus();
     triggerFieldShake(phoneEl);
     return false;
@@ -11227,7 +11697,9 @@ function validateClientData() {
 
   const emailEl = document.getElementById("client-email");
   if (emailEl && !isValidRFC5322Email(emailEl.value)) {
-    showFieldError(emailEl, "Ingrese un correo electrónico válido (RFC 5322).");
+    const msg = "Correo electrónico inválido: ingrese una dirección de correo con formato estándar RFC 5322 (ej. cliente@empresa.com).";
+    showFieldError(emailEl, msg);
+    showStep3ErrorBanner(msg);
     emailEl.focus();
     triggerFieldShake(emailEl);
     return false;
@@ -11235,7 +11707,9 @@ function validateClientData() {
   if (emailEl) clearFieldError(emailEl);
 
   if (!isValidClientLocation()) {
-    showToast("Seleccione Provincia y Cantón para continuar.", "error");
+    const msg = "Ubicación incompleta: seleccione la Provincia y el Cantón del evento para calcular la logística.";
+    showStep3ErrorBanner(msg);
+    showToast(msg, "error");
     const prov = document.getElementById("booking-province");
     const canton = document.getElementById("booking-canton");
     if (prov && !prov.value) { markFieldInvalid(prov); triggerFieldShake(prov); }
@@ -11243,6 +11717,18 @@ function validateClientData() {
     return false;
   }
 
+  const addressEl = document.getElementById("booking-address");
+  if (addressEl && String(addressEl.value || "").trim().length < 6) {
+    const msg = "Dirección inválida: indique el lugar exacto, salón de eventos o señas detalladas (mínimo 6 caracteres).";
+    showFieldError(addressEl, msg);
+    showStep3ErrorBanner(msg);
+    addressEl.focus();
+    triggerFieldShake(addressEl);
+    return false;
+  }
+  if (addressEl) clearFieldError(addressEl);
+
+  clearStep3ErrorBanner();
   return true;
 }
 
@@ -11322,14 +11808,18 @@ function updateStep3SubmitButtonState() {
 
   const isAllValid = isNameValid && isPhoneValid && isEmailValid && isAddressValid && isLocValid && isPoliciesAccepted;
 
-  if (isAllValid) {
+  // Mantenemos el botón habilitado (salvo durante el bloqueo de envío) para interceptar
+  // cualquier clic en "Siguiente / Continuar" y mostrar #step3-error-banner si falta algún dato.
+  if (!step3SubmitLocked) {
     btn.disabled = false;
-    btn.classList.remove("opacity-50", "cursor-not-allowed");
-    btn.classList.add("cursor-pointer");
+  }
+  if (isAllValid) {
+    btn.classList.remove("opacity-50", "opacity-80", "cursor-not-allowed");
+    btn.classList.add("opacity-100", "cursor-pointer");
+    clearStep3ErrorBanner();
   } else {
-    btn.disabled = true;
-    btn.classList.add("opacity-50", "cursor-not-allowed");
-    btn.classList.remove("cursor-pointer");
+    btn.classList.remove("opacity-100", "cursor-not-allowed");
+    btn.classList.add("opacity-80", "cursor-pointer");
   }
 }
 
@@ -11377,5 +11867,2844 @@ function saveClientAndLocationValues() {
   cart.clientEmail = cleanText(document.getElementById("client-email").value, 120);
   const clientIdEl = document.getElementById("client-id");
   if (clientIdEl) cart.clientId = cleanText(clientIdEl.value, 30);
-  cart.eventType = cleanText(document.getElementById("event-type
-... [truncated for diff preview]
+  cart.eventType = cleanText(document.getElementById("event-type").value, 40);
+  cart.province = document.getElementById("booking-province").value;
+  cart.canton = document.getElementById("booking-canton").value;
+  cart.address = cleanText(document.getElementById("booking-address").value, 300);
+}
+
+function updateModalStep(stepNumber) {
+  const direction = stepNumber > lastModalStep ? "forward" : "backward";
+  lastModalStep = stepNumber;
+
+  for (let i = 1; i <= 4; i++) {
+    const stepIndicator = document.getElementById(`step-indicator-${i}`);
+    const stepPane = document.getElementById(`modal-step-${i}`);
+
+    if (stepIndicator) {
+      if (i === stepNumber) {
+        stepIndicator.classList.add("border-purple-500", "bg-purple-900/40", "text-purple-300");
+        stepIndicator.classList.remove("border-gray-700", "text-gray-500", "border-emerald-500", "text-emerald-400");
+      } else if (i < stepNumber) {
+        stepIndicator.classList.add("border-emerald-500", "bg-emerald-950/30", "text-emerald-400");
+        stepIndicator.classList.remove("border-purple-500", "border-gray-700", "text-gray-500", "bg-purple-900/40");
+      } else {
+        stepIndicator.classList.remove("border-purple-500", "bg-purple-900/40", "text-purple-300", "border-emerald-500", "text-emerald-400");
+        stepIndicator.classList.add("border-gray-700", "text-gray-500");
+      }
+    }
+
+    if (stepPane) {
+      if (i === stepNumber) {
+        stepPane.classList.remove("hidden");
+        animateStepPane(stepPane, direction);
+      } else {
+        stepPane.classList.add("hidden");
+      }
+    }
+  }
+
+  // Connectors: se iluminan en verde cuando el paso a su izquierda está completo
+  for (let i = 1; i < 4; i++) {
+    const node = document.getElementById(`step-indicator-${i}`);
+    const conn = node && node.nextElementSibling;
+    if (conn && conn.classList.contains("modal-stepper-connector")) {
+      conn.classList.toggle("connector--complete", i < stepNumber);
+    }
+  }
+
+  // Volver al inicio del contenido del modal en cada transición de paso
+  const modalCard = document.getElementById("modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+
+  if (stepNumber === 2) {
+    CalendarModule.init();
+    renderTimeSelector();
+    updateStep2ContinueState();
+  }
+
+  if (stepNumber === 2) {
+    // Update selection summary card
+    const summaryFormat = document.getElementById("summary-format");
+    const summaryDate = document.getElementById("summary-date");
+    const selectedDateHeader = document.getElementById("selected-date-header");
+    const logisticsPill = document.getElementById("logistics-pill");
+
+    if (cart.selectedDate && cart.selectedService) {
+      const service = cart.selectedService;
+      const dateISO = cart.selectedDate;
+      const [y, m, d] = dateISO.split("-").map(Number);
+      const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+      const monthName = monthNames[m - 1];
+      const dayName = CALENDAR_LOCALE.weekdays[(new Date(y, m - 1, d).getDay() + 6) % 7];
+
+      if (summaryFormat) summaryFormat.textContent = service.name;
+      if (summaryDate) summaryDate.textContent = `${dayName} ${d} de ${monthName} ${y}`;
+
+      if (selectedDateHeader) selectedDateHeader.textContent = `Fecha: ${dateISO}`;
+
+      // Show logistics pill with setup/teardown times from service
+      if (logisticsPill) {
+        const setupTime = service.setup_display || "2.5 horas antes";
+        const teardownTime = service.teardown_display || "1.5 horas después";
+        logisticsPill.classList.remove("hidden");
+        logisticsPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="text-sm text-purple-200">Montaje ${setupTime} · Desmontaje ${teardownTime}</span>`;
+      }
+    } else {
+      if (logisticsPill) logisticsPill.classList.add("hidden");
+    }
+  }
+
+  if (stepNumber === 3) {
+    const summary = document.getElementById("step3-date-time");
+    if (summary) {
+      summary.textContent = cart.selectedDate
+        ? `${cart.selectedDate}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`
+        : "Pendiente de selección";
+    }
+    if (typeof updateStep3SubmitButtonState === "function") {
+      updateStep3SubmitButtonState();
+    }
+  }
+
+  if (stepNumber === 4) {
+    const gateway = document.getElementById("sinpe-gateway-view");
+    const voucher = document.getElementById("voucher-view");
+    if (gateway && voucher) {
+      if (cart.createdBooking) {
+        gateway.classList.add("hidden");
+        voucher.classList.remove("hidden");
+      } else {
+        voucher.classList.add("hidden");
+        gateway.classList.remove("hidden");
+        // Reanudar el estado de subida previo (miniatura + botón habilitado).
+        updateVoucherUploadUI();
+      }
+    }
+    updateOfflineModeBanner();
+    unlockStep3Submit(); // llega al paso 4 → reactivar el botón de envío
+  }
+
+  if (cart.selectedService) {
+    const badgeEl = document.getElementById("modal-service-duration-badge");
+    if (badgeEl) {
+      badgeEl.textContent = `Formato Seleccionado (${cart.selectedService.duration || "2 Horas"})`;
+    }
+    document.getElementById("modal-service-name").textContent = cart.selectedService.name;
+    document.getElementById("modal-service-price").textContent = formatCRC(PriceManager.getServicePrice(cart.selectedService));
+    document.getElementById("modal-service-desc").textContent = cart.selectedService.description;
+
+    const logBox = document.getElementById("modal-service-logistics");
+    if (logBox) {
+      // Card clara: tiempos en fuente monoespaciada gris con ícono de reloj
+      logBox.innerHTML = `
+        <span class="format-card__time"><span aria-hidden="true">⏱️</span> Montaje: ${sanitizeInput(cart.selectedService.setup_display || "2h antes")}</span>
+        <span class="format-card__time"><span aria-hidden="true">⏱️</span> Desmontaje: ${sanitizeInput(cart.selectedService.teardown_display || "1h después")}</span>
+      `;
+    }
+
+    renderDynamicExtrasCounters();
+    updateSummaryPrices();
+  }
+}
+
+function animateStepPane(pane, direction) {
+  pane.classList.remove("animate-step-in", "animate-step-in-back");
+  void pane.offsetWidth;
+  pane.classList.add(direction === "forward" ? "animate-step-in" : "animate-step-in-back");
+}
+
+// ---- Contadores de Extras Dinámicos ----
+
+function renderDynamicExtrasCounters() {
+  const container = document.getElementById("extras-container");
+  if (!container) return;
+
+  const extraHourPrice = cart.extraHoursUnitPrice;
+  const djPrice = PriceManager.getExtraPrice("dj_service");
+  const subPrice = PriceManager.getExtraPrice("subwoofers");
+
+  container.innerHTML = [
+    counterRow({
+      key: "extraHoursCount",
+      name: "Hora(s) Adicional(es) de Show",
+      tag: "50% Tarifa Base",
+      unitPrice: `${formatCRC(extraHourPrice)} / hora`,
+      priceText: `50% de ${formatCRC(PriceManager.getServicePrice(cart.selectedService))} — máx. ${MAX_EXTRAS.extraHoursCount}`,
+      value: cart.extraHoursCount,
+      max: MAX_EXTRAS.extraHoursCount
+    }),
+    counterRow({
+      key: "djHoursCount",
+      name: "Servicio de DJ para Recesos",
+      unitPrice: `${formatCRC(djPrice)} / hr`,
+      priceText: "Música continua y mezcla en vivo durante los descansos de la banda",
+      value: cart.djHoursCount,
+      max: MAX_EXTRAS.djHoursCount
+    }),
+    counterRow({
+      key: "subwoofersCount",
+      name: 'Subwoofers Extra de 18"',
+      unitPrice: `${formatCRC(subPrice)} / un`,
+      priceText: "Potencia adicional de frecuencias bajas para salones amplios o exteriores",
+      value: cart.subwoofersCount,
+      max: MAX_EXTRAS.subwoofersCount
+    })
+  ].join("");
+}
+
+/**
+ * Tarjeta de extra clara: título + tag a la izquierda, stepper circular
+ * (− / valor / +) y badge de precio negro mate a la derecha.
+ * En móvil (< 640px) la tarjeta apila verticalmente vía CSS.
+ */
+function counterRow({ key, name, tag, unitPrice, priceText, value, max }) {
+  const atMin = value <= 0;
+  const atMax = value >= max;
+  const btnDisabled = " is-disabled";
+  return `
+    <div class="extra-card">
+      <div class="extra-card__info">
+        <div class="extra-card__head">
+          <span class="extra-card__name">${sanitizeInput(name)}</span>
+          ${tag ? `<span class="extra-card__tag">${sanitizeInput(tag)}</span>` : ""}
+        </div>
+        <p class="extra-card__price-text">${sanitizeInput(priceText)}</p>
+      </div>
+      <div class="extra-card__controls">
+        <div class="extra-stepper">
+          <button type="button" onclick="adjustExtra('${key}', -1)" ${atMin ? "disabled" : ""} class="extra-step-btn${atMin ? btnDisabled : ""}" aria-label="Disminuir ${sanitizeInput(name)}">−</button>
+          <span class="extra-stepper__value" aria-live="polite">${value}</span>
+          <button type="button" onclick="adjustExtra('${key}', 1)" ${atMax ? "disabled" : ""} class="extra-step-btn${atMax ? btnDisabled : ""}" aria-label="Aumentar ${sanitizeInput(name)}">+</button>
+        </div>
+        <span class="extra-card__price-badge">${sanitizeInput(unitPrice)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function adjustExtra(key, delta) {
+  const current = cart[key] || 0;
+  const max = MAX_EXTRAS[key] ?? Infinity;
+  const newValue = Math.min(max, Math.max(0, current + delta));
+  cart[key] = newValue;
+
+  renderDynamicExtrasCounters();
+  updateSummaryPrices();
+  cart.persist();
+
+  if (delta > 0) {
+    showToast(newValue >= max ? `Máximo de ${max} alcanzado` : "Cotización actualizada (+)");
+  }
+}
+
+// ---- Resumen Reactivo de Precios ----
+
+function updateSummaryPrices() {
+  document.querySelectorAll(".calc-subtotal").forEach(el => {
+    setPriceText(el, formatCRC(cart.subtotal));
+  });
+
+  document.querySelectorAll(".calc-gran-total").forEach(el => {
+    setPriceText(el, formatCRC(cart.granTotal));
+  });
+
+  document.querySelectorAll(".calc-deposit-50").forEach(el => {
+    el.textContent = formatCRC(cart.deposit50Amount);
+  });
+
+  document.querySelectorAll(".calc-remaining-50").forEach(el => {
+    el.textContent = formatCRC(cart.remainingBalance);
+  });
+
+  updateSurchargeBox();
+}
+
+function updateSurchargeBox() {
+  const box = document.getElementById("surcharge-notice-box");
+  if (!box) return;
+  box.innerHTML = "";
+
+  const banner = document.createElement("div");
+  banner.className = "surcharge-banner";
+
+  const icon = document.createElement("span");
+  icon.className = "surcharge-banner__icon";
+  icon.setAttribute("aria-hidden", "true");
+
+  const body = document.createElement("div");
+  body.className = "surcharge-banner__body";
+
+  const title = document.createElement("p");
+  title.className = "surcharge-banner__title";
+
+  const detail = document.createElement("p");
+  detail.className = "surcharge-banner__detail";
+
+  if (!cart.province) {
+    // Pendiente de selección → banner ámbar
+    banner.classList.add("surcharge-banner--pending");
+    icon.textContent = "⚠️";
+    title.textContent = "Pendiente de selección";
+    detail.textContent = "Seleccione su provincia para calcular los viáticos de transporte.";
+  } else {
+    // Provincia seleccionada → banner verde (viáticos ya calculables)
+    banner.classList.add("surcharge-banner--ok");
+    icon.textContent = "✅";
+    title.textContent = "Viáticos calculados según provincia";
+    if (!GAM_PROVINCES.includes(cart.province)) {
+      detail.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.province}): +${formatCRC(cart.travelSurcharge)}`;
+    } else if (!cart.canton) {
+      detail.textContent = `${cart.province} está dentro del GAM — seleccione el cantón para confirmar cobertura (₡0).`;
+    } else if (cart.isNonGam) {
+      detail.textContent = `Recargo del 12% por viáticos fuera del GAM (${cart.canton}, ${cart.province}): +${formatCRC(cart.travelSurcharge)}`;
+    } else {
+      detail.textContent = `Cobertura GAM (${cart.canton}, ${cart.province}): ₡0 (Gratis)`;
+    }
+  }
+
+  box.appendChild(banner);
+  banner.appendChild(icon);
+  banner.appendChild(body);
+  body.appendChild(title);
+  body.appendChild(detail);
+}
+
+// ---- Provincias & Cantones ----
+
+function populateProvinces() {
+  const provSelect = document.getElementById("booking-province");
+  if (!provSelect) return;
+  provSelect.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione Provincia...</option>' +
+    Object.keys(PROVINCES_AND_CANTONES).map(p => `<option value="${sanitizeInput(p)}">${sanitizeInput(p)}</option>`).join("");
+}
+
+function populateCantones(province) {
+  const cantonSelect = document.getElementById("booking-canton");
+  if (!cantonSelect) return;
+
+  const list = (province && PROVINCES_AND_CANTONES[province]) ? PROVINCES_AND_CANTONES[province] : [];
+  cantonSelect.innerHTML = '<option value="" disabled selected class="text-gray-500 bg-[#0b0714]">Seleccione Cantón...</option>' +
+    list.map(c => `<option value="${sanitizeInput(c)}">${sanitizeInput(c)}</option>`).join("");
+}
+
+function restoreBookingToUI() {
+  if (!cart.province && !cart.canton && !cart.selectedDate && !cart.clientName) return;
+
+  populateProvinces();
+  const prov = document.getElementById("booking-province");
+  if (prov && cart.province) {
+    prov.value = cart.province;
+    populateCantones(cart.province);
+    const canton = document.getElementById("booking-canton");
+    if (canton && cart.canton) canton.value = cart.canton;
+  }
+
+  setField("client-name", cart.clientName);
+  setField("client-phone", cart.clientPhone);
+  setField("client-email", cart.clientEmail);
+  setField("event-type", cart.eventType);
+  setField("booking-address", cart.address);
+  setField("sinpe-reference", cart.sinpeRef);
+
+  if (cart.selectedDate) CalendarModule.init();
+
+  updateSummaryPrices();
+}
+
+// ============================================================
+// 15B. VOUCHER UPLOADER & CLIENT-SIDE COMPRESSION
+// Subida nativa del comprobante SINPE (sin servicios de terceros):
+// se comprime a JPEG en canvas (< ~100KB) y se embebe como data-URL
+// en CartState → visible en el Dashboard del Staff sin backups externos.
+// ============================================================
+
+const VOUCHER_MAX_WIDTH = 800; // ancho máximo de redimensionamiento
+const VOUCHER_JPEG_QUALITY = 0.7; // calidad de compresión JPEG
+const VOUCHER_MAX_BYTES = 102400; // ~100KB objetivo tras comprimir
+const VOUCHER_MAX_SOURCE_MB = 8; // límite de tamaño del archivo original
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo seleccionado."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Imagen inválida o corrupta."));
+    img.src = src;
+  });
+}
+
+/**
+ * Redimensiona y comprime el comprobante a un data-URL JPEG (~<100KB)
+ * usando el canvas del navegador. Nunca toca servidores ni enlaces externos.
+ */
+async function compressImage(file) {
+  const rawDataUrl = await readFileAsDataURL(file);
+  const img = await loadImage(rawDataUrl);
+
+  let width = img.naturalWidth || img.width;
+  let height = img.naturalHeight || img.height;
+  if (!width || !height) throw new Error("No se pudo leer las dimensiones de la imagen.");
+
+  const maxDim = VOUCHER_MAX_WIDTH;
+  if (width > maxDim) {
+    height = Math.round((height * maxDim) / width);
+    width = maxDim;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  // Contexto 2D no disponible (canvas deshabilitado o memoria agotada):
+  // se lanza un error tipado que handleVoucherUpload convierte en toast.
+  if (!ctx) throw new Error("El navegador no permitió procesar la imagen del comprobante.");
+  ctx.drawImage(img, 0, 0, width, height);
+
+  return canvas.toDataURL("image/jpeg", VOUCHER_JPEG_QUALITY);
+}
+
+/**
+ * Procesa el archivo seleccionado: valida tipo/tamaño y delega en la
+ * compresión. Al terminar actualiza CartState + refleja el estado en la UI.
+ */
+function handleVoucherUpload(file) {
+  if (!file) return;
+
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+    showToast("Formato no permitido. Use JPG, PNG o WEBP.", "error");
+    return;
+  }
+  if (file.size > VOUCHER_MAX_SOURCE_MB * 1024 * 1024) {
+    showToast(`La imagen supera los ${VOUCHER_MAX_SOURCE_MB}MB permitidos.`, "error");
+    return;
+  }
+
+  compressImage(file)
+    .then(dataUrl => {
+      cart.voucherImage = dataUrl;
+      cart.voucherRaw = dataUrl;
+      cart.persist();
+      updateVoucherUploadUI();
+      showToast("Comprobante cargado y comprimido correctamente.", "success");
+    })
+    .catch(err => {
+      showToast(err.message || "No se pudo cargar el comprobante.", "error");
+    });
+}
+
+/**
+ * Sincroniza la zona de subida con el estado del carrito
+ * (icono ↔ miniatura, textos y habilitación del botón de confirmación).
+ */
+function updateVoucherUploadUI() {
+  const img = document.getElementById("voucher-thumb");
+  const icon = document.getElementById("voucher-upload-icon");
+  const txt = document.getElementById("voucher-upload-text");
+  const status = document.getElementById("voucher-upload-status");
+
+  if (cart.voucherImage) {
+    if (img) {
+      img.src = cart.voucherImage;
+      img.classList.remove("hidden");
+    }
+    if (icon) icon.classList.add("hidden");
+    if (txt) {
+      txt.textContent = "Comprobante Cargado ✓";
+      txt.classList.add("text-emerald-400");
+    }
+    if (status) status.textContent = "JPG/PNG/WEBP · comprimido al instante";
+  } else {
+    if (img) {
+      img.classList.add("hidden");
+      img.removeAttribute("src");
+    }
+    if (icon) icon.classList.remove("hidden");
+    if (txt) {
+      txt.textContent = "Sube la captura de tu transferencia SINPE";
+      txt.classList.remove("text-emerald-400");
+    }
+    if (status) status.textContent = "JPG, PNG o WEBP · se comprime al instante (<100kb)";
+  }
+
+  updateGenerateButtonState();
+}
+
+/**
+ * Habilita "Generar Voucher y Confirmar" SOLO cuando existe comprobante cargado.
+ */
+function updateGenerateButtonState() {
+  const btn = document.getElementById("btn-submit-booking");
+  if (!btn) return;
+  btn.disabled = cart.isSubmitting || !Boolean(cart.voucherImage);
+}
+
+/**
+ * Restablece el estado de la subida (usado al volver a empezar el flujo).
+ */
+function resetVoucherUploadState() {
+  cart.voucherRaw = null;
+  cart.voucherImage = null;
+  cart.persist();
+  updateVoucherUploadUI();
+}
+
+// ============================================================
+// CLIENT THROTTLER — rate limiting de envíos por sesión de usuario
+// ============================================================
+// Máximo 3 intentos de reserva cada 5 minutos (por dispositivo, con
+// persistencia en SafeStorage) + bloqueo mínimo de 3 s del botón en
+// cada toque. Anti-spam client-side: no sustituye RLS en la nube, pero
+// dispara el envío espurio de doble toque y los bots lentos.
+const ClientThrottler = {
+  _KEY: "arkik_submit_throttle_v1",
+  _lockUntil: 0,
+
+  _read() {
+    try {
+      const raw = SafeStorage.getItem(this._KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter((t) => typeof t === "number") : [];
+    } catch (err) { return []; }
+  },
+  _write(arr) {
+    try { SafeStorage.setItem(this._KEY, JSON.stringify(arr)); } catch (err) { /* noop */ }
+  },
+  _windowMs() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitWindowMs)
+      ? CLIENT_GUARD_CONFIG.submitWindowMs : 300000;
+  },
+  _max() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.maxSubmitAttempts)
+      ? CLIENT_GUARD_CONFIG.maxSubmitAttempts : 3;
+  },
+  _submitLockMs() {
+    return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitLockMs)
+      ? CLIENT_GUARD_CONFIG.submitLockMs : 3000;
+  },
+  isLocked() { return Date.now() < this._lockUntil; },
+  lock(ms) { this._lockUntil = Date.now() + (ms || this._submitLockMs()); },
+  check() {
+    const now = Date.now();
+    if (this.isLocked()) return { ok: false, reason: "locked", retryMs: this._lockUntil - now };
+    const recent = this._read().filter((t) => now - t < this._windowMs());
+    if (recent.length >= this._max()) {
+      const oldest = Math.min.apply(null, recent);
+      return { ok: false, reason: "rate", retryMs: Math.max(1000, oldest + this._windowMs() - now) };
+    }
+    return { ok: true };
+  },
+  record() {
+    const now = Date.now();
+    const recent = this._read().filter((t) => now - t < this._windowMs());
+    recent.push(now);
+    this._write(recent);
+    this.lock();
+  }
+};
+
+// Revalidación en vivo contra la nube justo antes del envío: cierra la
+// ventana de los 8 s de polling con la lectura que más importa — el detalle
+// AUTORITATIVO del día elegido (estado, cupos y turnos ya tomados).
+// Espera (breve) cualquier sync en curso y resuelve dentro del tiempo tope.
+async function preSubmitCloudRefresh(maxWaitMs) {
+  try {
+    if (typeof CloudSync === "undefined" || !CloudSync._enabled) return false;
+    if (!apiEnabled()) return true; // modo local: no hay nada que revalidar
+    const cap = Number(maxWaitMs) || 3000;
+    const t0 = Date.now();
+    while (CloudSync._busy && Date.now() - t0 < Math.min(1500, cap)) {
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    if (CloudSync._busy) return false;
+    const day = typeof cart !== "undefined" && cart ? cart.selectedDate : null;
+    const pull = day
+      ? AvailabilityManager.fetchDetail(day)
+      : AvailabilityManager.hydrate(true);
+    const timeout = new Promise(function (r) { setTimeout(function () { r("timeout"); }, cap); });
+    const result = await Promise.race([pull, timeout]);
+    if (result === "timeout") return false;
+    return !(result && result.ok === false);
+  } catch (err) {
+    console.warn("[Arkik] preSubmitCloudRefresh:", err);
+    return false;
+  }
+}
+
+// ============================================================
+// 16. FINALIZACIÓN DE RESERVA & MENSAJES WHATSAPP
+// ============================================================
+
+/**
+ * Clave de idempotencia POR CADENA DE INTENCIÓN (header X-Idempotency-Key).
+ * Se genera UNA vez por intento de reserva y vive en sessionStorage
+ * ('arkik_idem_v1') hasta que el servidor confirma la creación: si la red
+ * cae y el visitante reintenta —incluso tras recargar la página— el POST
+ * devuelve la reserva ya creada en vez de duplicarla. Solo se borra tras el
+ * éxito del servidor. Formato exigido: [A-Za-z0-9_-]{8,64}.
+ */
+function idempotencyKeyFor() {
+  const storageKey = "arkik_idem_v1";
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (raw && /^[A-Za-z0-9_-]{8,64}$/.test(raw)) return raw;
+    let key;
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      key = crypto.randomUUID();
+    } else {
+      key = "idem-" + Date.now().toString(36) + "-" +
+        Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+    }
+    sessionStorage.setItem(storageKey, key);
+    return key;
+  } catch (err) {
+    return "idem-fb-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+}
+
+// Borra la clave de idempotencia: SOLO tras éxito del servidor (un fallo la
+// conserva para que el reintento reutilice la misma clave).
+function clearIdempotencyKey() {
+  try { sessionStorage.removeItem("arkik_idem_v1"); } catch (err) { /* noop */ }
+}
+
+/**
+ * Mapea el fallo de POST /api/bookings a la UX del contrato. Nunca lanza.
+ *  - network/service_unavailable → toast de conexión (sin perder el paso)
+ *  - day_full/slot_taken/blackout/soldout → alerta de conflicto + paso 2
+ *  - rate_limited → mensaje estilo ClientThrottler (usa retryAfterMs)
+ *  - validation_error → toast de datos inválidos (+ details[0].message)
+ *  - min_notice/horizon → mensaje exacto del servidor
+ */
+function handleBookingCreateFailure(res) {
+  const code = (res && res.code) || "";
+  const error = (res && res.error) || null;
+  const message = (error && error.message) || (res && res.message) ||
+    "No se pudo registrar la reserva. Intente nuevamente.";
+  const details = (res && res.details) || (error && error.details) || null;
+
+  if (code === "network" || code === "service_unavailable") {
+    showToast("No fue posible registrar la reserva. Comprueba tu conexión e inténtalo nuevamente.", "error");
+    return;
+  }
+  if (code === "day_full" || code === "slot_taken" || code === "blackout" || code === "soldout") {
+    showSlotConflictAlert(message);
+    if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+      AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+        if (typeof renderTimeSelector === "function") renderTimeSelector();
+      }).catch(function () {});
+      AvailabilityManager.hydrate(true).catch(function () {});
+    }
+    if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+      CalendarModule.render();
+    }
+    goToStep(2);
+    return;
+  }
+  if (code === "rate_limited") {
+    const retryMs = Number(res && res.retryAfterMs) > 0 ? Number(res.retryAfterMs) : 60000;
+    if (retryMs < 60000) {
+      showToast(`Espere ${Math.ceil(retryMs / 1000)} segundos antes de reintentar.`, "error");
+    } else {
+      showToast(`Demasiados envíos de reserva. Vuelva a intentarlo en ${Math.ceil(retryMs / 60000)} min.`, "error");
+    }
+    return;
+  }
+  if (code === "validation_error") {
+    const extra = Array.isArray(details) && details[0] && details[0].message
+      ? " " + details[0].message
+      : "";
+    showToast("Datos de reserva inválidos. Revise los campos marcados." + extra, "error");
+    return;
+  }
+  if (code === "min_notice" || code === "horizon") {
+    showToast(message, "error");
+    return;
+  }
+  showToast(message, "error");
+}
+
+async function submitStaticBooking() {
+  if (cart.isSubmitting) return;
+
+  // Bloqueo inmediato del botón para evitar multiclics instantáneos
+  const btn = document.getElementById("btn-submit-booking");
+  const originalLabel = btn ? btn.innerHTML : "";
+  cart.isSubmitting = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("btn-loading", "opacity-50", "cursor-not-allowed");
+    btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Verificando…';
+  }
+
+  if (isHoneypotTriggered()) {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("btn-loading", "opacity-50", "cursor-not-allowed");
+      btn.innerHTML = originalLabel;
+    }
+    cart.isSubmitting = false;
+    return; // neutralización silenciosa de bots
+  }
+
+  // (3) Anti-spam de inmediato: ventana de rate limiting por dispositivo y
+  // bloqueo mínimo del botón en cada toque.
+  const tapAt = Date.now();
+  const gate = ClientThrottler.check();
+  if (!gate.ok) {
+    cart.isSubmitting = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("btn-loading", "opacity-50", "cursor-not-allowed");
+      btn.innerHTML = originalLabel;
+    }
+    if (gate.reason === "locked") {
+      showToast(`Espere ${Math.ceil(gate.retryMs / 1000)} segundos antes de reintentar.`, "error");
+    } else {
+      showToast(`Demasiados envíos de reserva. Vuelva a intentarlo en ${Math.ceil(gate.retryMs / 60000)} min.`, "error");
+    }
+    return;
+  }
+
+  // (5) Única vía de desbloqueo. Respeta el bloqueo mínimo por toque y
+  // restaura etiqueta + estado habilitado sin dejar el botón colgado.
+  let lockReleased = false;
+  const releaseLock = function () {
+    if (lockReleased) return;
+    lockReleased = true;
+    const minLock = (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitLockMs)
+      ? CLIENT_GUARD_CONFIG.submitLockMs : 3000;
+    const wait = Math.max(0, minLock - (Date.now() - tapAt));
+    setTimeout(function () {
+      cart.isSubmitting = false;
+      if (btn) {
+        btn.classList.remove("btn-loading");
+        btn.innerHTML = originalLabel;
+      }
+      updateGenerateButtonState();
+    }, wait);
+  };
+
+  // (6) Validaciones de campos obligatorios (sin cambios de criterio).
+  if (!cart.clientName || !cart.clientPhone || !cart.selectedDate || !cart.province || !cart.canton) {
+    showToast("Faltan datos obligatorios del evento. Complete el formulario.", "error");
+    releaseLock();
+    return;
+  }
+
+  // La confirmación del voucher exige hora de evento Y comprobante SINPE cargado.
+  if (!cart.selectedTime) {
+    showToast("Seleccione la hora del evento en el Calendario & Hora.", "error");
+    goToStep(2);
+    releaseLock();
+    return;
+  }
+  if (!cart.voucherImage) {
+    showToast("Adjunte la captura del comprobante SINPE para confirmar la reserva.", "error");
+    releaseLock();
+    return;
+  }
+
+  // (7) Revalidación de disponibilidad en el instante del envío: protege contra
+  // condiciones de carrera con otra pestaña o dispositivo que ya tomó el turno.
+  const slotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+  if (!slotCheck.ok) {
+    if (slotCheck.code === "slot_taken" || slotCheck.code === "day_full") {
+      showSlotConflictAlert(slotCheck.message);
+      goToStep(2);
+      releaseLock();
+      return;
+    }
+    showToast(slotCheck.message, "error");
+    goToStep(2);
+    releaseLock();
+    return;
+  }
+
+  // (8) Revalidación en vivo contra la nube: cierra la ventana de los 8 s de
+  // polling antes de comprometer el turno. Si la nube respondió a tiempo,
+  // se vuelve a validar con el estado ya refrescado.
+  // Non-Blocking Cloud Verification: strict 2500ms timeout
+  try {
+    const cloudCheckPromise = preSubmitCloudRefresh(2000);
+    const cloudTimeoutPromise = new Promise(function (resolve) {
+      setTimeout(function () { resolve(false); }, 2000);
+    });
+    await Promise.race([cloudCheckPromise, cloudTimeoutPromise]);
+    const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
+    if (!lateSlotCheck.ok) {
+      if (lateSlotCheck.code === "slot_taken" || lateSlotCheck.code === "day_full") {
+        showSlotConflictAlert(lateSlotCheck.message);
+        goToStep(2);
+        releaseLock();
+        return;
+      }
+      showToast(lateSlotCheck.message, "error");
+      goToStep(2);
+      releaseLock();
+      return;
+    }
+  } catch (cloudErr) {
+    console.warn("[Arkik] Pre-submit cloud refresh bypass/error:", cloudErr);
+  }
+
+  // (9) El intento consumido queda registrado ANTES de generar el voucher.
+  ClientThrottler.record();
+
+  // (10) Generación del voucher (interna, sin cambios de criterio).
+  cart.createdBooking = null;
+  // Declarado fuera del bloque try para que el catch también pueda
+  // anunciar el código cuando solo falló la pintura del voucher.
+  let bookingCode = "";
+
+      try {
+        cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
+
+        // Código provisorio (ARK-XXXXXXXX): solo lo consume el modo local.
+        // Con la API activa el código definitivo lo genera el servidor.
+        bookingCode = generateBookingCode();
+
+        const extrasList = [];
+        if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
+        if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
+        if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
+
+        const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
+
+        const surchargeText = cart.isNonGam
+          ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
+          : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
+
+        const service = cart.selectedService;
+        const setupDisplay = service ? service.setup_display : "2h antes";
+        const teardownDisplay = service ? service.teardown_display : "1h después";
+
+        const record = {
+          code: bookingCode,
+          lockId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : ('lock-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)),
+          lockTimestamp: Date.now(),
+          createdAt: new Date().toISOString(),
+          status: "pendiente", // Inicia siempre como Pendiente de Aprobación
+          clientName: cart.clientName,
+          clientPhone: cart.clientPhone,
+          clientEmail: cart.clientEmail,
+          eventType: cart.eventType,
+          serviceId: service.id,
+          serviceName: service.name,
+          setupDisplay: setupDisplay,
+          teardownDisplay: teardownDisplay,
+          selectedDate: cart.selectedDate,
+          selectedTime: cart.selectedTime,
+          voucherImage: cart.voucherImage,
+          province: cart.province,
+          canton: cart.canton,
+          address: cart.address,
+          extras: {
+            extraHoursCount: cart.extraHoursCount,
+            djHoursCount: cart.djHoursCount,
+            subwoofersCount: cart.subwoofersCount,
+            extraHoursTotal: cart.extraHoursTotal,
+            djTotal: cart.djTotal,
+            subwoofersTotal: cart.subwoofersTotal
+          },
+          subtotal: cart.subtotal,
+          travelSurcharge: cart.travelSurcharge,
+          granTotal: cart.granTotal,
+          deposit50Amount: cart.deposit50Amount,
+          remainingBalance: cart.remainingBalance,
+          extrasTotal: cart.extrasTotal,
+          deposit50: cart.deposit50Amount,
+          referenceSinpe: cart.sinpeRef,
+          sinpeRef: cart.sinpeRef
+        };
+
+        // Creación en la fuente de verdad: código, montos, cupo e idempotencia
+        // se resuelven en el servidor (POST /api/bookings). El servidor ya
+        // valida cupo/horario dentro de la transacción, así que no hace falta
+        // revalidar localmente después de construir el registro.
+        if (btn) {
+          btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Guardando…';
+        }
+        enforceVerifiedTotalsOnBooking(record, cart);
+        validateBookingSchema(record);
+
+        if (typeof window !== "undefined" && cart.voucherImage) {
+          window._activeVoucherBlob = cart.voucherImage;
+        }
+
+        const idemKey = idempotencyKeyFor();
+        let saved = null;
+
+        // Non-Blocking Cloud Push: Promise.race with strict 2500ms timeout
+        try {
+          const pushTimeout = new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve({ ok: false, code: "timeout", status: 0, degraded: true });
+            }, 2000);
+          });
+          saved = await Promise.race([
+            BookingStore.add(record, idemKey),
+            pushTimeout
+          ]);
+        } catch (pushErr) {
+          console.warn("[Arkik] Cloud push falló o dio timeout, degradando a offline:", pushErr);
+          saved = { ok: false, code: "network", status: 0, degraded: true };
+        }
+
+        // Si hubo conflicto real de fecha/cupo (409) confirmado por servidor:
+        if (saved && !saved.ok && (saved.code === "day_full" || saved.code === "slot_taken" || saved.code === "blackout" || saved.code === "soldout" || saved.status === 409)) {
+          handleBookingCreateFailure(saved);
+          return;
+        }
+
+        // Si falló por 404, 405, 5xx, timeout, network failure, etc:
+        // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
+        if (!saved || !saved.ok || saved.degraded) {
+          console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
+          record.syncStatus = "offline_unverified";
+          record.isOfflineDegraded = true;
+          enforceVerifiedTotalsOnBooking(record, cart);
+          validateBookingSchema(record);
+
+          BookingStore._enqueueOfflineBooking(record, idemKey, {
+            clientName: record.clientName,
+            clientPhone: record.clientPhone,
+            clientEmail: record.clientEmail,
+            eventType: record.eventType,
+            serviceId: record.serviceId,
+            selectedDate: record.selectedDate,
+            selectedTime: record.selectedTime,
+            province: record.province,
+            canton: record.canton,
+            address: record.address,
+            sinpeRef: record.sinpeRef,
+            extras: record.extras,
+            voucherImage: record.voucherImage
+          });
+
+          if (!BookingStore._data) BookingStore.load();
+          const existingIdx = BookingStore._data.findIndex(function (b) { return b && b.code === record.code; });
+          if (existingIdx >= 0) {
+            BookingStore._data[existingIdx] = record;
+          } else {
+            BookingStore._data.unshift(record);
+          }
+          BookingStore.persist();
+
+          if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[record.selectedDate]) {
+            delete AvailabilityManager._details[record.selectedDate];
+          }
+          if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+            try { CalendarModule.render(); } catch (e) {}
+          }
+
+          saved = { ok: true, booking: record, source: "local", degraded: true };
+        }
+
+        const created = saved.booking;
+        bookingCode = created.code || bookingCode;
+
+        if (saved.source === "remote") {
+          // Lo que se imprime en el voucher es lo que calculó la base de datos.
+          if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
+          if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
+          if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
+          if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
+          if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
+        }
+        if (saved.source !== "remote" || saved.degraded) {
+          created.syncStatus = "offline_unverified";
+          created.isOfflineDegraded = true;
+          enforceVerifiedTotalsOnBooking(created, cart);
+          updateOfflineModeBanner(true);
+        } else {
+          created.syncStatus = "synced";
+          updateOfflineModeBanner(false);
+        }
+        cart.createdBooking = created;
+
+        const offlineBadge = document.getElementById("confirm-offline-badge");
+        if (offlineBadge) {
+          if (saved.degraded || saved.source === "local" || created.syncStatus === "offline_unverified") {
+            offlineBadge.classList.remove("hidden");
+          } else {
+            offlineBadge.classList.add("hidden");
+          }
+        }
+
+        const rawMsg =
+          `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
+----------------------------------------
+📌 *Código:* ${bookingCode}
+👤 *Cliente / Empresa:* ${cart.clientName}
+📞 *Teléfono:* ${cart.clientPhone}
+✉️ *Email:* ${cart.clientEmail || "No indicado"}
+🎉 *Tipo de Evento:* ${cart.eventType}
+
+🎵 *Formato:* ${service.name} (${formatCRC(PriceManager.getServicePrice(service))})
+⏱️ *Duración:* ${service.duration}
+⚙️ *Logística:* Montaje ${setupDisplay} · Desmontaje ${teardownDisplay}
+
+➕ *EXTRAS COTIZADOS:*
+${extrasFormatted}
+
+📅 *Fecha & Hora:* ${formatDisplayDate(cart.selectedDate)} a las ${cart.selectedTime}
+📍 *Ubicación:* ${cart.canton}, ${cart.province}
+🏠 *Dirección:* ${cart.address}
+
+💰 *Subtotal:* ${formatCRC(cart.subtotal)}
+${surchargeText}
+✨ *GRAN TOTAL:* ${formatCRC(cart.granTotal)}
+----------------------------------------
+💳 *ADELANTO SINPE (50%):* ${formatCRC(cart.deposit50Amount)}
+🤝 *SALDO DÍA DEL EVENTO:* ${formatCRC(cart.remainingBalance)}
+📲 *Destino SINPE:* ${SINPE_CONFIG.phone} (${SINPE_CONFIG.holder})
+🔢 *Ref. SINPE:* ${cart.sinpeRef || "Registrada"}
+🔒 *Estado Inicial:* Pendiente de Aprobación
+----------------------------------------
+📎 *Comprobante SINPE:* Adjuntado y registrado en el expediente digital de Arkik Productions.`;
+
+        const verifiedMsg = buildWhatsAppMessage(created || record);
+        const encodedMsg = encodeURIComponent(verifiedMsg);
+        const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
+
+        // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
+        document.getElementById("confirm-booking-code").textContent = bookingCode;
+        const badgeEl = document.getElementById("confirm-booking-badge");
+        if (badgeEl) badgeEl.textContent = bookingCode;
+
+        document.getElementById("confirm-client-name").textContent = cart.clientName;
+        document.getElementById("confirm-event-type").textContent = cart.eventType;
+        document.getElementById("confirm-service-name").textContent = service.name;
+
+        const logInfoEl = document.getElementById("confirm-logistics-info");
+        if (logInfoEl) {
+          logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
+        }
+
+        document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
+        document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
+        const verifiedForDom = calculateVerifiedTotals(created || record);
+        document.getElementById("confirm-gran-total").textContent = formatCRC(verifiedForDom.granTotal);
+        document.getElementById("confirm-deposit-50").textContent = formatCRC(verifiedForDom.deposit50);
+
+
+        const remBalEl = document.getElementById("confirm-remaining-balance");
+        if (remBalEl) remBalEl.textContent = formatCRC(verifiedForDom.remainingBalance);
+
+        const waBtn = document.getElementById("btn-whatsapp-client");
+        if (waBtn) waBtn.href = whatsappUrl;
+
+        cart.clearStoredState();
+        // Cadena de idempotencia consumida: solo ahora se libera, para que un
+        // reintento posterior (si el servidor nunca confirmó) reuse la clave.
+        clearIdempotencyKey();
+
+        goToStep(4);
+
+        showToast("✓ ¡Reserva registrada con éxito!", "success");
+
+        // Fire-and-forget: refresca el cupo del día elegido y agenda la
+        // revalidación de las vistas abiertas.
+        if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.fetchDetail === "function") {
+          AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
+        }
+        if (typeof CloudSync !== "undefined" && typeof CloudSync.notify === "function") {
+          CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
+        }
+
+        // Renderiza el voucher formal emitido en el Paso 4 sin cerrar el modal ni resetear el carrito
+        renderConfirmedVoucherScreen(created || record, whatsappUrl);
+      } catch (err) {
+        console.error("Booking submission failed:", err);
+        if (cart.createdBooking) {
+          try {
+            goToStep(4);
+            const wa = typeof whatsappUrl !== "undefined" ? whatsappUrl : "";
+            renderConfirmedVoucherScreen(cart.createdBooking, wa);
+          } catch (err2) { /* noop */ }
+          clearIdempotencyKey();
+          showToast(`Reserva registrada con el código ${cart.createdBooking.code || bookingCode}.`, "success");
+        } else {
+          showToast("No se pudo generar la reserva. Revise los datos e intente nuevamente.", "error");
+        }
+      } finally {
+        // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
+        releaseLock();
+      }
+}
+
+/**
+ * Renderiza la vista formal de confirmación y emisión del voucher en #modal-step-4.
+ * Muestra el código ARK-XXXXXXXX, el desglose contable estricto (Gran Total, 50% Adelanto, Saldo Pendiente),
+ * la miniatura del comprobante SINPE subido y botones de acción (Descargar PDF, Notificar WhatsApp, Finalizar y Volver).
+ * El modal solo se cierra cuando el usuario presiona "Finalizar y Volver".
+ * @param {object} booking Datos de la reserva confirmada
+ * @param {string} waUrl Enlace preformateado a WhatsApp
+ */
+function renderConfirmedVoucherScreen(booking, waUrl) {
+  const step4El = document.getElementById("modal-step-4");
+  if (!step4El) return;
+
+  // Respaldar la plantilla inicial del Paso 4 para poder reabrir el formulario limpio tras finalizar
+  if (!originalModalStep4Html) {
+    originalModalStep4Html = step4El.innerHTML;
+  }
+
+  const b = booking || (typeof cart !== "undefined" && cart.createdBooking) || {};
+  const code = sanitizeInput(b.code || (typeof generateBookingCode === "function" ? generateBookingCode() : "ARK-XXXXXXXX"));
+  const clientName = sanitizeInput(b.clientName || (typeof cart !== "undefined" ? cart.clientName : "-"));
+  const eventType = sanitizeInput(b.eventType || (typeof cart !== "undefined" ? cart.eventType : "Evento"));
+  const serviceName = sanitizeInput(b.serviceName || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.name : "Servicio"));
+  const setupDisplay = sanitizeInput(b.setupDisplay || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.setup_display : "2h antes"));
+  const teardownDisplay = sanitizeInput(b.teardownDisplay || ((typeof cart !== "undefined" && cart.selectedService) ? cart.selectedService.teardown_display : "1h después"));
+  const dateStr = b.selectedDate || (typeof cart !== "undefined" ? cart.selectedDate : "");
+  const timeStr = b.selectedTime || (typeof cart !== "undefined" ? cart.selectedTime : "");
+  const dateDisplay = sanitizeInput(dateStr ? `${typeof formatDisplayDate === "function" ? formatDisplayDate(dateStr) : dateStr}${timeStr ? " a las " + timeStr : ""}` : "-");
+  const cantonStr = b.canton || (typeof cart !== "undefined" ? cart.canton : "");
+  const provinceStr = b.province || (typeof cart !== "undefined" ? cart.province : "");
+  const locationDisplay = sanitizeInput([cantonStr, provinceStr].filter(Boolean).join(", ") || "-");
+
+  const verified = (typeof calculateVerifiedTotals === "function")
+    ? calculateVerifiedTotals(b)
+    : {
+        granTotal: Number(b.granTotal) || 0,
+        deposit50: Number(b.deposit50Amount || b.deposit50) || 0,
+        remainingBalance: Number(b.remainingBalance) || 0
+      };
+
+  const rawImg = b.voucherImage || (typeof cart !== "undefined" ? cart.voucherImage : "") || (typeof window !== "undefined" ? window._activeVoucherBlob : "");
+  const safeImg = (typeof safeImageDataUrl === "function") ? safeImageDataUrl(rawImg) : (rawImg || "");
+  const safeWaLink = (typeof sanitizeUrl === "function") ? sanitizeUrl(waUrl || "#") : (waUrl || "#");
+  const isOffline = b.syncStatus === "offline_unverified" || b.isOfflineDegraded;
+
+  // Asegura persistencia en el contexto global de reservas para exportVoucherPDF
+  if (typeof cart !== "undefined") {
+    cart.createdBooking = b;
+  }
+  if (typeof window !== "undefined") {
+    window._lastCreatedBooking = b;
+    window._activeVoucherBlob = safeImg || rawImg;
+  }
+
+  // Activa panel del paso 4 e indicadores visuales del stepper
+  step4El.classList.remove("hidden");
+  for (let i = 1; i <= 4; i++) {
+    const pane = document.getElementById(`modal-step-${i}`);
+    if (pane && pane !== step4El) pane.classList.add("hidden");
+    const indicator = document.getElementById(`step-indicator-${i}`);
+    if (indicator) {
+      if (i === 4) {
+        indicator.classList.add("border-purple-500", "bg-purple-900/40", "text-purple-300");
+        indicator.classList.remove("border-gray-700", "text-gray-500", "border-emerald-500", "text-emerald-400");
+      } else {
+        indicator.classList.add("border-emerald-500", "bg-emerald-950/30", "text-emerald-400");
+        indicator.classList.remove("border-purple-500", "border-gray-700", "text-gray-500", "bg-purple-900/40");
+      }
+    }
+  }
+
+  const voucherThumbnailHtml = safeImg ? `
+    <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-500/20 text-center">
+      <span class="text-[10px] font-semibold text-gray-400 block mb-2">Comprobante SINPE Adjunto:</span>
+      <img src="${safeImg}" alt="Comprobante SINPE subido" class="max-h-36 max-w-full mx-auto rounded-lg border border-purple-500/40 object-contain shadow-md" />
+      ${b.sinpeRef ? `<p class="text-[10px] text-emerald-300 font-mono mt-1.5">Ref: ${sanitizeInput(b.sinpeRef)}</p>` : ''}
+    </div>
+  ` : (b.sinpeRef ? `
+    <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-500/20 text-center">
+      <span class="text-[10px] font-semibold text-gray-400 block mb-1">Referencia SINPE Registrada:</span>
+      <p class="text-xs text-emerald-300 font-mono font-bold">${sanitizeInput(b.sinpeRef)}</p>
+    </div>
+  ` : '');
+
+  step4El.innerHTML = `
+    <div id="confirmed-voucher-view" class="text-center space-y-6">
+      <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-900/40">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+        </svg>
+      </div>
+
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-semibold mb-2">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>Estado: Pendiente de Aprobación</span>
+        </div>
+        ${isOffline ? `
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold mb-2 ml-1">
+          <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+          <span>Modo Offline Resiliente</span>
+        </div>
+        ` : ''}
+        <h3 class="text-2xl font-extrabold text-white mt-1">Código: <span class="text-gradient-purple font-mono font-bold">${code}</span></h3>
+        <p class="text-xs text-gray-400 mt-1">Su reserva ha sido registrada formalmente. El comprobante SINPE fue archivado y la pre-factura generada con éxito.</p>
+      </div>
+
+      <!-- Tarjeta de Confirmación Formal y Desglose Contable -->
+      <div id="voucher-printable-area" class="glass-panel p-5 rounded-2xl text-left space-y-3 text-xs border border-purple-500/30 shadow-xl shadow-purple-950/40">
+        <div class="flex items-center justify-between border-b border-purple-500/20 pb-3">
+          <div class="flex items-center space-x-2">
+            <img src="img/arkik_logo.jpg" alt="Arkik Productions" class="h-8 w-auto rounded border border-purple-500/30">
+            <div>
+              <span class="font-extrabold text-white text-sm">Arkik Productions</span>
+              <p class="text-[9px] text-gray-400">Granadilla, SJ · +506 6227-4984</p>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-md bg-purple-900/50 border border-purple-500/40 font-mono font-bold text-purple-200 text-xs">${code}</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-b border-purple-500/10 pb-2">
+          <div>
+            <span class="text-gray-400 block text-[10px]">Cliente / Empresa:</span>
+            <span class="font-bold text-white text-xs">${clientName}</span>
+          </div>
+          <div>
+            <span class="text-gray-400 block text-[10px]">Tipo de Evento:</span>
+            <span class="font-bold text-white text-xs">${eventType}</span>
+          </div>
+        </div>
+
+        <div class="border-b border-purple-500/10 pb-2">
+          <span class="text-gray-400 block text-[10px]">Servicio & Logística:</span>
+          <span class="font-bold text-purple-300 text-xs">${serviceName}</span>
+          <p class="text-[10px] text-gray-400 mt-0.5">Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-purple-500/10 pb-2">
+          <div>
+            <span class="text-gray-400 block text-[10px]">Fecha del Show:</span>
+            <span class="font-bold text-white text-xs">${dateDisplay}</span>
+          </div>
+          <div>
+            <span class="text-gray-400 block text-[10px]">Ubicación:</span>
+            <span class="font-bold text-white text-xs">${locationDisplay}</span>
+          </div>
+        </div>
+
+        <!-- Desglose Contable -->
+        <div class="pt-1 space-y-1.5 border-b border-purple-500/10 pb-2.5">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-gray-400">Gran Total Cotizado:</span>
+            <span class="font-bold text-white text-sm">${typeof formatCRC === 'function' ? formatCRC(verified.granTotal) : '₡' + verified.granTotal}</span>
+          </div>
+          <div class="flex justify-between items-center text-emerald-400 font-extrabold text-sm border-t border-purple-500/20 pt-1.5">
+            <span>Adelanto SINPE (50%):</span>
+            <span>${typeof formatCRC === 'function' ? formatCRC(verified.deposit50) : '₡' + verified.deposit50}</span>
+          </div>
+          <div class="flex justify-between items-center text-gray-300 text-xs">
+            <span class="text-gray-400">Saldo Pendiente (Día del Evento):</span>
+            <span class="font-semibold text-purple-200">${typeof formatCRC === 'function' ? formatCRC(verified.remainingBalance) : '₡' + verified.remainingBalance}</span>
+          </div>
+        </div>
+
+        <!-- Miniatura del Comprobante Subido -->
+        ${voucherThumbnailHtml}
+      </div>
+
+      <!-- Acciones de Usuario -->
+      <div class="space-y-3 pt-2">
+        <!-- Descargar / Ver Pre-Factura PDF -->
+        <button type="button" id="btn-confirmed-download-pdf" onclick="openPreInvoicePreviewModal(cart.createdBooking || window._lastCreatedBooking)" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 tactile-btn">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>👁️ Previsualizar / Descargar Pre-Factura A4</span>
+        </button>
+
+        <!-- Notificar por WhatsApp -->
+        <a id="btn-confirmed-whatsapp" href="${safeWaLink}" target="_blank" rel="noopener" class="w-full py-3.5 px-4 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 tactile-btn">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+          </svg>
+          <span>Notificar por WhatsApp</span>
+        </a>
+
+        <!-- Finalizar y Volver -->
+        <button type="button" id="btn-confirmed-finalize" onclick="finalizeVoucher()" class="w-full py-3 px-4 min-h-[44px] rounded-xl text-sm font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all tactile-btn">
+          Finalizar y Volver
+        </button>
+      </div>
+    </div>
+  `;
+
+  const modalCard = document.getElementById("modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+}
+
+function finalizeVoucher() {
+  if (typeof cart !== "undefined") {
+    if (typeof cart.reset === "function") cart.reset();
+    cart.voucherImage = null;
+    cart.voucherRaw = null;
+    cart.createdBooking = null;
+    cart.currentStep = 1;
+    if (typeof cart.clearStoredState === "function") cart.clearStoredState();
+  }
+  if (typeof window !== "undefined") {
+    window._activeVoucherBlob = null;
+    window._lastCreatedBooking = null;
+  }
+  if (typeof scheduleVoucherTtlPurge === "function") scheduleVoucherTtlPurge();
+
+  // Cleanly unmount Step 4 voucher view and restore initial form step
+  if (originalModalStep4Html) {
+    const step4El = document.getElementById("modal-step-4");
+    if (step4El) {
+      step4El.innerHTML = originalModalStep4Html;
+    }
+  }
+
+  // Restore initial form step (Step 1)
+  if (typeof goToStep === "function") {
+    goToStep(1);
+  } else if (typeof updateModalStep === "function") {
+    updateModalStep(1);
+  }
+
+  if (typeof closeBookingModal === "function") {
+    closeBookingModal();
+  }
+  showToast("¡Reserva finalizada con éxito! Desglose y comprobante archivados.", "success");
+}
+
+if (typeof window !== "undefined") {
+  window.renderConfirmedVoucherScreen = renderConfirmedVoucherScreen;
+  window.finalizeVoucher = finalizeVoucher;
+}
+
+// ============================================================
+// 17. TOAST NOTIFICATIONS & CLIPBOARD
+// ============================================================
+
+function showToast(message, type = "info") {
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = "toast-item";
+  if (type === "error") toast.classList.add("toast-error");
+  if (type === "success") toast.classList.add("toast-success");
+
+  const icons = {
+    success: '<svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>',
+    error: '<svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>',
+    info: '<svg class="w-5 h-5 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+  };
+
+  const iconWrap = document.createElement("span");
+  iconWrap.className = "flex-shrink-0";
+  iconWrap.innerHTML = icons[type] || icons.info;
+
+  const text = document.createElement("span");
+  text.className = "text-xs font-semibold";
+  text.textContent = message;
+
+  toast.appendChild(iconWrap);
+  toast.appendChild(text);
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    setTimeout(() => toast.remove(), 300);
+  }, 2800);
+}
+
+// ============================================================
+// ALERTA DE CONFLICTO DE TURNO (carrera entre pestañas/dispositivos)
+// ============================================================
+
+const SLOT_CONFLICT_TEXT = "⚠️ Turno No Disponible — Este horario acaba de ser reservado. Por favor selecciona otro turno.";
+
+/**
+ * Muestra la alerta de turno tomado. Se usa cuando la revalidación en el
+ * instante del envío detecta que otro flujo ya ocupó la fecha/hora.
+ * @param {string} detail motivo concreto de la rechazo.
+ */
+function showSlotConflictAlert(detail) {
+  console.warn("[Arkik] Conflicto de turno:", detail || SLOT_CONFLICT_TEXT);
+  const modal = document.getElementById("slotConflictModal");
+  const detailEl = document.getElementById("slot-conflict-detail");
+
+  if (detailEl) {
+    const reason = (detail || "").trim();
+    if (reason && !/acaba de ser reservado/i.test(reason)) {
+      detailEl.textContent = reason;
+      detailEl.classList.remove("hidden");
+    } else {
+      detailEl.textContent = "El horario seleccionado acaba de ser ocupado concurrentemente por otro cliente. El calendario ha sido actualizado.";
+      detailEl.classList.remove("hidden");
+    }
+  }
+
+  // Explicit time reset: ensure no .time-chip.active remains upon routing back to Step 2
+  if (typeof resetSelectedTime === "function") {
+    resetSelectedTime();
+  }
+  document.querySelectorAll(".time-chip.active").forEach(el => el.classList.remove("active"));
+  if (typeof updateStep2ContinueState === "function") {
+    updateStep2ContinueState();
+  }
+
+  // Refrescar disponibilidad de inmediato para reflejar el bloqueo en la grilla y en los chips
+  if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+    AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+      if (typeof renderTimeSelector === "function") renderTimeSelector();
+    }).catch(function () {});
+  }
+  if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+    CalendarModule.render();
+  }
+
+  if (!modal) {
+    showToast(SLOT_CONFLICT_TEXT, "error");
+    return;
+  }
+  ModalController.open("slotConflictModal");
+  const retry = document.getElementById("slot-conflict-retry");
+  if (retry) {
+    setTimeout(() => { try { retry.focus(); } catch (e) { /* noop */ } }, 60);
+  }
+}
+
+/**
+ * Cierra la alerta SIEMPRE volviendo al paso del calendario: si el turno se
+ * perdió, el paso de voucher es un callejón sin salida (reenviar volvería a
+ * fallar). Limpia la selección vencida y rehidrata calendario + chips.
+ */
+function hideSlotConflictAlert() {
+  ModalController.close("slotConflictModal");
+  try {
+    resetSelectedTime();
+    if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
+      AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
+        if (typeof renderTimeSelector === "function") renderTimeSelector();
+      }).catch(function () {});
+    }
+    if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
+      CalendarModule.render();
+    }
+    goToStep(2);
+    showToast("Seleccione otra fecha u horario disponible.", "info");
+  } catch (err) {
+    console.warn("hideSlotConflictAlert:", err);
+  }
+}
+
+function copySinpeData() {
+  const data = `A nombre de: Juan José Ramírez Chaves\nTeléfono: +506 6227-4984`;
+  const done = () => showToast("¡Datos SINPE copiados al portapapeles!", "success");
+  const fail = () => showToast("No se pudieron copiar los datos.", "error");
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(data).then(done).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = data;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? done() : fail();
+    } catch (err) {
+      fail();
+    }
+  }
+}
+
+function copySinpeNumber(btn) {
+  const CLIPBOARD_ICON =
+    '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>';
+  const CHECK_ICON =
+    '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+
+  const done = () => {
+    showToast("¡Número SINPE copiado!", "success");
+    if (btn) {
+      btn.innerHTML = CHECK_ICON;
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.innerHTML = CLIPBOARD_ICON;
+        btn.disabled = false;
+      }, 1500);
+    }
+  };
+  const fail = () => showToast("No se pudo copiar el número automáticamente.", "error");
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(SINPE_CONFIG.phone).then(done).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = SINPE_CONFIG.phone;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? done() : fail();
+    } catch (err) {
+      fail();
+    }
+  }
+}
+
+function copyBookingCode() {
+  const codeEl = document.getElementById("confirm-booking-code");
+  if (!codeEl) return;
+
+  const text = codeEl.textContent;
+  const done = () => showToast(`Código ${text} copiado al portapapeles.`, "success");
+  const fail = () => showToast("No se pudo copiar el código.", "error");
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? done() : fail();
+    } catch (err) {
+      fail();
+    }
+  }
+}
+
+// ============================================================
+
+// ============================================================
+// 20. ARKIK RAG ENGINE (Índice Operational + Parser de Consultas)
+// ------------------------------------------------------------
+// NATURALEZA DE ESTE MÓDULO — LÉASE ANTES DE EXTENDERLO:
+//
+// NO es un sistema RAG (Retrieval-Augmented Generation) clásico.
+// No hay embeddings, ni base vectorial, ni modelo de lenguaje ni
+// llamada de red. El proyecto es un sitio estático (HTML + Tailwind
+// CDN + VanillaJS) sin backend y sin paso de build, de modo que un
+// pipeline RAG verdadero (embed → recuperar → generar) es imposible
+// aquí sin incorporar un servicio externo.
+//
+// Lo que SÍ hace es un motor determinista de tres piezas:
+//   1. ÍNDICE   : snapshot normalizado de BookingStore en memoria.
+//   2. PARSER   : lenguaje de consulta → predicados (texto + tags).
+//   3. INSIGHTS : reglas agregadas sobre el índice → texto derivado.
+//
+// Consecuencia de diseño que importa: los "insights sintéticos" son
+// CÁLCULOS, nodziones de un modelo. Cada texto de este módulo es
+// trazable a una agregación concreta sobre datos persistidos. Si un
+// número no se puede derivar de los datos, este módulo no lo inventa:
+// lo reporta como no disponible (ver aggregate()).
+// ============================================================
+
+const ArkikRAGEngine = {
+  _index: [],
+  _builtAt: null,
+  _source: null,
+  _revision: 0,
+
+  // Etiquetas rápidas soportadas por el parser.
+  // `pill` describe el control de la UI. La UI itera SIEMPRE sobre esta
+  // lista en vez de redeclarar claves: si el texto de un tag y el de su
+  // pill se desvían, el conteo del pill quedaría en 0 en silencio.
+  TAGS: [
+    {
+      key: "pendientes-sinpe",
+      label: "Pendientes SINPE",
+      test: r => r.status === "pendiente",
+      pill: { key: "pendientes-sinpe", label: "Pendiente SINPE" }
+    },
+    {
+      // "Confirmada" = depósito bancario verificado. `realizada` se incluye
+      // porque el resto del motor (p. ej. bookingVerificationState) ya
+      // agrupa confirmada+realizada como "agenda congelada / cobrada".
+      key: "confirmadas",
+      label: "Confirmadas",
+      test: r => r.status === "confirmada" || r.status === "realizada"
+    },
+    {
+      key: "fuera-gam",
+      label: "Fuera de GAM",
+      test: r => r.isNonGam === true,
+      pill: { key: "fuera-gam", label: "Fuera GAM" }
+    },
+    {
+      key: "banda-rt",
+      label: "Banda RT",
+      test: r => r.isBandaRT === true
+    },
+    {
+      key: "alto-valor",
+      label: "Proyectos > ₡400.000",
+      test: r => r.granTotal > 400000,
+      pill: { key: "alto-valor", label: "Alto Valor" }
+    }
+  ],
+
+  // Etiquetas que exponen un pill en la UI, derivadas de TAGS.
+  get PILL_TAGS() {
+    return this.TAGS.filter(t => t.pill).map(t => t.pill);
+  },
+
+  // Intenciones de agregación para consulta en lenguaje natural.
+  INTENTS: [
+    {
+      key: "conversion",
+      test: /conversi[oó]n|tasa\s+de\s+conversi/i,
+      label: "Tasa de conversión"
+    },
+    {
+      key: "balance",
+      test: /balance|saldo|cobrad|financier|cartera/i,
+      label: "Balance financiero"
+    },
+    {
+      key: "demanda",
+      test: /demanda|formato|distribuci[óo]n|geogr|cobertura/i,
+      label: "Demanda por formato y geografía"
+    }
+  ],
+
+  /**
+   * Conecta la fuente de verdad (BookingStore) sin acoplarse a ella.
+   * La fuente sólo debe exponer all() -> Array<Booking>.
+   */
+  attach(source) {
+    this._source = source || null;
+    return this.reindex();
+  },
+
+  /**
+   * Reconstruye el índice desde la fuente. Devuelve el conteo indexado.
+   * Es idempotente: llamar de más sólo refresca el snapshot.
+   */
+  reindex() {
+    const src = this._source;
+    const raw = src && typeof src.all === "function" ? src.all() : [];
+    const list = Array.isArray(raw) ? raw : [];
+    this._index = list
+      .filter(b => b && typeof b === "object")
+      .map(b => this._normalize(b))
+      .filter(Boolean);
+    this._builtAt = new Date().toISOString();
+    this._revision += 1;
+    return this._index.length;
+  },
+
+  /** Snapshot actual (copia superficial del arreglo interno). */
+  records() {
+    return this._index.slice();
+  },
+
+  /** Metadatos del índice para el badge de estado de la UI. */
+  stats() {
+    return {
+      count: this._index.length,
+      builtAt: this._builtAt,
+      revision: this._revision,
+      source: this._source ? "BookingStore" : "sin fuente"
+    };
+  },
+
+  // ------------------------------------------------------------
+  // NORMALIZACIÓN
+  // ------------------------------------------------------------
+
+  /**
+   * Proyecta un registro de BookingStore al esquema del índice.
+   * Tolera campos ausentes: un registro legacy sin `granTotal` sigue
+   * siendo indexable (queda en 0) en lugar de romper el índice entero.
+   */
+  _normalize(b) {
+    const num = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const str = v => String(v ?? "").trim();
+    // Normaliza UNA vez y se reutiliza en todo el registro. Antes se
+    // comparaba `b.status` (crudo) contra "confirmada"/"realizada" para
+    // marcar el depósito como cobrado: un estado en MAYÚSCULAS o con
+    // espacios pasaba por pendiente aunque el banco lo hubiera validado.
+    const status = str(b.status).toLowerCase() || "pendiente";
+
+    const province = str(b.province);
+    const canton = str(b.canton);
+
+    // Reutiliza la MISMA regla de cobertura que usa el carrito y el
+    // reporte ejecutivo. No se duplica la tabla GAM aquí a propósito:
+    // una segunda copia de NON_GAM_EXCEPTIONS divergiría en silencio.
+    const nonGam = isNonGamLocation(province, canton);
+
+    // FORMATO = tipo de evento; SERVICE = servicio contratado (p. ej. "Banda RT").
+    const eventType = str(b.eventType) || "Sin clasificar";
+    const serviceName = str(b.serviceName);
+
+    const haystack = `${eventType} ${serviceName} ${str(b.extras && b.extras.format)}`.toLowerCase();
+
+    return {
+      code: str(b.code) || "SIN-CODIGO",
+      status: status,
+      clientName: str(b.clientName) || "Cliente sin nombre",
+      clientPhone: str(b.clientPhone),
+      clientEmail: str(b.clientEmail),
+      eventType,
+      serviceName,
+      selectedDate: str(b.selectedDate),
+      selectedTime: str(b.selectedTime),
+      province,
+      canton,
+      address: str(b.address),
+      setupDisplay: str(b.setupDisplay),
+      teardownDisplay: str(b.teardownDisplay),
+      sinpeRef: str(b.sinpeRef),
+      createdAt: str(b.createdAt),
+
+      subtotal: num(b.subtotal),
+      travelSurcharge: num(b.travelSurcharge),
+      granTotal: num(b.granTotal),
+      deposit50Amount: num(b.deposit50Amount),
+      remainingBalance: num(b.remainingBalance),
+
+      isNonGam: nonGam,
+      isBandaRT: /banda\s*rt/.test(haystack),
+
+      // Eldepósito se considera cobrado cuando el estado ya fue
+      // verificado bancariamente. `remainingBalance` es el campo que
+      // el carrito calculó con la regla 50/50 y es la fuente de verdad
+      // para el saldo, no un recálculo aquí.
+      depositSettled: status === "confirmada" || status === "realizada"
+    };
+  },
+
+  // ------------------------------------------------------------
+  // PARSER DE CONSULTAS
+  // ------------------------------------------------------------
+
+  /**
+   * Convierte texto libre en una consulta estructurada.
+   * @returns {{text:string[], tags:string[], intent:string|null, budget:number|null, normalized:string}}
+   */
+  parseQuery(searchString) {
+    const raw = String(searchString || "").trim();
+    if (!raw) return { text: [], tags: [], intent: null, budget: null, normalized: "" };
+
+    // 1. Etiquetas explícitas: [Pendientes SINPE], [Proyectos > 400,000]
+    const tags = [];
+    let remainder = raw;
+    const tagRe = /\[([^\]]+)\]/g;
+    let m;
+    while ((m = tagRe.exec(raw)) !== null) {
+      const inner = m[1];
+      const key = ArkikRAGEngine._matchTag(inner);
+      if (key) tags.push(key);
+      remainder = remainder.replace(m[0], " ");
+    }
+
+    // 2. Umbral monetario explícito: "> 400000" / "mayor a 400000".
+    let budget = null;
+    const budgetRe = /(?:>|mayor\s+a|sobre|arriba\s+de)\s*₡?\s*([\d][\d.\s]*)/i;
+    const bm = remainder.match(budgetRe);
+    if (bm) {
+      const digits = bm[1].replace(/[^\d]/g, "");
+      if (digits) {
+        budget = Number(digits);
+        remainder = remainder.replace(bm[0], " ");
+      }
+    }
+
+    // 3. Intención de agregación (sólo sobre el resto del texto).
+    let intent = null;
+    for (const spec of ArkikRAGEngine.INTENTS) {
+      if (spec.test.test(remainder)) {
+        intent = spec.key;
+        break;
+      }
+    }
+
+    // 4. Términos de texto libre restantes.
+    const normalized = remainder
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    const text = normalized
+      .split(/[^a-z0-9@+]+/i)
+      .map(t => t.trim())
+      .filter(t => t.length >= 2);
+
+    // Modo pregunta: si se reconoce una intención de agregación, las
+    // palabras de la pregunta NUNCA actúan como filtros. Nadie busca
+    // clientes llamados "tasa" o "conversión": lo que se pidió es el
+    // agregado, y debe responder sobre el alcance completo. Las
+    // etiquetas entre corchetes y el umbral monetario SÍ acotan el
+    // alcance; sólo el texto de la pregunta se ignora como filtro.
+    const questionMode = Boolean(intent);
+
+    return { text, tags, intent, budget, normalized, questionMode };
+  },
+
+  /**
+   * Resuelve el texto interno de una etiqueta a su token canónico.
+   * Compara sobre forma alfanumérica, de modo que "[Proyectos > ₡400,000]",
+   * "[Proyectos > 400.000]" y "[alto-valor]" resuelven al mismo tag sin
+   * depender de comas, puntos, moneda ni acentos.
+   */
+  _matchTag(inner) {
+    const canon = v => String(v || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+    const s = canon(inner);
+    if (!s) return null;
+    for (const tag of ArkikRAGEngine.TAGS) {
+      const key = canon(tag.key);
+      const label = canon(tag.label);
+      // Se compara también sin dígitos para que un umbral monetario
+      // escrito con cualquier separador ("400,000" / "400.000") mapee.
+      const labelNoDigits = label.replace(/[0-9]+/g, "");
+      const sNoDigits = s.replace(/[0-9]+/g, "");
+      if (s === key || s === label) return tag.key;
+      if (labelNoDigits && sNoDigits === labelNoDigits) return tag.key;
+    }
+    return null;
+  },
+
+  /**
+   * Ejecuta la consulta contra el índice.
+   * @returns {{records:Array, query:Object, scope:Array, matched:boolean}}
+   */
+  query(searchString) {
+    const parsed = this.parseQuery(searchString);
+
+    // Sin consulta, el alcance es el índice completo.
+    let scope = this._index.slice();
+    const tagOnly = parsed.text.length === 0 && parsed.budget === null;
+
+    // Filtros por etiqueta.
+    for (const key of parsed.tags) {
+      const tag = this.TAGS.find(t => t.key === key);
+      if (tag) scope = scope.filter(tag.test);
+    }
+
+    // Filtro por umbral monetario.
+    if (parsed.budget !== null) {
+      scope = scope.filter(r => r.granTotal > parsed.budget);
+    }
+
+    // Filtro de texto libre: TODOS los términos deben coincidir
+    // (AND), sobre los campos de contacto e identidad. Se omite en
+    // modo pregunta (ver parseQuery).
+    if (parsed.text.length && !parsed.questionMode) {
+      scope = scope.filter(r => {
+        const hay = r._haystack || (r._haystack = ArkikRAGEngine._haystack(r));
+        return parsed.text.every(term => hay.includes(term));
+      });
+    }
+
+    // Una intención de agregación NO filtra: responde sobre todo el
+    // conjunto, salvo que el usuario además haya pedido tags/texto.
+    const intentKey = parsed.intent && !tagOnly ? parsed.intent : null;
+
+    return {
+      records: scope,
+      query: parsed,
+      scope: scope,
+      matched: scope.length > 0,
+      intent: intentKey
+    };
+  },
+
+  /** Texto buscable normalizado de un registro (nombre, código, contacto, lugar). */
+  _haystack(r) {
+    return [
+      r.code,
+      r.clientName,
+      r.clientPhone,
+      r.clientEmail,
+      r.province,
+      r.canton,
+      r.address,
+      r.eventType,
+      r.serviceName,
+      r.selectedDate,
+      r.status
+    ]
+      .join(" ")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  },
+
+  // ------------------------------------------------------------
+  // AGREGACIONES (todas derivables de datos persistidos)
+  // ------------------------------------------------------------
+
+  /**
+   * Agrega el conjunto dado (por defecto: índice completo).
+   * @param {Array} [list] conjunto a agregar; por defecto, todo el índice
+   */
+  aggregate(list) {
+    // `indexed` cuenta los registros de ESTE agregado, no los del índice
+    // global. Si se reportara el tamaño global, un filtro que empareja
+    // cero registros se saltaría la salida "sin datos" y emitiría un
+    // falso "todo en orden" con métricas en cero.
+    const src = Array.isArray(list) ? list : this._index;
+    const active = src.filter(r => r.status !== "cancelada");
+    const confirmed = active.filter(r => r.depositSettled);
+    const pending = active.filter(r => r.status === "pendiente");
+
+    const sum = (arr, key) => arr.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+
+    // 1) CONVERSIÓN.
+    // Definición explícita y deliberada: en este sistema NO existe una
+    // entidad "cotización" separada. Cada registro de BookingStore nace
+    // como cotización formal con status "pendiente" (el PDF lo declara:
+    // "constituye una cotización formal de validez comercial") y sólo
+    // pasa a reserva confirmada cuando el depósito SINPE es verificado.
+    // Por tanto el denominador es "cotizaciones emitidas" = todo
+    // registro no cancelado, y el numerador es "reservas confirmadas".
+    // NO es un embudo de leads de marketing; no se debe leer como tal.
+    const emitted = active.length;
+    const conversionRate = emitted > 0 ? (confirmed.length / emitted) * 100 : null;
+
+    // 2) BALANCE FINANCIERO. Lo cobrado es el depósito ya verificado;
+    // lo pendiente es el 50% restante de las reservas no liquidadas.
+    const collected = sum(confirmed, "deposit50Amount");
+    const pendingBalance = sum(
+      active.filter(r => !r.depositSettled),
+      "remainingBalance"
+    );
+    const contracted = sum(active, "granTotal");
+
+    // 3) DEMANDA POR FORMATO Y DISTRIBUCIÓN GEOGRÁFICA.
+    const byFormat = {};
+    for (const r of active) {
+      byFormat[r.eventType] = (byFormat[r.eventType] || 0) + 1;
+    }
+    const formats = Object.keys(byFormat)
+      .map(name => ({ name, count: byFormat[name] }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    const gamCount = active.filter(r => !r.isNonGam).length;
+    const nonGamCount = active.filter(r => r.isNonGam).length;
+
+    // 4) COBERTURA OPERATIVA.
+    const upcoming = active
+      .filter(r => r.selectedDate && r.selectedDate >= ArkikRAGEngine.todayISO())
+      .sort((a, b) => a.selectedDate.localeCompare(b.selectedDate));
+
+    const weekendCutoff = ArkikRAGEngine.nextWeekendISO();
+    const weekendNonGam = upcoming.filter(
+      r => r.isNonGam && r.selectedDate <= weekendCutoff
+    );
+
+    return {
+      computedAt: new Date().toISOString(),
+      totals: {
+        indexed: src.length,
+        active: active.length,
+        cancelled: src.length - active.length,
+        confirmed: confirmed.length,
+        pendingSinpe: pending.length
+      },
+      conversion: {
+        // Definición expuesta para que la tarjeta NO pueda malinterpretarse.
+        definition: "Confirmadas ÷ cotizaciones emitidas (registros no cancelados)",
+        emitted,
+        confirmed: confirmed.length,
+        rate: conversionRate
+      },
+      balance: {
+        definition: "Cobrado = depósitos SINPE verificados · Pendiente = saldo 50% restante",
+        collected,
+        pendingBalance,
+        contracted,
+        atRisk: sum(pending, "granTotal")
+      },
+      demand: {
+        formats,
+        topFormat: formats.length ? formats[0] : null,
+        gamCount,
+        nonGamCount,
+        gamShare: active.length ? (gamCount / active.length) * 100 : null
+      },
+      coverage: {
+        upcomingCount: upcoming.length,
+        weekendCutoff,
+        weekendNonGamCount: weekendNonGam.length,
+        weekendNonGam
+      }
+    };
+  },
+
+  // ------------------------------------------------------------
+  // HELPERS DE FECHA (deterministas, sin zona horaria implícita)
+  // ------------------------------------------------------------
+
+  todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  },
+
+  /**
+   * Próximo sábado (inclusive) como ISO, para acotar "este fin de semana".
+   * Si hoy ya es sábado, devuelve hoy.
+   */
+  nextWeekendISO() {
+    const d = new Date();
+    const dow = d.getDay(); // 0 dom .. 6 sáb
+    const delta = dow === 6 ? 0 : (6 - dow + 7) % 7;
+    d.setDate(d.getDate() + delta);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  },
+
+  /**
+   * Proyección semanal de ingresos CONTRACTADOS (no es pronóstico):
+   * agrupa por semana ISO las reservas vigentes y separa lo ya cobrado
+   * del 50% restante por facturar.
+   */
+  weeklyProjection(weeksAhead = 8) {
+    const today = this.todayISO();
+    const active = this._index.filter(r => r.status !== "cancelada" && r.selectedDate >= today);
+    const buckets = new Map();
+
+    for (const r of active) {
+      const key = ArkikRAGEngine._isoWeekKey(r.selectedDate);
+      if (!key) continue;
+      if (!buckets.has(key)) {
+        buckets.set(key, { week: key, total: 0, collected: 0, pending: 0, events: 0 });
+      }
+      const b = buckets.get(key);
+      b.total += r.granTotal;
+      b.events += 1;
+      if (r.depositSettled) b.collected += r.deposit50Amount;
+      else b.pending += r.remainingBalance;
+    }
+
+    return Array.from(buckets.values())
+      .sort((a, b) => a.week.localeCompare(b.week))
+      .slice(0, Math.max(1, weeksAhead));
+  },
+
+  /** Clave "AAAA-Www" a partir de una fecha ISO; null si no es parseable. */
+  _isoWeekKey(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return null;
+    const d = parseISO(iso);
+    if (!d) return null;
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    // Jueves de la semana ISO define el año-semana.
+    const dayNum = (target.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNum + 3);
+    const firstThursday = new Date(target.getFullYear(), 0, 4);
+    const fDayNum = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - fDayNum + 3);
+    const week = 1 + Math.round((target - firstThursday) / (7 * 86400000));
+    return `${target.getFullYear()}-W${String(week).padStart(2, "0")}`;
+  },
+
+  // ------------------------------------------------------------
+  // GENERADOR DE INSIGHTS
+  // ------------------------------------------------------------
+
+  /**
+   * Insights DERIVADOS: cada línea se corresponde con una agregación
+   * concreta. Sin datos, no hay frase; con un conjunto vacío, el
+   * motor informa "sin registros" en vez de inventar porcentajes.
+   * @returns {{lines:Array<{tone:string,text:string}>, aggregate:Object}}
+   */
+  generateDiagnosticSummary(list) {
+    const scope = Array.isArray(list) ? list : this._index;
+    const agg = this.aggregate(scope);
+    const lines = [];
+
+    if (agg.totals.indexed === 0) {
+      return {
+        lines: [{ tone: "muted", text: "Sin registros en el índice. No hay datos suficientes para emitir diagnóstico." }],
+        aggregate: agg
+      };
+    }
+
+    // 1) CARTERA EN RIESGO — insight más accionable, va primero.
+    if (agg.totals.pendingSinpe > 0) {
+      const n = agg.totals.pendingSinpe;
+      const money = formatCRC(agg.balance.pendingBalance);
+      lines.push({
+        tone: "warn",
+        text: `📌 ${n} ${n === 1 ? "reserva sigue" : "reservas siguen"} pendiente${n === 1 ? "" : "s"} de verificación SINPE: ${money} por cobrar en saldo 50% antes de que la agenda pueda darse por congelada.`
+      });
+    } else {
+      lines.push({
+        tone: "ok",
+        text: `✅ Sin reservas pendientes de verificación SINPE. Las ${agg.totals.confirmed} confirmadas tienen agenda congelada.`
+      });
+    }
+
+    // 2) VIÁTICOS FUERA DE GAM — el caso que pide la especificación.
+    const wkn = agg.coverage.weekendNonGam;
+    if (wkn.length > 0) {
+      const n = wkn.length;
+      const fechas = wkn
+        .slice(0, 3)
+        .map(r => `${r.selectedDate} (${r.canton || r.province})`)
+        .join(", ");
+      lines.push({
+        tone: "alert",
+        text: `📌 ${n} ${n === 1 ? "evento requiere" : "eventos requieren"} confirmación de viáticos fuera del GAM${n <= 3 ? `: ${fechas}` : ""}. Fuera de GAM aplica recargo del ${Math.round(ArkikRAGEngine.travelRate() * 100)}%.`
+      });
+    } else if (agg.coverage.upcomingCount > 0) {
+      lines.push({
+        tone: "ok",
+        text: `📍 Los ${agg.coverage.upcomingCount} eventos próximos están dentro del GAM: sin recargo de viáticos.`
+      });
+    }
+
+    // 3) CONVERSIÓN — sólo si hay denominador real.
+    if (agg.conversion.emitted > 0) {
+      const pct = agg.conversion.rate.toFixed(1);
+      lines.push({
+        tone: "info",
+        text: `🎯 Tasa de conversión ${pct}%: ${agg.conversion.confirmed} de ${agg.conversion.emitted} cotizaciones emitidas derivaron en reserva confirmada (depósito verificado).`
+      });
+    }
+
+    // 4) CONCENTRACIÓN DE DEMANDA.
+    if (agg.demand.topFormat) {
+      const { name, count } = agg.demand.topFormat;
+      const share = agg.demand.gamShare === null ? null : agg.demand.gamShare.toFixed(0);
+      lines.push({
+        tone: "info",
+        text: `🏷️ Formato con mayor demanda: ${name} (${count} ${count === 1 ? "evento" : "eventos"}). Cobertura ${agg.demand.gamCount} GAM / ${agg.demand.nonGamCount} fuera de GAM${share ? ` (${share}% en GAM)` : ""}.`
+      });
+    }
+
+    // 5) EXPOSICIÓN DE ALTO VALOR.
+    const highValue = scope.filter(r => r.status !== "cancelada" && r.granTotal > 400000);
+    if (highValue.length > 0) {
+      const sum = highValue.reduce((a, r) => a + r.granTotal, 0);
+      lines.push({
+        tone: "accent",
+        text: `💎 ${highValue.length} ${highValue.length === 1 ? "proyecto supera" : "proyectos superan"} ₡400.000 por ${formatCRC(sum)} contratados. Es el tramo con mayor exposición a riesgo de impago.`
+      });
+    }
+
+    // 6) CARTERA TOTAL.
+    lines.push({
+      tone: "muted",
+      text: `💰 Cartera contratada ${formatCRC(agg.balance.contracted)} · Cobrado ${formatCRC(agg.balance.collected)} · Por cobrar ${formatCRC(agg.balance.pendingBalance)}.`
+    });
+
+    return { lines, aggregate: agg };
+  },
+
+  /** Tasa de viáticos vigente, respetando la config que edita el rol IT. */
+  travelRate() {
+    if (typeof StorageEngine !== "undefined" && StorageEngine.getConfig) {
+      return StorageEngine.getConfig("travelSurchargeRate", NON_GAM_SURCHARGE_RATE);
+    }
+    return NON_GAM_SURCHARGE_RATE;
+  },
+
+  // ------------------------------------------------------------
+  // ACCIONES (composición de mensajes; sin efectos de red)
+  // ------------------------------------------------------------
+
+  /** Cuerpo del recordatorio SINPE para una reserva pendiente. */
+  sinpeReminderMessage(r) {
+    const firstName = String(r.clientName || "Cliente").split(" ")[0];
+    return [
+      `Hola ${firstName}, es Juan José Ramírez de Arkik Productions.`,
+      "",
+      `Te escribo por tu reserva ${r.code} del ${r.selectedDate || "por confirmar"} (${r.eventType}).`,
+      "",
+      `• Total: ${formatCRC(r.granTotal)}`,
+      `• Adelanto 50% (${SINPE_CONFIG.depositPercentage * 100}%): ${formatCRC(r.deposit50Amount)}`,
+      `• Saldo pendiente: ${formatCRC(r.remainingBalance)}`,
+      `• Referencia SINPE: ${r.sinpeRef || "por asignar"}`,
+      "",
+      `SINPE Móvil: ${SINPE_CONFIG.phone} a nombre de ${SINPE_CONFIG.holder}.`,
+      `Envíame el comprobante por este mismo chat para confirmar tu reserva.`,
+      "",
+      `ℹ️ ${SINPE_CONFIG.policyText}`
+    ].join("\n");
+  },
+
+  /** Sólo reservas pendientes: es el conjunto al que tiene sentido escribir. */
+  pendingTargets() {
+    return this._index.filter(r => r.status === "pendiente");
+  },
+
+  /** Reporte ejecutivo en texto plano (base del export .txt). */
+  executiveReport() {
+    const agg = this.aggregate();
+    const insights = this.generateDiagnosticSummary();
+    const fmt = n => n === null ? "n/d" : formatCRC(n);
+    const lines = [
+      "ARKIK PRODUCTIONS — REPORTE EJECUTIVO",
+      "=======================================",
+      `Generado: ${new Date().toLocaleString("es-CR")}`,
+      `Índice: ${agg.totals.indexed} registros (${agg.totals.active} vigentes, ${agg.totals.cancelled} cancelados)`,
+      "",
+      "1. CARTERA",
+      `   Contratado:        ${fmt(agg.balance.contracted)}`,
+      `   Cobrado (dep.):    ${fmt(agg.balance.collected)}`,
+      `   Saldo por cobrar:  ${fmt(agg.balance.pendingBalance)}`,
+      `   En riesgo (pend.): ${fmt(agg.balance.atRisk)}`,
+      "",
+      "2. CONVERSIÓN",
+      `   ${agg.conversion.definition}`,
+      `   ${agg.conversion.confirmed} / ${agg.conversion.emitted} = ${agg.conversion.rate === null ? "n/d" : agg.conversion.rate.toFixed(1) + "%"}`,
+      "",
+      "3. DEMANDA POR FORMATO",
+      ...(agg.demand.formats.length
+        ? agg.demand.formats.map(f => `   - ${f.name}: ${f.count}`)
+        : ["   (sin datos)"]),
+      "",
+      `4. GEOGRAFÍA: ${agg.demand.gamCount} GAM / ${agg.demand.nonGamCount} fuera de GAM`,
+      "",
+      "5. DIAGNÓSTICO"
+    ];
+    for (const l of insights.lines) lines.push(`   ${l.text}`);
+    return lines.join("\n");
+  }
+};
+
+// ============================================================
+// 21. RAG CONSOLE (Capa de Presentación del Índice)
+// ------------------------------------------------------------
+// Contrato con el núcleo: la consola NO recalcula nada. Pide
+// agregados a ArkikRAGEngine y los pinta. Toda regla de negocio
+// vive en el núcleo, que es la parte testeable en Node.
+// ============================================================
+
+const RAGConsole = {
+  query: "",
+  pill: "todas",
+  _bound: false,
+
+  /**
+   * Monta la consola (idempotente) y sincroniza el índice.
+   */
+  init() {
+    this._bind();
+    this.render();
+  },
+
+  _bind() {
+    if (this._bound) return;
+    // Un solo par de delegates en #ragStudioView cubre búsqueda, pills
+    // y acciones de fila. Se registran una sola vez sobre el contenedor
+    // raíz, no sobre los hijos: los hijos se repintan en cada render y
+    // un listener por elemento se acumularía sin parar.
+    const input = document.getElementById("rag-studio-search");
+    if (input) {
+      input.addEventListener("input", () => {
+        this.query = input.value;
+        this.render();
+      });
+    }
+    const pills = document.getElementById("rag-studio-pills");
+    if (pills) {
+      pills.addEventListener("click", e => {
+        const btn = e.target.closest("[data-rag-pill]");
+        if (!btn) return;
+        this.pill = btn.getAttribute("data-rag-pill");
+        this.render();
+      });
+    }
+    const results = document.getElementById("rag-studio-results");
+    if (results) {
+      results.addEventListener("click", e => {
+        const wa = e.target.closest("[data-rag-wa]");
+        if (wa) {
+          e.preventDefault();
+          window.open(wa.getAttribute("href"), "_blank", "noopener");
+        }
+      });
+    }
+    this._bound = true;
+  },
+
+  /** Traduce la selección actual (pills + texto) a una consulta del núcleo. */
+  effectiveQuery() {
+    // Se traduce el pill a la etiqueta de texto que el parser entiende,
+    // en vez de filtrar a mano: la UI no reimplementa reglas de negocio.
+    const tagText = this.pill === "todas" ? "" : `[${this.pill}]`;
+    const free = String(this.query || "").trim();
+    return [tagText, free].filter(Boolean).join(" ");
+  },
+
+  /**
+   * Reindexa y repinta el Studio.
+   * Reindexa en cada render a propósito: el costo es lineal sobre un
+   * registro por reserva y garantiza que ninguna vista pueda pintar un
+   * índice desactualizado tras una reserva nueva o un cambio de estado.
+   */
+  render() {
+    ArkikRAGEngine.attach(BookingStore);
+    this._renderBadge();
+    this._renderPills();
+    this._renderInsights();
+    this._renderResults();
+  },
+
+  _renderBadge() {
+    const s = ArkikRAGEngine.stats();
+    const studio = document.getElementById("rag-studio-badge");
+    if (studio) {
+      studio.textContent = `🟢 Sincronizado en Tiempo Real · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+    }
+    // El panel embebido solo muestra el pulso bioluminiscente; no sobreescribir si ya tiene la estructura ejecutiva
+    const pulse = document.getElementById("rag-index-badge");
+    if (pulse && !pulse.querySelector(".animate-pulse")) {
+      pulse.textContent = "🟢 Sincronizado en Tiempo Real";
+    }
+    const launch = document.getElementById("rag-launch-count");
+    if (launch) launch.textContent = String(s.count);
+    const counter = document.getElementById("rag-records-counter");
+    if (counter) {
+      counter.textContent = `${s.count} ${s.count === 1 ? "Registro Activo" : "Registros Activos"}`;
+    }
+  },
+
+  _renderPills() {
+    const box = document.getElementById("rag-studio-pills");
+    if (!box) return;
+    const idx = ArkikRAGEngine.records();
+    // Los pills se derivan de TAGS: la clave del pill ES la clave del
+    // tag, así que un conteo no puede desincronizarse del filtro.
+    const countFor = key => {
+      const tag = ArkikRAGEngine.TAGS.find(t => t.key === key);
+      return tag ? idx.filter(r => tag.test(r)).length : 0;
+    };
+    // "+12%" no es texto fijo: la tasa de viáticos es configurable desde
+    // el panel (StorageEngine), así que un 12% hardcodeado mentía apenas
+    // el dueño ajustara la tasa.
+    const travelPct = Math.round(ArkikRAGEngine.travelRate() * 100);
+    const pills = [{ key: "todas", label: "Todas" }].concat(ArkikRAGEngine.PILL_TAGS).map(p => {
+      if (p.key !== "fuera-gam") return p;
+      return { key: p.key, label: `Fuera GAM (+${travelPct}%)` };
+    });
+    box.innerHTML = pills
+      .map(p => {
+        const active = this.pill === p.key ? "rag-pill--active" : "";
+        const n = p.key === "todas" ? idx.length : countFor(p.key);
+        return `<button type="button" data-rag-pill="${p.key}" class="rag-pill ${active}">${p.label} <span class="rag-pill-count">${n}</span></button>`;
+      })
+      .join("");
+  },
+
+  _renderInsights() {
+    const box = document.getElementById("rag-studio-insights");
+    if (!box) return;
+
+    // Si el usuario escribió una consulta, los diagnósticos pasan a
+    // describir SU conjunto; si no, describen el índice completo.
+    const q = this.effectiveQuery().trim();
+    const scoped = q ? ArkikRAGEngine.query(q).records : ArkikRAGEngine.records();
+    const insights = ArkikRAGEngine.generateDiagnosticSummary(scoped);
+    const agg = insights.aggregate;
+
+    const pct = v => (v === null || v === undefined ? "n/d" : v.toFixed(1) + "%");
+
+    // SECTION B: los 4 KPI del dashboard ejecutivo. Cada valor viene
+    // de aggregate(); los colores son los acentos del brief.
+    const kpiBox = document.getElementById("rag-studio-kpis");
+    if (kpiBox) {
+      const kpis = [
+        {
+          tone: "emerald",
+          accent: "#10b981",
+          icon: "💰",
+          title: "Total Recaudado",
+          metric: formatCRC(agg.balance.collected),
+          caption: "Depósitos SINPE verificados",
+          detail: `Cartera contratada ${formatCRC(agg.balance.contracted)}`
+        },
+        {
+          tone: "fuchsia",
+          accent: "#d946ef",
+          icon: "⏳",
+          title: "Saldos Pendientes en Escena",
+          metric: formatCRC(agg.balance.pendingBalance),
+          caption: `${agg.totals.pendingSinpe} reserva(s) sin verificar`,
+          detail: agg.balance.atRisk > 0 ? `Exposición sin confirmar ${formatCRC(agg.balance.atRisk)}` : "Sin reservas en riesgo."
+        },
+        {
+          tone: "cyan",
+          accent: "#06b6d4",
+          icon: "🎯",
+          title: "Tasa de Conversión",
+          metric: pct(agg.conversion.rate),
+          caption: `${agg.conversion.confirmed} de ${agg.conversion.emitted} emitidas`,
+          detail: agg.conversion.definition
+        },
+        {
+          tone: "amber",
+          accent: "#f59e0b",
+          icon: "✅",
+          title: "Confirmadas vs. Cotizaciones",
+          metric: `${agg.conversion.confirmed}/${agg.conversion.emitted}`,
+          caption: "Reservas confirmadas sobre cotizaciones emitidas",
+          detail: `${agg.totals.active} vigente(s) · ${agg.totals.cancelled} cancelada(s)`
+        }
+      ];
+      kpiBox.innerHTML = kpis
+        .map(
+          k => `<article class="rag-kpi" style="--rag-accent:${k.accent}">
+        <header class="rag-kpi-head">
+          <span class="rag-kpi-icon" aria-hidden="true">${k.icon}</span>
+          <h3>${sanitizeInput(k.title)}</h3>
+        </header>
+        <p class="rag-kpi-metric">${sanitizeInput(k.metric)}</p>
+        <p class="rag-kpi-caption">${sanitizeInput(k.caption)}</p>
+        <p class="rag-kpi-detail">${sanitizeInput(k.detail)}</p>
+      </article>`
+        )
+        .join("");
+    }
+
+    // SECTION C: insights deterministas del núcleo.
+    box.innerHTML = insights.lines
+      .map(
+        l => `<li class="rag-insight rag-insight--${sanitizeInput(l.tone)}">${sanitizeInput(l.text)}</li>`
+      )
+      .join("");
+
+// Centro de acción: 1 clic con diseño premium y micro-interacciones
+    const pending = agg.totals.pendingSinpe;
+    const latestBookingId = (scoped && scoped.length && (scoped[0].id || scoped[0].code)) || "";
+    const actions = [
+      {
+        id: "preview-invoice",
+        icon: `👁️`,
+        label: "Visualizar Pre-Factura",
+        action: `openInvoicePreview('${sanitizeInput(latestBookingId)}')`,
+        cls: "bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2",
+        disabled: agg.totals.active === 0,
+        directStyle: true
+      },
+      {
+        id: "export-pdf",
+        icon: `<svg class="w-4 h-4 shrink-0 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`,
+        label: "Exportar Reporte Ejecutivo",
+        action: "ragActionExport()",
+        cls: "rag-action--export hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] bg-purple-900/30 border border-purple-500/30 hover:border-purple-400 text-purple-200 active:scale-95 transition-all duration-150",
+        disabled: agg.totals.active === 0
+      },
+      {
+        id: "export-docx",
+        icon: `<svg class="w-4 h-4 shrink-0 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+        label: "Descargar Word (.docx)",
+        action: "exportOwnerReportDOCX()",
+        cls: "rag-action--docx hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] bg-indigo-900/30 border border-indigo-500/30 hover:border-indigo-400 text-indigo-200 active:scale-95 transition-all duration-150",
+        disabled: agg.totals.active === 0
+      },
+      {
+        id: "whatsapp",
+        icon: `<svg class="w-4 h-4 shrink-0 text-emerald-300" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>`,
+        label: "Notificar Lote por WhatsApp",
+        action: "ragActionNotifyBatch()",
+        cls: "rag-action--whatsapp hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] bg-emerald-900/30 border border-emerald-500/30 hover:border-emerald-400 text-emerald-200 active:scale-95 transition-all duration-150",
+        disabled: pending === 0
+      },
+      {
+        id: "projection",
+        icon: `<svg class="w-4 h-4 shrink-0 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>`,
+        label: "Proyección de Ingresos Semanales",
+        action: "ragActionWeekly()",
+        cls: "rag-action--projection hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] bg-cyan-900/30 border border-cyan-500/30 hover:border-cyan-400 text-cyan-200 active:scale-95 transition-all duration-150",
+        disabled: agg.coverage.upcomingCount === 0
+      }
+    ];
+
+    const actionBox = document.getElementById("rag-studio-actions");
+    if (actionBox) {
+      actionBox.innerHTML = actions
+        .map(a => {
+          if (a.directStyle) {
+            return `<button type="button" onclick="${a.action}" ${a.disabled ? "disabled" : ""}
+        class="w-full justify-center ${a.cls} ${a.disabled ? "rag-action--off" : ""}">
+        <span aria-hidden="true">${a.icon}</span>
+        <span>${sanitizeInput(a.label)}</span>
+      </button>`;
+          }
+          return `<button type="button" onclick="${a.action}" ${a.disabled ? "disabled" : ""}
+        class="rag-action ${a.cls} ${a.disabled ? "rag-action--off" : ""} min-h-[44px] px-4 py-3">
+        <span class="rag-action-icon flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 shrink-0" aria-hidden="true">${a.icon}</span>
+        <span class="font-bold tracking-wide">${sanitizeInput(a.label)}</span>
+      </button>`;
+        })
+        .join("");
+    }
+  },
+
+  _renderResults() {
+    const box = document.getElementById("rag-studio-results");
+    if (!box) return;
+    const q = this.effectiveQuery().trim();
+    const res = ArkikRAGEngine.query(q);
+    const records = res.records;
+
+    const head = document.getElementById("rag-studio-results-head");
+    if (head) {
+      head.textContent = q
+        ? `${records.length} de ${ArkikRAGEngine.records().length} registros · consulta: "${q}"`
+        : `${records.length} registro(s) en el índice`;
+    }
+
+    if (!records.length) {
+      box.innerHTML = `<div class="rag-empty">
+        <p>Sin coincidencias para esta consulta.</p>
+        <p class="rag-empty-hint">Prueba con un código ARK, un teléfono, o una etiqueta como <code>[Pendientes SINPE]</code>.</p>
+      </div>`;
+      return;
+    }
+
+    box.innerHTML = records.map(r => this._resultCard(r)).join("");
+  },
+
+  _resultCard(r) {
+    const waMsg = ArkikRAGEngine.sinpeReminderMessage(r);
+    const waHref = `https://wa.me/${normalizeWaPhone(r.clientPhone)}?text=${encodeURIComponent(waMsg)}`;
+    const chip = r.depositSettled
+      ? '<span class="rag-chip rag-chip--paid">Depósito verificado</span>'
+      : r.status === "pendiente"
+        ? '<span class="rag-chip rag-chip--pending">SINPE pendiente</span>'
+        : '<span class="rag-chip rag-chip--cancelled">Cancelada</span>';
+    const geo = r.isNonGam
+      ? '<span class="rag-chip rag-chip--nongam">Fuera de GAM</span>'
+      : '<span class="rag-chip rag-chip--gam">GAM</span>';
+
+    // Matriz financiera: total, depósito 50% y saldo restante. Los
+    // montos salen del registro ya normalizado (no se recalculan) para
+    // no duplicar la regla 50/50 del carrito.
+    const finance = [
+      { label: "Total", value: formatCRC(r.granTotal), tone: "total" },
+      {
+        label: "Adelanto 50%",
+        value: formatCRC(r.deposit50Amount),
+        tone: r.depositSettled ? "paid" : "pending"
+      },
+      { label: "Saldo", value: formatCRC(r.remainingBalance), tone: "balance" }
+    ]
+      .map(
+        f => `<div class="rag-fin rag-fin--${f.tone}">
+      <span class="rag-fin-label">${f.label}</span>
+      <span class="rag-fin-value">${sanitizeInput(f.value)}</span>
+    </div>`
+      )
+      .join("");
+
+    return `<article class="rag-row" data-rag-code="${sanitizeInput(r.code)}">
+      <div class="rag-row-ident">
+        <div class="rag-result-top">
+          <span class="rag-code">${sanitizeInput(r.code)}</span>
+          ${chip}
+          ${geo}
+          ${r.isBandaRT ? '<span class="rag-chip rag-chip--rt">Banda RT</span>' : ""}
+        </div>
+        <h6 class="rag-client">${sanitizeInput(r.clientName)}</h6>
+        <p class="rag-contact">
+          <span>📱 ${sanitizeInput(r.clientPhone || "sin teléfono")}</span>
+          ${r.clientEmail ? `<span>✉️ ${sanitizeInput(r.clientEmail)}</span>` : ""}
+        </p>
+        <p class="rag-when">📅 ${sanitizeInput(r.selectedDate || "sin fecha")} ${sanitizeInput(r.selectedTime || "")} · ${sanitizeInput(r.eventType)}</p>
+        <p class="rag-where">📍 ${sanitizeInput([r.canton, r.province].filter(Boolean).join(", ") || "sin ubicación")}</p>
+      </div>
+      <div class="rag-row-fin">
+        <div class="rag-fin-matrix">${finance}</div>
+      </div>
+      <div class="rag-row-actions">
+        <button type="button" onclick="openInvoicePreview('${sanitizeInput(r.id || r.code)}')" data-rag-preview="${sanitizeInput(r.id || r.code)}"
+          class="bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+          title="Visualizar Pre-Factura Formal">
+          <span aria-hidden="true">👁️</span>
+          <span>Visualizar Pre-Factura</span>
+        </button>
+        <a class="rag-pill-btn rag-pill-btn--wa" href="${sanitizeInput(waHref)}" data-rag-wa="1" target="_blank" rel="noopener noreferrer" title="Notificar vía WhatsApp">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>
+          <span>WhatsApp</span>
+        </a>
+        <button type="button" class="rag-pill-btn rag-pill-btn--edit" data-rag-edit="${sanitizeInput(r.code)}" title="Editar Reserva">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+          <span>Editar</span>
+        </button>
+      </div>
+    </article>`;
+  }
+};
+
+/**
+ * RAG INTELLIGENCE STUDIO — navegación de pantalla completa.
+ * El Studio es un HERMANO de #adminPortalModal, no un hijo: al abrirlo
+ * se oculta el panel para que nada más compita por la atención. Ocultar
+ * el panel (en vez de mantenerlo montado detrás) también garantiza que
+ * el scroll del body quede bloqueado durante el Studio.
+ */
+const RAGStudio = {
+  _bound: false,
+  _returnFocus: null,
+
+  isOpen() {
+    const el = document.getElementById("ragStudioView");
+    return Boolean(el) && !el.classList.contains("hidden");
+  },
+
+  open() {
+    const el = document.getElementById("ragStudioView");
+    if (!el) return;
+    this._returnFocus = document.activeElement;
+    const panel = document.getElementById("adminPortalModal");
+    if (panel) {
+      panel.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+      panel.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+    }
+    el.classList.remove("hidden", "opacity-0", "pointer-events-none", "invisible");
+    el.classList.add("flex", "opacity-100", "pointer-events-auto", "visible");
+    document.body.style.overflow = "hidden";
+    RAGConsole.init();
+    this._bind();
+    const search = document.getElementById("rag-studio-search");
+    if (search) search.focus();
+    syncModalAnimationState();
+  },
+
+  close() {
+    const el = document.getElementById("ragStudioView");
+    if (!el) return;
+    el.classList.add("hidden", "opacity-0", "pointer-events-none", "invisible");
+    el.classList.remove("flex", "opacity-100", "pointer-events-auto", "visible");
+    // Se restaura el panel, no el scroll: el Studio vive dentro de la
+    // sesión del Propietario, así que cerrar el Studio NO cierra sesión.
+    if (typeof ModalController !== "undefined") ModalController.open("adminPortalModal");
+    if (this._returnFocus && typeof this._returnFocus.focus === "function") {
+      this._returnFocus.focus();
+      this._returnFocus = null;
+    }
+    syncModalAnimationState();
+  },
+
+  _bind() {
+    if (this._bound) return;
+    // Un solo delegate cubre la barra de acciones por fila. Los botones
+    // se regeneran en cada render, así que un listener por botón
+    // acumularía duplicados.
+    const results = document.getElementById("rag-studio-results");
+    if (results) {
+      results.addEventListener("click", e => {
+        const preview = e.target.closest("[data-rag-preview]");
+        if (preview) {
+          openInvoicePreview(preview.getAttribute("data-rag-preview"));
+          return;
+        }
+        const pdf = e.target.closest("[data-rag-pdf]");
+        if (pdf) {
+          openInvoicePreview(pdf.getAttribute("data-rag-pdf"));
+          return;
+        }
+        const doc = e.target.closest("[data-rag-doc]");
+        if (doc) {
+          openInvoicePreview(doc.getAttribute("data-rag-doc"));
+          return;
+        }
+        const edit = e.target.closest("[data-rag-edit]");
+        if (edit) ragActionRecordEdit(edit.getAttribute("data-rag-edit"));
+      });
+    }
+    this._bound = true;
+  }
+};
+
+function openRagStudio() {
+  RAGStudio.open();
+}
+
+function closeRagStudio() {
+  RAGStudio.close();
+}
+
+/**
+ * Cerrar sesión desde el Studio: hay que cerrar AMBAS superficies, no
+ * solo el Studio, o el panel del Propietario quedaría visible detrás
+ * de la pantalla de login.
+ */
+function ragStudioLogout() {
+  if (typeof RAGStudio !== "undefined") RAGStudio.close();
+  adminLogout();
+}
+
+// ---- Acciones de 1 clic (ventana global: onclick inline del HTML) ----
+
+/**
+ * Exporta el reporte ejecutivo desde el RAG Studio. Delega en el modal
+ * WYSIWYG (openExecutiveReportPreviewModal) en lugar de duplicarlo: mismo
+ * documento, una sola implementación, y siempre visible al rasterizar.
+ */
+function ragActionExport() {
+  if (typeof openExecutiveReportPreviewModal === "function") {
+    openExecutiveReportPreviewModal();
+    return;
+  }
+  ragOutput("El visor del reporte ejecutivo no está disponible en este contexto.");
+}
+
+/**
+ * Notifica por WhatsApp el lote de reservas pendientes de SINPE.
+ * Los navegadores bloquean múltiples ventanas emergentes, así que
+ * se abre la primera y el resto se lista como enlaces de 1 clic.
+ */
+function ragActionNotifyBatch() {
+  const targets = ArkikRAGEngine.pendingTargets();
+  if (!targets.length) {
+    ragOutput("No hay reservas pendientes de SINPE: nada que notificar.");
+    return;
+  }
+  const first = targets[0];
+  const firstUrl = `https://wa.me/${normalizeWaPhone(first.clientPhone)}?text=${encodeURIComponent(ArkikRAGEngine.sinpeReminderMessage(first))}`;
+  window.open(firstUrl, "_blank", "noopener");
+
+  const rest = targets.slice(1);
+  const links = rest
+    .map(
+      r => `<a class="rag-out-link" href="${sanitizeInput(
+        `https://wa.me/${normalizeWaPhone(r.clientPhone)}?text=${encodeURIComponent(ArkikRAGEngine.sinpeReminderMessage(r))}`
+      )}" target="_blank" rel="noopener noreferrer">${sanitizeInput(r.code)} · ${sanitizeInput(r.clientName)}</a>`
+    )
+    .join("");
+
+  ragOutput(
+    `<strong>Notificación por lote</strong>` +
+    `<p>Se abrió WhatsApp para <strong>${sanitizeInput(first.code)}</strong> (${targets.length} pendientes en total).</p>` +
+    (rest.length
+      ? `<p>Envía uno a uno (${rest.length}):</p><div class="rag-out-links">${links}</div>`
+      : `<p>Era el único pendiente: lote completo.</p>`)
+  );
+}
+
+/** Renderiza la proyección semanal de ingresos contratados. */
+function ragActionWeekly() {
+  const weeks = ArkikRAGEngine.weeklyProjection();
+  // El bloque de salida se movió al Studio (#rag-studio-output) cuando la
+  // consola pasó a pantalla completa. Leer el id viejo devolvía null y la
+  // proyección se descartaba en silencio: el Propietario pulsaba el botón
+  // y no veía nada, sin ningún error en consola.
+  const out = document.getElementById("rag-studio-output");
+  if (!out) {
+    return;
+  }
+  if (!weeks.length) {
+    out.innerHTML = `<p>No hay reservas futuras con fecha para proyectar.</p>`;
+    return;
+  }
+  const rows = weeks
+    .map(
+      w => `<tr><td>${sanitizeInput(w.week)}</td><td>${w.events}</td>
+      <td>${formatCRC(w.total)}</td><td>${formatCRC(w.collected)}</td><td>${formatCRC(w.pending)}</td></tr>`
+    )
+    .join("");
+  out.innerHTML = `
+    <p class="rag-out-title">📊 Ingresos contratados por semana</p>
+    <p class="rag-note">Proyección de montos ya comprometidos, no pronóstico de ventas.</p>
+    <div class="rag-out-table-wrap"><table class="rag-out-table">
+      <thead><tr><th>Semana</th><th>Eventos</th><th>Total</th><th>Cobrado</th><th>Por facturar</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/** Escribe un bloque de estado en el área de salida del Studio. */
+function ragOutput(html) {
+  const out = document.getElementById("rag-studio-output");
+  if (out) out.innerHTML = html;
+}
+
+// ---- Acciones por fila (SECTION D) ----
+
+/**
+ * "Generar DOCX / PDF" de una reserva concreta.
+ *
+ * DELIBERADO: no existe generador DOCX en el proyecto y no se agrega uno
+ * sin dependencia. Este botón reutiliza el visor vectorial y el diálogo
+ * de impresión del navegador (#invoicePreviewModal), que es la única vía
+ * de PDF real ya implementada. Inventar un .docx con Text/HTML
+ * sobrevendería una capacidad que el código no tiene.
+ */
+function ragActionRecordDocument(code) {
+  openInvoicePreview(code);
+}
+
+/**
+ * "Editar" de una reserva.
+ *
+ * DELIBERADO: BookingStore solo expone updateDate y updateStatus; no hay
+ * un editor de reservas completo en el proyecto, y no se inventa un
+ * formulario que no puede persistir. El botón cierra el Studio y lleva
+ * al Propietario a la tabla de reservas, que es el punto de entrada real
+ * de edición (reprogramar fecha, confirmar, cancelar).
+ */
+function ragActionRecordEdit(code) {
+  const b = BookingStore.get(code);
+  if (!b) {
+    ragOutput(`No se encontró la reserva <code>${sanitizeInput(String(code))}</code>.`);
+    return;
+  }
+  if (typeof RAGStudio !== "undefined" && RAGStudio.close) RAGStudio.close();
+  if (typeof AdminModule !== "undefined" && typeof AdminModule.renderOwnerBookings === "function") {
+    AdminModule.renderOwnerBookings();
+  }
+  const rows = document.getElementById("owner-bookings-list");
+  if (rows && typeof rows.scrollIntoView === "function") {
+    rows.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  if (typeof showToast === "function") {
+    showToast(
+      `Reserva ${String(b.code)} (${String(b.status || "pendiente")}): edítala en la tabla de reservas.`,
+      "info"
+    );
+  }
+}
+
+// Reexportado para pruebas y para el panel de IT.
+window.ArkikAssets = ArkikAssets;
+window.ArkikRAGEngine = ArkikRAGEngine;
+window.RAGConsole = RAGConsole;
+window.RAGStudio = RAGStudio;
+window.openPreInvoicePreview = openPreInvoicePreview;
+window.closePreInvoicePreview = closePreInvoicePreview;
+window.exportVoucherPDF = exportVoucherPDF;
+window.exportVoucherDOCX = exportVoucherDOCX;
+window.buildExecutiveReportHTML = buildExecutiveReportHTML;
+window.collectExecutiveReportData = collectExecutiveReportData;
+window.openExecutiveReportPreviewModal = openExecutiveReportPreviewModal;
+window.closeExecutiveReportPreviewModal = closeExecutiveReportPreviewModal;
+window.exportExecutiveReportPDF = exportExecutiveReportPDF;
+window.calculateVerifiedTotals = calculateVerifiedTotals;
+window.enforceVerifiedTotalsOnBooking = enforceVerifiedTotalsOnBooking;
+window.validateBookingSchema = validateBookingSchema;
+window.safeSaveBookings = safeSaveBookings;
+window.purgeExpiredVouchers = purgeExpiredVouchers;
+window.buildWhatsAppMessage = buildWhatsAppMessage;
+window.updateOfflineModeBanner = updateOfflineModeBanner;
+
+
+

@@ -1737,11 +1737,16 @@
                 </label>
               </div>
 
+              <!-- Escudo de Validación Estricta Paso 3 -->
+              <div id="step3-error-banner" role="alert" aria-live="assertive"
+                class="hidden bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs p-3 rounded-xl shadow-lg mt-3">
+              </div>
+
               <div class="flex flex-col-reverse sm:flex-row gap-3 pt-2 sm:justify-between">
                 <button type="button" onclick="goToStep(2)" class="btn-cta-secondary">
                   Regresar
                 </button>
-                <button type="submit" id="btn-continue-pay" disabled class="btn-cta-primary opacity-50 cursor-not-allowed transition-all">
+                <button type="submit" id="btn-continue-pay" class="btn-cta-primary opacity-80 transition-all cursor-pointer">
                   <span id="btn-continue-pay-label">Continuar a Pago SINPE (50%)</span>
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
@@ -1954,14 +1959,14 @@
                   <span>Enviar Pedido a WhatsApp</span>
                 </a>
 
-                <!-- Executive Pre-Invoice Preview (Secondary · Purple/Indigo Glass) -->
+                <!-- Executive Pre-Invoice Preview (Secondary · Obsidian Glass) -->
                 <button type="button" id="btn-preview-invoice" onclick="openPreInvoicePreviewModal(cart.createdBooking || window._lastCreatedBooking)"
-                  class="btn-exec btn-exec-secondary">
+                  class="bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-5 py-2.5 font-semibold text-sm flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] w-full text-white">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>👁️ Previsualizar Pre-Factura Formal</span>
+                  <span>Descargar Comprobante / Pre-Factura</span>
                 </button>
 
                 <!-- Email Dispatch Action (Tertiary · Muted Glass) -->
@@ -2619,7 +2624,7 @@
           class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-2xl">
           ✅</div>
         <div>
-          <h3 class="text-lg font-extrabold text-white leading-tight">Reserva Validada. Por favor, suba el comprobante al Drive de Respaldo</h3>
+          <h3 class="text-lg font-extrabold text-white leading-tight">Reserva confirmada. El comprobante PDF ha sido generado.</h3>
           <p class="text-xs text-gray-400">Reserva <span id="bankval-code"
               class="admin-booking-code font-bold text-cyan-300">---</span> confirmada en agenda oficial</p>
         </div>
@@ -2635,15 +2640,14 @@
       </div>
 
       <p class="text-xs text-gray-300 leading-relaxed mb-5">
-        El depósito bancario fue validado y la fecha está confirmada en la agenda. Se compilaron y descargaron automáticamente el archivo
-        <strong class="text-cyan-300 font-mono">ARK-[CÓDIGO]-VALIDADO.pdf</strong> y el
-        <strong class="text-cyan-300">Expediente (JSON)</strong>. Haga clic abajo para acceder directamente a la carpeta de respaldo de Google Drive y almacenar la copia contable.
+        Reserva confirmada. El comprobante PDF ha sido generado (<strong class="text-cyan-300 font-mono">ARK-[CÓDIGO]-VALIDADO.pdf</strong>) junto con el
+        <strong class="text-cyan-300">Expediente (JSON)</strong>. Haga clic abajo para acceder directamente a la carpeta oficial de respaldo en Google Drive y almacenar la copia contable.
       </p>
 
       <div class="grid grid-cols-1 gap-3">
-        <a id="bankval-drive-link" href="https://drive.google.com/drive/folders/1A0zOpNvxCkhlSUZMxsV4G2tr5S5EWNEH?usp=drive_link" target="_blank" rel="noopener noreferrer"
+        <a id="bankval-drive-link" href="https://drive.google.com/drive/folders/1A0zOpNvxCkhlSUZMxsV4G2tr5S5EWNEH" target="_blank" rel="noopener noreferrer"
           class="drive-cta inline-flex items-center justify-center gap-2 w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg transition-all">
-          📁 Subir Comprobante a Google Drive
+          ☁️ Subir Respaldo a Google Drive
         </a>
         <a id="bankval-wa-link" href="#" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold text-sm transition-all">
@@ -2660,110 +2664,92 @@
 
   <!-- ============================================================ -->
   <!-- PRE-INVOICE & VOUCHER PREVIEW MODAL (#preInvoicePreviewModal)  -->
-  <!-- Real print A4 bounded canvas (794px) with Base64 & PDF engine  -->
+  <!-- Google Drive-style A4 Pre-Invoice Viewer (794px × 1123px)      -->
   <!-- ============================================================ -->
   <div id="preInvoicePreviewModal" role="dialog" aria-modal="true" aria-labelledby="pre-invoice-modal-title"
     onclick="if (event.target === this) closePreInvoicePreview()"
-    class="fixed inset-0 z-[120] hidden items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible transition-all duration-200">
-    <div class="relative m-auto w-full max-w-[850px] my-auto flex flex-col items-center">
+    class="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex flex-col hidden opacity-0 transition-opacity duration-300">
 
-      <!-- Action Header -->
-      <div class="w-full flex flex-wrap items-center justify-between gap-3 pb-3 px-1 sm:px-2 sticky top-0 z-10 bg-slate-950/90 backdrop-blur-md rounded-xl p-2 border border-white/10 shadow-xl">
-        <div class="flex items-center gap-2.5">
-          <div
-            class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <div>
-            <h3 id="pre-invoice-modal-title" class="text-sm font-bold text-white tracking-wide">PRE-FACTURA DE SERVICIO / COTIZACIÓN FORMAL</h3>
-            <p class="text-[11px] text-purple-300/70 font-mono">Vista Previa A4 Oficial (794px × 1123px)</p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2 flex-wrap">
-          <button type="button" id="btn-preinvoice-pdf" onclick="triggerPreInvoicePDFDownload()"
-            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-purple-600 hover:bg-purple-500 hover:shadow-[0_0_20px_rgba(168,85,247,0.5)] active:scale-95 transition-all duration-150">
-            <span>📥 Descargar PDF Oficial</span>
-          </button>
-          <button type="button" id="btn-preinvoice-print" onclick="printPreInvoiceCanvas()"
-            class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-purple-200 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 hover:border-purple-400 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] active:scale-95 transition-all duration-150">
-            <span>🖨️ Imprimir</span>
-          </button>
-          <button type="button" id="btn-preinvoice-docx" onclick="triggerPreInvoiceDOCXDownload()"
-            class="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-purple-200/90 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 active:scale-95 transition-all duration-150">
-            <span>📄 Word (.docx)</span>
-          </button>
-          <button type="button" onclick="closePreInvoicePreview()" aria-label="Cerrar Vista Previa"
-            class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-xs sm:text-sm font-medium text-gray-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 active:scale-95 transition-all duration-150">
-            <span>✕ Cerrar Vista Previa</span>
-          </button>
-        </div>
+    <!-- Executive Top Bar -->
+    <div id="preInvoiceTopBar"
+      class="bg-[#0a0614] border-b border-white/10 px-6 py-3 flex flex-wrap justify-between items-center gap-3 shrink-0 z-10">
+      <div class="flex items-center gap-2.5">
+        <h3 id="pre-invoice-modal-title" class="text-sm sm:text-base font-bold text-white tracking-wide">
+          📄 Vista Previa de Comprobante / Pre-Factura
+        </h3>
       </div>
 
-      <!-- Document Wrapper (Strictly bounded A4 paper canvas container) -->
-      <div id="preInvoicePaperStage"
-        class="w-full flex justify-center overflow-x-auto p-1 sm:p-3 rounded-2xl bg-slate-900/50 border border-white/10 shadow-2xl backdrop-blur-sm mt-2">
-        <div id="a4-canvas-container"
-          style="width: 794px; min-height: 1123px; background: white; color: #0f172a; padding: 40px; margin: 2rem auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); font-family: 'Inter', sans-serif; overflow: hidden; box-sizing: border-box;">
-          <!-- Injected dynamically by openPreInvoicePreviewModal() -->
-        </div>
-      </div>
-
-      <div class="w-full flex justify-end pt-2 px-2">
-        <button type="button" onclick="closePreInvoicePreview()"
-          class="text-xs text-gray-400 hover:text-white transition-colors">
-          ✕ Cerrar Vista Previa
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <button type="button" id="btn-preinvoice-pdf" onclick="triggerPreInvoicePDFDownload()"
+          class="bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-5 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] text-white">
+          <span>📥 Descargar PDF</span>
+        </button>
+        <button type="button" id="btn-preinvoice-print" onclick="printPreInvoiceCanvas()"
+          class="bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-4 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] text-purple-200">
+          <span>🖨️ Imprimir</span>
+        </button>
+        <button type="button" id="btn-preinvoice-docx" onclick="triggerPreInvoiceDOCXDownload()"
+          class="bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-4 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] text-purple-200/90">
+          <span>📄 Word (.docx)</span>
+        </button>
+        <button type="button" onclick="closePreInvoicePreview()" aria-label="Cerrar"
+          class="bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-rose-500/50 active:scale-95 transition-all rounded-xl px-5 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] text-gray-200 hover:text-white">
+          <span>✕ Cerrar</span>
         </button>
       </div>
+    </div>
 
+    <!-- Document Wrapper (Scrollable Google Drive-style stage with bounded A4 paper canvas) -->
+    <div id="preInvoicePaperStage"
+      onclick="if (event.target === this) closePreInvoicePreview()"
+      class="flex-1 w-full overflow-y-auto overflow-x-hidden px-2 sm:px-4">
+      <div id="a4-canvas-container"
+        style="width: 794px; min-height: 1123px; max-width: 100%; background: #ffffff; color: #0f172a; padding: 40px; box-sizing: border-box; box-shadow: 0 0 40px rgba(0,0,0,0.8); margin: 2rem auto;">
+        <!-- Injected dynamically by openPreInvoicePreviewModal() -->
+      </div>
     </div>
   </div>
 
   <!-- ============================================================ -->
   <!-- EXECUTIVE PRE-INVOICE PREVIEW VIEWER (#invoicePreviewModal) -->
-  <!-- On-screen vector document viewer: replaces blank background PDF. -->
+  <!-- Google Drive-style interactive A4 Document Previewer         -->
   <!-- ============================================================ -->
   <div id="invoicePreviewModal" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title"
     onclick="if (event.target === this) closeInvoicePreview()"
-    class="fixed inset-0 z-[100] hidden items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
-    <div class="relative m-auto w-full max-w-4xl my-auto flex flex-col">
+    class="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col hidden opacity-0 transition-opacity duration-300">
 
-      <!-- Viewer Actions Bar -->
-      <div class="invoice-preview-actions flex flex-wrap items-center justify-center gap-2 sm:gap-3 pb-4">
-        <button type="button" onclick="printInvoicePreview()"
-          class="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500">
+    <!-- Top Action Bar -->
+    <div id="invoicePreviewTopBar" class="invoice-preview-actions bg-[#0d091a] border-b border-white/10 px-6 py-3 flex justify-between items-center shrink-0">
+      <div class="flex items-center gap-3 min-w-0">
+        <h3 id="invoice-preview-title" class="text-white font-bold text-sm sm:text-base tracking-tight truncate">
+          📄 Pre-Factura Formal - Vista Previa
+        </h3>
+        <span id="invoice-preview-badge" class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+          A4 · VECTORIAL
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <button type="button" id="btn-invoice-print" onclick="printInvoicePreview()"
+          class="bg-purple-600 hover:bg-purple-500 text-white border border-purple-400/40 shadow-[0_0_20px_rgba(168,85,247,0.35)] transition-all active:scale-95 px-4 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
           <span aria-hidden="true">🖨️</span>
-          <span>Imprimir / Guardar en PDF (Navegador)</span>
+          <span>Imprimir / Guardar PDF</span>
         </button>
 
-        <button type="button" onclick="openInvoiceStandalone()"
-          class="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold text-purple-200 bg-purple-600/20 hover:bg-purple-600/35 border border-purple-400/40 transition-all focus:outline-none focus:ring-2 focus:ring-purple-400">
-          <span aria-hidden="true">🔗</span>
-          <span>Abrir en Pestaña Independiente</span>
-        </button>
-        <button type="button" onclick="closeInvoicePreview()" aria-label="Cerrar vista previa"
-          class="inline-flex items-center justify-center w-11 h-11 rounded-xl text-gray-300 hover:text-white bg-white/5 hover:bg-white/15 border border-white/15 transition-all focus:outline-none focus:ring-2 focus:ring-white/40">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+        <button type="button" id="btn-invoice-close" onclick="closeInvoicePreview()" aria-label="Cerrar vista previa"
+          class="bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+          <span aria-hidden="true">✕</span>
+          <span>Cerrar</span>
         </button>
       </div>
+    </div>
 
-      <!-- Paper Stage: gray desk gutter + authentic A4 sheet -->
-      <div id="invoicePreviewStage" class="invoice-preview-stage">
-        <div id="invoicePreviewPaper" class="invoice-preview-paper" itemscope itemtype="https://schema.org/Invoice">
-          <!-- Injected by openInvoicePreview() via buildExecutiveInvoiceHtml() -->
-          <div id="invoicePreviewContent" class="invoice-preview-content"></div>
-        </div>
+    <!-- Document Container (The A4 Paper Workspace) -->
+    <div id="invoicePreviewStage" class="invoice-preview-stage flex-1 overflow-y-auto px-4" onclick="if (event.target === this) closeInvoicePreview()">
+      <div id="invoicePreviewPaper" class="invoice-preview-paper bg-white text-gray-900 mx-auto mt-6 mb-12 p-10 max-w-[794px] w-full shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-sm font-sans" itemscope itemtype="https://schema.org/Invoice">
+        <!-- Dynamically populated by openInvoicePreview(bookingId) -->
+        <div id="invoicePreviewContent" class="invoice-preview-content"></div>
       </div>
-
-      <!-- Reassurance footer -->
-      <p id="invoice-preview-title" class="text-center text-[11px] text-gray-400 pt-3">
-        Vista previa vectorial — imprima o guarde con el diálogo nativo del navegador para un PDF fiel a A4.
-      </p>
     </div>
   </div>
 
