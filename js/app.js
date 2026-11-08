@@ -4052,13 +4052,15 @@ const AdminModule = {
     resetLoginTrap();
     this.setRole("owner");
     this.clearAuthError();
-    // Instant modal launch via deterministic ModalController
-    ModalController.open("adminLoginModal");
     const pin = document.getElementById("admin-pin");
     if (pin) {
       pin.value = "";
       pin.type = "password";
-      setTimeout(() => pin.focus(), 60);
+    }
+    // Instant modal launch via deterministic ModalController (honors [data-autofocus])
+    ModalController.open("adminLoginModal");
+    if (pin && !pin.disabled) {
+      requestAnimationFrame(() => pin.focus({ preventScroll: true }));
     }
   },
 
@@ -4280,7 +4282,7 @@ const AdminModule = {
         const total = Math.max(0, remaining);
         const mm = String(Math.floor(total / 60)).padStart(2, "0");
         const ss = String(total % 60).padStart(2, "0");
-        msg.textContent = `Sistema bloqueado. Reintente en ${mm}:${ss}`;
+        msg.textContent = `Bloqueado · ${mm}:${ss}`;
       }
       remaining -= 1;
       if (remaining < 0) {
@@ -10754,8 +10756,9 @@ const ModalController = {
     document.body.style.overflow = 'hidden';
     syncModalAnimationState();
     requestAnimationFrame(() => {
-      const first = getFocusableElements(modal)[0];
-      if (first) first.focus({ preventScroll: true });
+      const preferred = modal.querySelector('[data-autofocus]:not([disabled])');
+      const target = preferred || getFocusableElements(modal)[0];
+      if (target) target.focus({ preventScroll: true });
     });
   },
 
