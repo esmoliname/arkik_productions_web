@@ -14,14 +14,15 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    const admin = await auth.requireAdmin(req);
     const service = registry.get('service');
 
     if (req.method === 'GET') {
+      await auth.requireAdmin(req);
       const data = await service.getPricing();
       return respond.ok(res, data);
     }
 
+    const admin = await auth.requireOwner(req);
     const body = await respond.readBody(req);
     const data = await service.putPricing(body, admin.role);
     return respond.ok(res, data);

@@ -61,7 +61,14 @@ module.exports = {
   },
 
   get sessionSecret() {
-    return readEnv('ADMIN_SESSION_SECRET', 'dev-secret-change-me');
+    const value = readEnv('ADMIN_SESSION_SECRET', '');
+    if (!value) {
+      if (this.isProduction) {
+        throw new Error('ADMIN_SESSION_SECRET is required in production');
+      }
+      return 'dev-secret-change-me';
+    }
+    return value;
   },
 
   get appEnv() {

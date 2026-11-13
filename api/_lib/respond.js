@@ -58,6 +58,9 @@ function handleError(res, err, logger) {
     write('ERROR', 'response already sent before error handling');
     return undefined;
   }
+  if (err && err.extra && err.extra.retryAfterMs) {
+    try { res.setHeader('Retry-After', String(Math.ceil(err.extra.retryAfterMs / 1000))); } catch (e) { /* ignore */ }
+  }
   if (err && err.arkikApp) {
     return fail(res, err.code, err.message, err.status || 400, err.extra);
   }
@@ -105,13 +108,29 @@ function parseJson(raw) {
   }
 }
 
-// First x-forwarded-for hop. Never logged anywhere.
+// Resolve the client IP used for rate-limit buckets.
+// Only trust X-Forwarded-For when running behind a trusted proxy (Vercel).
+// In any other context, fall back to the socket address so a client cannot
+// spoof its IP to evade per-IP throttling.
 function clientIp(req) {
-  const forwarded = req && req.headers ? req.headers['x-forwarded-for'] : null;
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
+  const isTrustedProxy =
+    process.env.VERCEL === '1' ||
+    process.env.VERCEL_ENV === 'production' ||
+    process.env.VERCEL_ENV === 'preview' ||
+    process.env.NODE_ENV === 'production';
+  if (isTrustedProxy) {
+    const forwarded = req && req.headers ? req.headers['x-forwarded-for'] : null;
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return forwarded.split(',')[0].trim();
+    }
   }
-  return 'unknown';
+  const remote =
+    req && req.socket && typeof req.socket.remoteAddress === 'string'
+      ? req.socket.remoteAddress
+      : (req && req.connection && typeof req.connection.remoteAddress === 'string'
+        ? req.connection.remoteAddress
+        : '');
+  return remote && remote.trim() ? remote.trim() : 'unknown';
 }
 
 module.exports = {

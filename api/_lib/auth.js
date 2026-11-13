@@ -82,12 +82,14 @@ function getSessionToken(req) {
 
 function sessionCookie(token) {
   const name = getSessionCookieName();
-  return `${name}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`;
+  const secure = config.isProduction ? ' Secure;' : '';
+  return `${name}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=900`;
 }
 
 function clearSessionCookie() {
   const name = getSessionCookieName();
-  return `${name}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+  const secure = config.isProduction ? ' Secure;' : '';
+  return `${name}=; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=0`;
 }
 
 function getEnvPinForRole(role) {
@@ -204,6 +206,18 @@ async function requireAdmin(req) {
   return session;
 }
 
+/**
+ * Like requireAdmin but additionally requires role === 'owner'.
+ * Throws appError('forbidden', 403) for non-owner roles.
+ */
+async function requireOwner(req) {
+  const session = await requireAdmin(req);
+  if (session.role !== 'owner') {
+    throw appError('forbidden', 'Operaci\u00f3n reservada al propietario.', 403);
+  }
+  return session;
+}
+
 module.exports = {
   COOKIE_NAME,
   SESSION_TTL_MS,
@@ -219,5 +233,6 @@ module.exports = {
   getSessionToken,
   sessionCookie,
   clearSessionCookie,
-  requireAdmin
+  requireAdmin,
+  requireOwner
 };

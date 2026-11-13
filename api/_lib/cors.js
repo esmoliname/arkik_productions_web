@@ -29,6 +29,20 @@ function withCors(handler) {
     applyCors(req, res);
 
     if (req.method === 'OPTIONS') {
+      const allowed = config.allowedOrigins;
+      const origin = req && req.headers ? req.headers.origin : null;
+      // Only answer preflight for origins that are explicitly allowed (or
+      // same-origin when no list is configured). Otherwise reject so a
+      // cross-origin caller cannot probe the API.
+      if (allowed.length > 0) {
+        if (!origin || allowed.indexOf(origin) === -1) {
+          res.status(403).end();
+          log('HTTP', `${req.method} ${pathOf(req)} 403 ${Date.now() - started}ms`);
+          return undefined;
+        }
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Idempotency-Key, Authorization');
       res.setHeader('Access-Control-Max-Age', '86400');
