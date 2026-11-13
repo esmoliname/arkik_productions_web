@@ -13,6 +13,7 @@ const files = [
   'api/admin/login.js',
   'api/admin/logout.js',
   'api/admin/session.js',
+  'api/admin/dashboard.js',
   'api/admin/stats.js',
   'api/admin/pricing.js',
   'api/admin/audit.js'

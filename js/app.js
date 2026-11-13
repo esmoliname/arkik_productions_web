@@ -2940,36 +2940,20 @@ const SecurityModule = {
   },
 
   /**
-   * Normaliza cualquier entrada de PIN a una cadena plana comparable.
-   * Espacios, nulos y tipos no string dejan de ser un problema.
+   * Sanitiza la entrada de PIN a su valor numérico limpio.
    * @returns {string}
    */
   normalizePin(pin) {
     if (pin === null || pin === undefined) return "";
-    return String(pin).trim();
+    return String(pin).trim().replace(/\D/g, "").slice(0, 12);
   },
 
   /**
-   * Sincronización automática de rol (detección inteligente).
-   * El PIN escrito manda sobre la pestaña visual del segmented control, lo que
-   * elimina por completo el descalce de roles que bloqueaba el acceso.
-   * @returns {'owner'|'it'|null}
-   */
-  detectRole(pin) {
-    const clean = this.normalizePin(pin);
-    if (!clean) return null;
-    if (clean === "2580") return "owner";
-    if (clean === "1234") return "it"; // Rol IT / Tech (Esteban Molina)
-    return null;
-  },
-
-  /**
-   * Auto-reparación del rate limiting.
+   * Auto-reparación del rate limiting de interfaz.
    *  1. Purga las claves heredadas `admin_login_attempts` / `admin_lockout_until`
    *     cuando han expirado o su valor no es válido.
    *  2. Reinicia el candado vivo de STORAGE_KEYS.admin si su fecha ya pasó o
    *     resultó ilegible, de modo que ningún bloqueo queda atascado.
-   * Se invoca desde init() y antes de cada verificación.
    * @returns {{legacyPurged:string[], lockoutCleared:boolean}}
    */
   purgeExpiredLockout() {
@@ -2985,9 +2969,9 @@ const SecurityModule = {
     if (hasLegacy(legacyUntil) || hasLegacy(legacyAttempts)) {
       let purge = false;
       if (!hasLegacy(legacyUntil)) {
-        purge = hasLegacy(legacyAttempts); // intentos huérfanos sin marca de bloqueo
+        purge = hasLegacy(legacyAttempts);
       } else {
-        const until = Number(legacyUntil); // NaN => valor no válido
+        const until = Number(legacyUntil);
         purge = !Number.isFinite(until) || until <= 0 || until <= Date.now();
       }
       if (purge) {
@@ -3002,9 +2986,9 @@ const SecurityModule = {
     try {
       this.load();
       const until = Number(this._data.lockoutUntil);
-      if (Number.isFinite(until) && until > Date.now()) return report; // vigente
-      if (!Number.isFinite(until) || until <= 0) return report;        // sin bloqueo
-      this.clearLockState(); // vencido: ventana de intentos fresca
+      if (Number.isFinite(until) && until > Date.now()) return report;
+      if (!Number.isFinite(until) || until <= 0) return report;
+      this.clearLockState();
       report.lockoutCleared = true;
     } catch (e) {
       console.warn("[Arkik] purgeExpiredLockout:", e.message || e);
@@ -3013,97 +2997,13 @@ const SecurityModule = {
   },
 
   /**
-   * Capa secundaria — digest SHA-256 (observabilidad opcional).
-   */
-  auditDigest(cleanPin, roleId) {
-    // Digests locales opcionales
-  },
-
-  /**
-   * Nivel 1 — verificación contra el servidor.
-   * Devuelve `{handled:true}` cuando el servidor dictó veredicto (éxito,
-   * rechazo o bloqueo) y `{handled:false}` cuando hay que degradar al nivel 2.
-   * @returns {Promise<object>}
-   */
-  async verifyRemote(roleId, cleanPin) {
-    if (!apiEnabled()) return { handled: false, reason: "disabled" };
-    if (!ArkikApi || typeof ArkikApi.admin !== "object" || typeof ArkikApi.admin.login !== "function") {
-      return { handled: false, reason: "unavailable" };
-    }
-
-    let res = null;
-    try {
-      res = await ArkikApi.admin.login(roleId, cleanPin);
-    } catch (err) {
-      return { handled: false, reason: "network" };
-    }
-    if (!res || typeof res !== "object") return { handled: false, reason: "network" };
-
-    if (res.ok === true) {
-      const role = res.data && res.data.role ? res.data.role : roleId;
-      return { handled: true, ok: true, role: role };
-    }
-
-    const code = res.code || "";
-    const status = res.status || 0;
-
-    // Fallback estático directo si es 404 (hosting estático como GitHub Pages) o fallo de red
-    if (status === 404 || code === "http_404" || code === "network") {
-      return { handled: false, reason: "http_404" };
-    }
-
-    // Rechazo explícito de credenciales desde el backend (401 Unauthorized)
-    if (code === "unauthorized" || status === 401) {
-      return { handled: true, ok: false, message: "Credenciales incorrectas." };
-    }
-
-    // Bloqueo del servidor o rate limit por IP (429 Too Many Requests)
-    if (code === "locked" || code === "rate_limited" || status === 429) {
-      const wait = Number(res.retryAfterMs);
-      return {
-        handled: true,
-        ok: false,
-        locked: true,
-        waitMs: Number.isFinite(wait) && wait > 0 ? wait : 30000,
-        message: res.message || "Demasiados intentos. Acceso bloqueado temporalmente."
-      };
-    }
-
-    // Timeout o 5xx -> permitir degradación local
-    return { handled: false, reason: code || "unknown" };
-  },
-
-  /**
-   * Nivel 2 — verificación local degradada (Fallback estático / GitHub Pages / Offline).
-   * Valida el PIN localmente contra las credenciales del sistema:
-   *   '2580' -> 'owner' (Juan José Ramírez)
-   *   '1234' -> 'it'/'tech' (Esteban Molina)
-   * @returns {{ok:boolean, role?:string, channel:'local', degraded:true}|{ok:false, message:string}}
-   */
-  verifyLocal(cleanPin, effectiveRole) {
-    const pin = this.normalizePin(cleanPin);
-    if (!pin) {
-      return { ok: false, message: "Ingrese su PIN de acceso." };
-    }
-
-    if (pin === "2580") {
-      return { ok: true, role: "owner", channel: "local", degraded: true };
-    }
-    if (pin === "1234") {
-      return { ok: true, role: "it", channel: "local", degraded: true };
-    }
-
-    return { ok: false, message: "Credenciales incorrectas." };
-  },
-
-  /**
-   * Contabilidad del candado local (espejo de UI: intentos y cuenta regresiva).
-   * `forceWaitMs` permite que la espera dictada por el servidor prevalezca.
+   * Contabilidad del candado local para Rate Limiting de UI (3 fallos -> bloqueo de 30s).
    * @returns {object} envelope normalizado de fallo
    */
   registerFailedAttempt(now, options) {
     const opts = options || {};
     const max = ADMIN_CONFIG.maxAttempts || 3;
+    if (!this._data) this.load();
     this._data.attempts = (this._data.attempts || 0) + 1;
 
     const forced = Number(opts.forceWaitMs);
@@ -3116,7 +3016,13 @@ const SecurityModule = {
       this._data.lockoutLevel = level + 1;
       this._data.attempts = 0;
       this.persist();
-      return { ok: false, locked: true, waitMs: wait, remaining: 0, message: opts.message || "Demasiados intentos fallidos. Consola bloqueada." };
+      return {
+        ok: false,
+        locked: true,
+        waitMs: wait,
+        remaining: 0,
+        message: "Credenciales inválidas"
+      };
     }
 
     this.persist();
@@ -3124,23 +3030,18 @@ const SecurityModule = {
       ok: false,
       locked: false,
       remaining: Math.max(0, max - this._data.attempts),
-      message: opts.message || "Credenciales incorrectas."
+      message: "Credenciales inválidas"
     };
   },
 
   /**
-   * Verificación de PIN principal (Estrategia Híbrida y Resiliente).
-   * 1. Auto-purga del candado y validación de lockout activo.
-   * 2. Sanitización con .trim() del PIN ingresado.
-   * 3. Nivel 1 (Serverless): Intento primario vía POST /api/admin/login. Si HTTP 200, autentica con sesión de servidor.
-   * 4. Nivel 2 (Fallback Estático / GitHub Pages): Si el fetch falla (error de red o HTTP 404),
-   *    valida localmente ('2580' -> 'owner', '1234' -> 'it'/'tech').
-   * 5. Si es válido: limpia flags de bloqueo en memoria y retorna éxito.
-   * 6. Si no coincide con ninguno: muestra "Credenciales incorrectas" e incrementa contador de intentos.
-   * @returns {Promise<{ok:boolean, role?:string, locked?:boolean, waitMs?:number, remaining?:number, message?:string, channel?:string, degraded?:boolean}>}
+   * Autenticación Zero-Trust delegada exclusivamente al servidor:
+   * 1. Sanitiza el PIN numérico y ejecuta POST /api/admin/login con `{ role, pin }`.
+   * 2. Ante HTTP 200 válido, limpia el estado de bloqueo y devuelve el rol confirmado.
+   * 3. Ante 401, 403, 404, 429 o error de red, incrementa el contador local y
+   *    devuelve siempre el mensaje genérico "Credenciales inválidas" (anti-enumeración).
    */
   async verifyPin(roleId, pin) {
-    // Auto-reparación antes de decidir nada: un candado vencido nunca bloquea
     this.purgeExpiredLockout();
     this.load();
     const now = Date.now();
@@ -3148,72 +3049,81 @@ const SecurityModule = {
     if (this._data.lockoutUntil && now < this._data.lockoutUntil) {
       return {
         ok: false,
+        status: 429,
         locked: true,
         waitMs: this._data.lockoutUntil - now,
-        message: "Bloqueo de seguridad activo. Espere antes de reintentar."
+        message: "Credenciales inválidas"
       };
     }
 
-    // Sanitizar con .trim() el PIN ingresado
-    const cleanPin = this.normalizePin(pin);
+    const pinValue = this.normalizePin(pin);
     const max = ADMIN_CONFIG.maxAttempts || 3;
-    if (!cleanPin) {
-      return { ok: false, locked: false, remaining: max, message: "Ingrese su PIN de acceso." };
+    if (!pinValue) {
+      return {
+        ok: false,
+        status: 400,
+        locked: false,
+        remaining: max - (this._data.attempts || 0),
+        message: "Credenciales inválidas"
+      };
     }
 
-    // Sincronización automática de rol basada en PIN
-    const detected = this.detectRole(cleanPin);
-    let effectiveRole = detected || roleId || "owner";
-    if (effectiveRole === "tech") effectiveRole = "it";
+    const selectedRole = (roleId === "it" || roleId === "tech") ? "it" : "owner";
 
-    // ---- 1. INTENTO PRIMARIO SERVERLESS (POST /api/admin/login) ----
-    let remoteHandled = false;
     try {
-      const remote = await this.verifyRemote(effectiveRole, cleanPin);
-      if (remote && remote.handled) {
-        remoteHandled = true;
-        if (remote.ok) {
-          this.clearLockState();
-          return {
-            ok: true,
-            role: remote.role || effectiveRole,
-            expiresAt: now + 3600000,
-            channel: "remote"
-          };
-        }
-        if (remote.locked) {
-          return this.registerFailedAttempt(now, {
-            forceWaitMs: remote.waitMs,
-            message: remote.message || "Bloqueo por intentos excedidos."
-          });
-        }
-        // Servidor activo rechazó credenciales (401)
-        return this.registerFailedAttempt(now, {
-          message: remote.message || "Credenciales incorrectas."
-        });
-      }
-    } catch (err) {
-      remoteHandled = false;
-    }
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify({ role: selectedRole, pin: pinValue })
+      });
 
-    // ---- 2. FALLBACK ESTÁTICO / OFFLINE (GitHub Pages / 404 / Error de Red) ----
-    if (!remoteHandled) {
-      const local = this.verifyLocal(cleanPin, effectiveRole);
-      if (local.ok) {
-        // Limpiar cualquier flag de bloqueo residual en memoria
+      let payload = null;
+      const text = await response.text();
+      if (text) {
+        try { payload = JSON.parse(text); } catch (parseErr) { payload = null; }
+      }
+
+      if (response.status === 200 && (!payload || payload.success !== false)) {
         this.clearLockState();
+        const data = (payload && payload.data) ? payload.data : (payload || {});
+        const granted = (data && data.role)
+          ? (data.role === "tech" ? "it" : data.role)
+          : selectedRole;
         return {
           ok: true,
-          role: local.role || effectiveRole,
-          expiresAt: now + 3600000,
-          channel: "local",
-          degraded: true
+          status: 200,
+          role: granted,
+          expiresAt: (data && data.expiresAt) ? data.expiresAt : null
         };
       }
-    }
 
-    // ---- 3. GARANTÍAS: PIN INCORRECTO -> AUMENTAR INTENTOS ----
-    return this.registerFailedAttempt(now, { message: "Credenciales incorrectas." });
+      if (response.status === 429) {
+        const errObj = (payload && payload.error) ? payload.error : {};
+        const retryMs = Number(errObj.retryAfterMs);
+        const waitMs = Number.isFinite(retryMs) && retryMs > 0 ? retryMs : 30000;
+        const failState = this.registerFailedAttempt(now, {
+          forceWaitMs: waitMs,
+          message: "Credenciales inválidas"
+        });
+        return Object.assign({ status: 429 }, failState);
+      }
+
+      // 401, 403, 404 u otro estado no autorizado -> mensaje unificado anti-enumeración
+      const failState = this.registerFailedAttempt(now, {
+        message: "Credenciales inválidas"
+      });
+      return Object.assign({ status: response.status || 401 }, failState);
+    } catch (networkErr) {
+      const failState = this.registerFailedAttempt(now, {
+        message: "Credenciales inválidas"
+      });
+      return Object.assign({ status: 0 }, failState);
+    }
   }
 };
 
@@ -3962,7 +3872,7 @@ const PERIOD_FILTERS = [
   { key: "semana", label: "Esta Semana" },
   { key: "mes", label: "Este Mes" },
   { key: "anio", label: "Este Año" },
-  { key: "total", label: "Histórico Total" }
+  { key: "total", label: "Histórico" }
 ];
 
 function periodRange(key) {
@@ -4240,7 +4150,7 @@ const AdminModule = {
       clearInterval(this.lockoutTimer);
       this.lockoutTimer = null;
     }
-    const box = document.getElementById("admin-lockout-box");
+    const box = document.getElementById("login-lockout-banner") || document.getElementById("admin-lockout-box");
     if (box) box.classList.add("hidden");
     this.enablePinUI(true);
     this.clearAuthError();
@@ -4265,7 +4175,7 @@ const AdminModule = {
     });
     SecurityModule.clearLockState({ persist: false });
     resetLoginTrap();
-    const box = document.getElementById("admin-lockout-box");
+    const box = document.getElementById("login-lockout-banner") || document.getElementById("admin-lockout-box");
     if (box) box.classList.add("hidden");
     this.enablePinUI(true);
     this.clearAuthError();
@@ -4311,80 +4221,155 @@ const AdminModule = {
     if (e && typeof e.stopPropagation === "function") e.stopPropagation();
 
     const pin = document.getElementById("admin-pin");
-    const value = SecurityModule.normalizePin(pin ? pin.value : "");
+    const pinValue = SecurityModule.normalizePin(pin ? pin.value : "");
     // Honeypot: valor no vacío + evidencia de interacción/automatización (isTrusted === false).
-    // Un valor proveniente del auto-relleno del navegador NO bloquea el login.
     if (isLoginTrapTriggered(e)) {
       resetLoginTrap();
       await new Promise((r) => setTimeout(r, 1200));
       return;
     }
-    if (!value) {
-      this.showAuthError("Ingrese su PIN de acceso.");
+    if (!pinValue) {
+      this.showAuthError("Credenciales inválidas");
       if (pin) pin.focus();
       return;
     }
 
-    // El rol se deriva del selector visual del modal o por defecto "owner";
-    // la autenticación definitiva se valida siempre en el servidor.
-    const detected = typeof SecurityModule.detectRole === "function" ? SecurityModule.detectRole(value) : null;
-    if (detected && detected !== this.role) this.setRole(detected);
-    const roleId = detected || this.role || "owner";
-    if (!roleId) {
-      this.showAuthError("Seleccione un rol de acceso.");
+    const selectedRole = (this.role === "it" || this.role === "tech") ? "it" : "owner";
+    const result = await SecurityModule.verifyPin(selectedRole, pinValue);
+
+    if (result.ok) {
+      const grantedRole = (result.role === "tech" ? "it" : result.role) || selectedRole;
+      if (this.role !== grantedRole) this.setRole(grantedRole);
+      this.role = grantedRole;
+      this.ownerFilter = "todas";
+      this.periodFilter = "total";
+
+      // 2. Transición Fluida y Redirección Virtual (sin window.location.reload):
+      //  • Purga inmediata del input PIN del DOM.
+      //  • Cierre suave del modal de la Bóveda Operativa mediante ModalController.
+      //  • Disparo único de loadProtectedAdminData(role) para Lazy Hydration.
+      if (pin) pin.value = "";
+      this.clearAuthError();
+      ModalController.close("adminLoginModal");
+      await loadProtectedAdminData(grantedRole);
       return;
     }
 
-    const result = await SecurityModule.verifyPin(roleId, value);
-    if (result.ok) {
-      const grantedRole = result.role || roleId;
-      if (this.role !== grantedRole) this.setRole(grantedRole);
-      this.role = grantedRole;
-      ADMIN_SESSION.role = grantedRole;
-      ADMIN_SESSION.token = generateBookingCode();
-      ADMIN_SESSION.createdAt = Date.now();
-      ADMIN_SESSION.lastActivity = Date.now();
-      this.persistSession();
-      AuditLog.recordLogin(grantedRole);
-      this.ownerFilter = "todas";
-      this.periodFilter = "total";
-      this.openPortal();
-      // Con el nivel 1 el servidor ya emitió la cookie de sesión: se aprovecha
-      // ese mismo contexto para traer reservas, disponibilidad y tarifarios.
-      BookingStore.hydrate(true).catch(function () { });
-      AvailabilityManager.fetchMap().catch(function () { });
-      PriceManager.loadRemote().catch(function () { });
-      showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
-      return;
-    }
     if (result.locked) {
       await authJitterDelay();
-      this.startLockoutCountdown(result.waitMs);
+      this.showAuthError("Credenciales inválidas");
+      this.startLockoutCountdown(result.waitMs || 30000);
+      if (pin) pin.value = "";
       return;
     }
+
     await authJitterDelay();
-    // `message` solo difiere de "PIN incorrecto" para rate limit por IP.
-    this.showAuthError(result.message || "PIN incorrecto.");
+    // Sin revelar si falló el rol o el PIN: mensaje unificado "Credenciales inválidas"
+    this.showAuthError("Credenciales inválidas");
     if (pin) {
       pin.value = "";
       pin.focus();
     }
   },
 
+  /**
+   * 3. Carga Diferida de Datos Protegidos (Lazy Hydration Zero-Trust).
+   * Única responsable de consultar el backend, validar la sesión activa y poblar
+   * los datos financieros, el panel de control y las tablas de reserva en el DOM.
+   * Si la sesión es inválida o falla la respuesta, expulsa a la vista pública.
+   */
+  async loadProtectedAdminData(role) {
+    const requestedRole = (role === "it" || role === "tech")
+      ? "it"
+      : ((role === "owner") ? "owner" : ((this.role === "it" || this.role === "tech") ? "it" : "owner"));
+
+    let response = null;
+    let payload = null;
+    try {
+      response = await fetch("/api/admin/dashboard", {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      const text = await response.text();
+      if (text) {
+        try { payload = JSON.parse(text); } catch (parseErr) { payload = null; }
+      }
+    } catch (networkErr) {
+      response = null;
+    }
+
+    const validPayload = Boolean(
+      response &&
+      response.ok &&
+      payload &&
+      payload.success !== false &&
+      payload.data &&
+      typeof payload.data === "object"
+    );
+
+    if (!validPayload) {
+      this.terminateSession();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      showToast("Sesión inválida o expirada. Acceso restringido a la vista pública.", "error");
+      return { ok: false, status: response ? response.status : 0 };
+    }
+
+    const data = payload.data;
+    const grantedRole = (data.role === "it" || data.role === "tech")
+      ? "it"
+      : ((data.role === "owner") ? "owner" : requestedRole);
+
+    if (this.role !== grantedRole) this.setRole(grantedRole);
+    this.role = grantedRole;
+    ADMIN_SESSION.role = grantedRole;
+    ADMIN_SESSION.token = generateBookingCode();
+    ADMIN_SESSION.createdAt = Date.now();
+    ADMIN_SESSION.lastActivity = Date.now();
+    this.persistSession();
+    AuditLog.recordLogin(grantedRole);
+
+    if (Array.isArray(data.bookings)) {
+      BookingStore.replace(data.bookings);
+      BookingStore._hydratedAt = Date.now();
+    }
+    if (data.pricing && typeof data.pricing === "object") {
+      PriceManager.applyRemote(data.pricing);
+    }
+    if (data.availability && typeof data.availability === "object") {
+      AvailabilityManager._ensure();
+      AvailabilityManager._blocked = Object.assign({}, data.availability);
+      AvailabilityManager._scope = { kind: "full" };
+      AvailabilityManager.persist();
+    }
+    if (data.stats && typeof data.stats === "object") {
+      this.serverStats = data.stats;
+    }
+
+    this.openPortal();
+    showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
+    return { ok: true, role: grantedRole, data };
+  },
+
   startLockoutCountdown(waitMs) {
     this.enablePinUI(false);
-    this.clearAuthError();
-    const box = document.getElementById("admin-lockout-box");
+    this.showAuthError("Credenciales inválidas");
+    const box = document.getElementById("login-lockout-banner") || document.getElementById("admin-lockout-box");
     const msg = document.getElementById("admin-lockout-msg");
     if (!box) return;
     box.classList.remove("hidden");
-    let remaining = Math.ceil(waitMs / 1000);
+    let remaining = Math.ceil((waitMs || 30000) / 1000);
+    if (this.lockoutTimer) {
+      clearInterval(this.lockoutTimer);
+      this.lockoutTimer = null;
+    }
     const tick = () => {
       if (msg) {
         const total = Math.max(0, remaining);
         const mm = String(Math.floor(total / 60)).padStart(2, "0");
         const ss = String(total % 60).padStart(2, "0");
-        msg.textContent = `Bloqueado · ${mm}:${ss}`;
+        msg.textContent = `Bloqueo por 30s tras 3 intentos fallidos · ${mm}:${ss}`;
       }
       remaining -= 1;
       if (remaining < 0) {
@@ -4394,6 +4379,7 @@ const AdminModule = {
         // El tiempo terminó: purga inmediata de intentos y nivel de bloqueo
         // en localStorage, no solo del contador visual.
         SecurityModule.clearLockState();
+        this.clearAuthError();
         this.enablePinUI(true);
         const pin = document.getElementById("admin-pin");
         if (pin) pin.focus();
@@ -4486,11 +4472,8 @@ const AdminModule = {
   },
 
   /**
-   * Reabre el portal si el caché de sesión de la pestaña sigue íntegro.
-   * Con la API activa, además se contrasta con el servidor:
-   *  - 401 / `unauthorized`  -> la cookie caducó: se cierra la sesión local.
-   *  - red caída o timeout   -> degrada al caché (el portal abre con datos
-   *    locales; cada mutación volverá a validar contra el servidor).
+   * Reabre el portal únicamente si la sesión local sigue íntegra Y el servidor
+   * confirma la validez de la cookie HttpOnly vía GET /api/admin/dashboard.
    */
   async restoreSession() {
     if (!this.verifySessionIntegrity()) return;
@@ -4500,27 +4483,8 @@ const AdminModule = {
     } catch (err) { return; }
     if (!data) return;
 
-    if (apiEnabled()) {
-      const res = await ArkikApi.admin.session();
-      if (res.ok === false && (res.code === "unauthorized" || res.status === 401)) {
-        // Sesión del servidor revocada o expirada: no se reabre el portal.
-        this.clearSession();
-        this.resetLockoutState();
-        return;
-      }
-    }
-
-    ADMIN_SESSION.role = data.role;
-    ADMIN_SESSION.token = data.token;
-    ADMIN_SESSION.createdAt = data.createdAt;
-    ADMIN_SESSION.lastActivity = data.lastActivity;
-    this.role = data.role;
-    this.openPortal();
-    // Los datos del portal salen del caché inmediatamente y se revalidan
-    // en segundo plano contra el servidor.
-    BookingStore.hydrate(true).catch(function () { });
-    AvailabilityManager.fetchMap().catch(function () { });
-    PriceManager.loadRemote().catch(function () { });
+    this.role = data.role || "owner";
+    await this.loadProtectedAdminData(this.role);
   },
 
   startIntegrityMonitor() {
@@ -4625,7 +4589,7 @@ const AdminModule = {
       const active = f.key === this.periodFilter
         ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/50 font-bold scale-[1.02]"
         : "bg-white/[0.04] text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white hover:border-purple-500/30";
-      return `<button type="button" data-period="${f.key}" class="pill-btn w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-center flex items-center justify-center min-h-[42px] select-none tracking-tight ${active}">${f.label}</button>`;
+      return `<button type="button" data-period="${f.key}" onclick="AdminModule.periodFilter='${f.key}'; AdminModule.renderOwner();" class="pill-btn w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-center flex items-center justify-center min-h-[42px] select-none tracking-tight ${active}">${f.label}</button>`;
     }).join("");
   },
 
@@ -4637,11 +4601,6 @@ const AdminModule = {
       .reduce((s, b) => s + (b.deposit50Amount || 0), 0);
     const receivable = active.reduce((s, b) => s + (b.remainingBalance || 0), 0);
     const projected = active.reduce((s, b) => s + (b.granTotal || 0), 0);
-
-    // Conversion Rate: totalQuotes = all bookings in period, confirmedBookings = active
-    const totalQuotes = list.length;
-    const confirmedBookings = active.length;
-    const conversionRate = totalQuotes > 0 ? ((confirmedBookings / totalQuotes) * 100).toFixed(1) : '0.0';
 
     let spanDays = Math.max(1, Math.round((parseISO(periodRange(this.periodFilter).end) - parseISO(periodRange(this.periodFilter).start)) / 86400000) + 1);
     if (this.periodFilter === "total") {
@@ -4656,20 +4615,65 @@ const AdminModule = {
 
     const box = document.getElementById("admin-metrics");
     if (!box) return;
-    box.innerHTML = [
-      kpiCard("💳", "Adelantos SINPE", formatCRC(validatedDeposits), "exec-kpi--emerald", `${paidCount} reserva(s) cobrada(s) · SINPE`),
-      kpiCard("🤝", "Saldos por Cobrar", formatCRC(receivable), "exec-kpi--cyan", `${pendingCount} reserva(s) con saldo pendiente`),
-      kpiCard("📊", "Facturación Proyectada", formatCRC(projected), "exec-kpi--fuchsia", `${active.length} eventos activos · ${occupancy}% ocupación`),
-      // Conversion Rate Widget - vibrant visual with click-to-filter
-      `<div class="exec-kpi exec-kpi--conversion" style="cursor:pointer;" onclick="AdminModule.filterRackByConversions()" title="Click para filtrar rack a conversiones activas">
-        <p class="exec-kpi-label"><span class="exec-kpi-icon">🎯</span>Tasa de Conversión</p>
-        <p class="exec-kpi-value" style="font-size: 2.5rem; font-weight: 900;">${conversionRate}%</p>
-        <div class="conversion-progress" style="margin-top: 8px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-          <div class="conversion-fill" style="width: ${conversionRate}%; height: 100%; background: linear-gradient(90deg, #a855f7, #ec4899); border-radius: 3px; transition: width 0.5s ease;"></div>
+    box.innerHTML = `
+      <!-- 1. Adelantos SINPE Validados (Emerald Bioluminescent Border) -->
+      <article class="obsidian-kpi-card obsidian-kpi--emerald flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span>💳</span>
+            <span>Adelantos SINPE Validados</span>
+          </span>
+          <span class="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300">Efectivo en Banco</span>
         </div>
-        <p class="exec-kpi-sub">${confirmedBookings} / ${totalQuotes} cotizaciones → activas</p>
-      </div>`
-    ].join("");
+        <p class="font-mono text-2xl sm:text-3xl font-extrabold text-emerald-400 tabular-nums tracking-tight">${formatCRC(validatedDeposits)}</p>
+        <p class="text-[11px] text-slate-400 mt-2 font-mono">${paidCount} reserva(s) cobrada(s) · 50% SINPE</p>
+      </article>
+
+      <!-- 2. Saldos por Cobrar en Escenario (Cyan Bioluminescent Border) -->
+      <article class="obsidian-kpi-card obsidian-kpi--cyan flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span>🤝</span>
+            <span>Saldos por Cobrar en Escenario</span>
+          </span>
+          <span class="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">Por Liquidar</span>
+        </div>
+        <p class="font-mono text-2xl sm:text-3xl font-extrabold text-cyan-300 tabular-nums tracking-tight">${formatCRC(receivable)}</p>
+        <p class="text-[11px] text-slate-400 mt-2 font-mono">${pendingCount} evento(s) con 50% pendiente</p>
+      </article>
+
+      <!-- 3. Facturación Total Bruta (Fuchsia Bioluminescent Border) -->
+      <article class="obsidian-kpi-card obsidian-kpi--fuchsia flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span>📊</span>
+            <span>Facturación Total Bruta</span>
+          </span>
+          <span class="px-2 py-0.5 rounded-md bg-fuchsia-500/15 border border-fuchsia-500/30 text-[10px] font-mono text-fuchsia-300">Volumen Total</span>
+        </div>
+        <p class="font-mono text-2xl sm:text-3xl font-extrabold text-fuchsia-300 tabular-nums tracking-tight">${formatCRC(projected)}</p>
+        <p class="text-[11px] text-slate-400 mt-2 font-mono">100% contratos activos del período</p>
+      </article>
+
+      <!-- 4. Eventos Activos / Ocupación (Emerald Bioluminescent Border) -->
+      <article class="obsidian-kpi-card obsidian-kpi--emerald flex flex-col justify-between cursor-pointer"
+        onclick="AdminModule.filterRackByConversions && AdminModule.filterRackByConversions()"
+        title="Filtrar eventos activos">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span>📅</span>
+            <span>Eventos Activos / Ocupación</span>
+          </span>
+          <span class="px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/30 text-[10px] font-mono text-purple-300">Capacidad</span>
+        </div>
+        <p class="font-mono text-2xl sm:text-3xl font-extrabold text-white tabular-nums tracking-tight">
+          ${active.length} <span class="text-base font-semibold text-emerald-400">· ${occupancy}%</span>
+        </p>
+        <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+          <div class="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-fuchsia-400 rounded-full transition-all duration-500" style="width: ${occupancy}%"></div>
+        </div>
+      </article>
+    `;
   },
 
   renderOwnerSparkline() {
@@ -5190,26 +5194,11 @@ const AdminModule = {
 
   renderIT() {
     this.renderITStatusChips();
+    this.renderITTabs();
     const tabs = ["prices", "gallery", "availability", "backup"];
     tabs.forEach(p => {
       const el = document.getElementById(`admin-it-${p}`);
       if (el) el.classList.toggle("hidden", p !== this.itTab);
-    });
-    document.querySelectorAll("[data-it-tab]").forEach(t => {
-      t.classList.toggle("admin-tab-btn--active", t.getAttribute("data-it-tab") === this.itTab);
-      t.setAttribute("aria-selected", t.getAttribute("data-it-tab") === this.itTab ? "true" : "false");
-    });
-    // Contadores de estado vivos en cada pestaña (badges)
-    const audit = AuditLog.load();
-    const counts = {
-      prices: CATALOG_SERVICES.length,
-      gallery: StorageEngine.getGalleryItems().length,
-      availability: Object.keys(AvailabilityManager.all()).length,
-      backup: (Array.isArray(audit.events) ? audit.events.length : 0) + audit.logins.length
-    };
-    document.querySelectorAll("#admin-it-tabs [data-it-tab]").forEach(t => {
-      const badge = t.querySelector(".admin-tab-count");
-      if (badge) badge.textContent = counts[t.getAttribute("data-it-tab")] || 0;
     });
     const pricesEl = document.getElementById("admin-it-prices");
     const galleryEl = document.getElementById("admin-it-gallery");
@@ -5221,6 +5210,32 @@ const AdminModule = {
     if (backupEl && this.itTab === "backup") backupEl.innerHTML = this.itBackupHtml();
   },
 
+  renderITTabs() {
+    const tabContainer = document.getElementById("admin-it-tabs");
+    if (!tabContainer) return;
+    const audit = AuditLog.load();
+    const tabConfig = [
+      { key: "prices", idx: "01", label: "Matriz de Tarifas", count: CATALOG_SERVICES.length },
+      { key: "gallery", idx: "02", label: "Gestor de Galería", count: StorageEngine.getGalleryItems().length },
+      { key: "availability", idx: "03", label: "Bloqueo de Agenda", count: Object.keys(AvailabilityManager.all()).length },
+      { key: "backup", idx: "04", label: "Base de Datos & Auditoría", count: (Array.isArray(audit.events) ? audit.events.length : 0) + audit.logins.length }
+    ];
+
+    tabContainer.innerHTML = tabConfig.map(t => {
+      const isActive = t.key === this.itTab;
+      const stateClass = isActive ? "active text-emerald-400" : "text-slate-400";
+      const idxClass = isActive ? "font-mono text-emerald-500" : "font-mono text-purple-400";
+      return `
+        <button type="button" role="tab" aria-selected="${isActive ? "true" : "false"}" data-it-tab="${t.key}"
+          onclick="AdminModule.setItTab('${t.key}')"
+          class="cyber-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 ${stateClass}">
+          <span class="${idxClass}">${t.idx}</span>
+          <span class="it-tab-label">${t.label}</span>
+          <span class="admin-tab-count px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/10 font-mono text-[10px]">${t.count}</span>
+        </button>`;
+    }).join("");
+  },
+
   // ---- Telemetría en vivo de la consola IT ----
 
   renderITStatusChips() {
@@ -5230,17 +5245,31 @@ const AdminModule = {
     const cryptoOk = typeof window !== "undefined" && window.crypto && !!window.crypto.subtle;
     // Sin WebCrypto el digest se calcula en software, pero sigue siendo SHA-256:
     // el respaldo produce el mismo hash, así que no degrada la autenticación.
-    const cryptoClass = "it-status-chip--ok";
     const cryptoLabel = cryptoOk ? "SHA-256 (WebCrypto)" : "SHA-256 (software)";
-    const tlsClass = secureCtx ? "it-status-chip--ok" : "it-status-chip--warn";
+    const tlsDot = secureCtx ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-amber-400 shadow-[0_0_8px_#fbbf24]";
+    const tlsText = secureCtx ? "text-emerald-300" : "text-amber-300";
     const tlsLabel = secureCtx ? "TLS 1.3 ENCRYPTED" : "HTTP PLANO";
     const engine = sanitizeInput(String(ENGINE_VERSION || "arkik-engine"));
     box.innerHTML = `
-      <span class="it-status-chip it-status-chip--purple"><span class="it-chip-dot"></span>${engine}</span>
-      <span class="it-status-chip ${tlsClass}">${tlsLabel}</span>
-      <span class="it-status-chip ${cryptoClass}">${cryptoLabel}</span>
-      <span class="it-status-chip"><span class="it-chip-dot"></span>UPTIME <span id="it-uptime-value">00:00:00</span></span>
-      <span class="it-status-chip">PING <span id="it-ping-value">--</span>ms</span>`;
+      <span class="cyber-chip px-3 py-1.5 flex items-center gap-2 text-xs font-mono font-bold text-purple-300">
+        <span class="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_8px_#c084fc] animate-pulse"></span>
+        <span>${engine}</span>
+      </span>
+      <span class="cyber-chip px-3 py-1.5 flex items-center gap-2 text-xs font-mono font-bold ${tlsText}">
+        <span class="w-2 h-2 rounded-full ${tlsDot}"></span>
+        <span>${tlsLabel}</span>
+      </span>
+      <span class="cyber-chip px-3 py-1.5 flex items-center gap-2 text-xs font-mono font-bold text-emerald-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+        <span>${cryptoLabel}</span>
+      </span>
+      <span class="cyber-chip px-3 py-1.5 flex items-center gap-2 text-xs font-mono font-bold text-slate-200">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+        <span>UPTIME <span id="it-uptime-value" class="text-cyan-300">00:00:00</span></span>
+      </span>
+      <span class="cyber-chip px-3 py-1.5 flex items-center gap-2 text-xs font-mono font-bold text-slate-200">
+        <span>PING <span id="it-ping-value" class="text-emerald-400">--</span></span>
+      </span>`;
     this.startITTelemetry();
   },
 
@@ -5277,17 +5306,18 @@ const AdminModule = {
     const subPrice = PriceManager.getExtraPrice("subwoofers") || DYNAMIC_EXTRAS_CONFIG.subwoofers.unitPrice;
 
     const serviceRows = CATALOG_SERVICES.map(s => `
-      <tr class="border-b border-white/5">
-        <td class="py-2.5 pr-2">
+      <tr class="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+        <td class="py-3 pr-2">
           <p class="text-sm font-bold text-white">${sanitizeInput(s.name)}</p>
-          <p class="text-[10px] text-gray-500">Montaje ${s.setup_display || "2h antes"} · Desmontaje ${s.teardown_display || "1h después"}</p>
+          <p class="text-[10px] text-gray-500 font-mono">Montaje ${s.setup_display || "2h antes"} · Desmontaje ${s.teardown_display || "1h después"}</p>
         </td>
-        <td class="py-2.5 px-2 text-right text-xs text-gray-400 whitespace-nowrap">${formatCRC(s.price_crc)}</td>
-        <td class="py-2.5 pl-2">
-          <div class="flex items-center gap-1.5 justify-end">
-            <span class="text-xs text-gray-400 font-bold">₡</span>
+        <td class="py-3 px-2 text-right text-xs font-mono text-gray-400 whitespace-nowrap">${formatCRC(s.price_crc)}</td>
+        <td class="py-3 pl-2">
+          <div class="flex items-center gap-2 justify-end">
+            <span class="text-xs text-emerald-400 font-mono font-bold">₡</span>
             <input type="number" data-price="service-${s.id}" value="${PriceManager.getServicePrice(s)}"
-              min="0" step="5000" class="it-price-input rounded-xl px-3 py-2 w-32 sm:w-36 text-sm font-bold">
+              min="0" step="5000"
+              class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-36 sm:w-40 outline-none transition-all">
           </div>
         </td>
       </tr>`).join("");
@@ -5320,8 +5350,8 @@ const AdminModule = {
               <label class="block text-[11px] font-bold text-purple-300" for="admin-extra-multiplier">Multiplicador Hora Extra</label>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="admin-extra-multiplier" value="${extraMultiplier}" min="0.1" max="2.0" step="0.05"
-                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
-                <span class="text-xs text-gray-400 font-bold">(${(extraMultiplier * 100).toFixed(0)}%)</span>
+                  class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-full outline-none transition-all">
+                <span class="text-xs text-gray-400 font-mono font-bold">(${(extraMultiplier * 100).toFixed(0)}%)</span>
               </div>
               <p class="text-[10px] text-gray-500">Por defecto: 0.50 (50% de la tarifa base)</p>
             </div>
@@ -5330,8 +5360,8 @@ const AdminModule = {
               <label class="block text-[11px] font-bold text-pink-300" for="admin-travel-rate">Recargo Fuera de GAM (%)</label>
               <div class="flex items-center gap-1.5">
                 <input type="number" id="admin-travel-rate" value="${(travelRate * 100).toFixed(0)}" min="0" max="100" step="1"
-                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
-                <span class="text-xs text-gray-400 font-bold">%</span>
+                  class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-full outline-none transition-all">
+                <span class="text-xs text-gray-400 font-mono font-bold">%</span>
               </div>
               <p class="text-[10px] text-gray-500">Por defecto: 12% viáticos de transporte</p>
             </div>
@@ -5339,9 +5369,9 @@ const AdminModule = {
             <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
               <label class="block text-[11px] font-bold text-cyan-300" for="admin-subwoofer-price">Subwoofer Extra (Unidad)</label>
               <div class="flex items-center gap-1.5">
-                <span class="text-xs text-gray-400 font-bold">₡</span>
+                <span class="text-xs text-emerald-400 font-mono font-bold">₡</span>
                 <input type="number" id="admin-subwoofer-price" data-price="extra-subwoofers" value="${subPrice}" min="0" step="5000"
-                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
+                  class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-full outline-none transition-all">
               </div>
               <p class="text-[10px] text-gray-500">Original: ₡80,000 / unidad</p>
             </div>
@@ -5349,9 +5379,9 @@ const AdminModule = {
             <div class="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-1.5">
               <label class="block text-[11px] font-bold text-emerald-300" for="admin-dj-price">Servicio DJ Recesos (Hora)</label>
               <div class="flex items-center gap-1.5">
-                <span class="text-xs text-gray-400 font-bold">₡</span>
+                <span class="text-xs text-emerald-400 font-mono font-bold">₡</span>
                 <input type="number" id="admin-dj-price" data-price="extra-dj_service" value="${djPrice}" min="0" step="5000"
-                  class="it-price-input rounded-xl px-3 py-2 w-full text-sm font-bold">
+                  class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-full outline-none transition-all">
               </div>
               <p class="text-[10px] text-gray-500">Original: ₡75,000 / hora</p>
             </div>
@@ -5359,7 +5389,7 @@ const AdminModule = {
         </div>
 
         <div class="flex flex-wrap gap-3 pt-2">
-          <button type="button" id="admin-save-prices" class="admin-act-btn admin-act-btn--confirm">💾 Aplicar Cambios (Guardar)</button>
+          <button type="button" id="admin-save-prices" class="cyber-action-btn px-5 py-3 text-white font-bold text-sm flex items-center justify-center gap-2">💾 Aplicar Cambios (Guardar)</button>
           <button type="button" id="admin-reset-prices" class="admin-act-btn admin-act-btn--neutral">↺ Restaurar Precios de Fábrica</button>
           <span class="text-[11px] text-gray-500 self-center">Los cambios persisten al instante y recalibran el catálogo público.</span>
         </div>
@@ -5463,22 +5493,24 @@ const AdminModule = {
         </div>
 
         <div>
-          <div class="flex flex-wrap items-end gap-2">
+          <div class="flex flex-wrap items-end gap-3">
             <label class="block">
-              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Desde (obligatorio)</span>
-              <input type="date" id="admin-avail-from" min="${todayISO}" class="it-date-input rounded-xl px-3 py-2.5 text-sm">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-400 font-mono font-bold mb-1">Desde (obligatorio)</span>
+              <input type="date" id="admin-avail-from" min="${todayISO}"
+                class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 outline-none transition-all">
             </label>
             <label class="block">
-              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Hasta (rango opcional)</span>
-              <input type="date" id="admin-avail-to" min="${todayISO}" class="it-date-input rounded-xl px-3 py-2.5 text-sm">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-400 font-mono font-bold mb-1">Hasta (rango opcional)</span>
+              <input type="date" id="admin-avail-to" min="${todayISO}"
+                class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 outline-none transition-all">
             </label>
-            <label class="block flex-1 min-w-[180px]">
-              <span class="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">Motivo (auditado)</span>
+            <label class="block flex-1 min-w-[200px]">
+              <span class="block text-[10px] uppercase tracking-wider text-gray-400 font-mono font-bold mb-1">Motivo (auditado)</span>
               <input type="text" id="admin-avail-reason" maxlength="120" placeholder="Ej. Mantenimiento de iluminación"
-                class="glass-input rounded-xl px-3 py-2.5 text-sm w-full">
+                class="bg-black/40 border border-white/10 focus-within:border-emerald-500/50 focus:border-emerald-500/50 rounded-xl px-4 py-2 font-mono text-sm text-emerald-300 w-full outline-none transition-all">
             </label>
           </div>
-          <div class="flex flex-wrap gap-2 mt-3">
+          <div class="flex flex-wrap gap-2.5 mt-4">
             <button type="button" data-avail="disabled" class="admin-act-btn admin-act-btn--cancel">⛔ Bloquear Fecha(s)</button>
             <button type="button" data-avail="soldout" class="admin-act-btn admin-act-btn--neutral">🔴 Marcar Agotado</button>
             <button type="button" data-avail="available" class="admin-act-btn admin-act-btn--confirm">🟢 Desbloquear (rango)</button>
@@ -5539,11 +5571,17 @@ const AdminModule = {
           </div>
           <p class="text-xs text-gray-400 leading-relaxed">Exporte la base de datos completa (reservas, tarifas en vivo, agenda de bloqueos, biblioteca multimedia y configuración) en un archivo JSON validable o en sentencias SQL listas para restaurar.</p>
           <div class="flex flex-wrap gap-3">
-            <button type="button" id="admin-export-backup" class="it-backup-cta">💾 Generar y Descargar Respaldo JSON/SQL</button>
-            <button type="button" id="admin-export-sql" class="admin-act-btn admin-act-btn--neutral">⬇ Solo SQL</button>
-            <label class="admin-act-btn admin-act-btn--neutral cursor-pointer">
-              ⬆ Importar / Restaurar Respaldo (JSON)
-              <input type="file" id="admin-import-backup" accept=".json,application/json" class="hidden">
+            <button type="button" id="admin-export-backup" onclick="exportAdminBackup(true)"
+              class="cyber-action-btn px-5 py-3 text-white font-bold text-sm flex items-center justify-center gap-2">
+              <span>💾 Generar y Descargar Respaldo JSON/SQL</span>
+            </button>
+            <button type="button" id="admin-export-sql" onclick="exportAdminSQL()"
+              class="cyber-action-btn px-5 py-3 text-white font-bold text-sm flex items-center justify-center gap-2">
+              <span>⬇ Solo SQL</span>
+            </button>
+            <label class="cyber-action-btn px-5 py-3 text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer">
+              <span>⬆ Importar / Restaurar Respaldo (JSON)</span>
+              <input type="file" id="admin-import-backup" onchange="if (this.files && this.files[0]) { importAdminBackup(this.files[0]); this.value = ''; }" accept=".json,application/json" class="hidden">
             </label>
           </div>
           <p id="admin-backup-status" class="text-[11px] text-purple-300 pt-1">
@@ -9508,6 +9546,7 @@ function fallbackCopyText(text) {
 window.openAdminLoginModal = () => AdminModule.open();
 window.closeAdminLoginModal = () => AdminModule.close();
 window.attemptAdminLogin = (e) => AdminModule.attemptLogin(e);
+window.loadProtectedAdminData = (role) => loadProtectedAdminData(role);
 window.openAdminPortalModal = () => openAdminPortalModal();
 window.closeAdminPortalModal = () => AdminModule.closePortal();
 // Bypass de mantenimiento del bloqueo de la consola ejecutiva.
@@ -11124,17 +11163,11 @@ function closeAdminModal() {
 }
 
 function openAdminPortalModal() {
-  if (typeof SecurityModule !== "undefined" && typeof SecurityModule.clearLockState === "function") {
-    SecurityModule.clearLockState();
-  }
-  if (typeof AdminModule !== "undefined") {
-    if (typeof AdminModule.resetLockoutState === "function") {
-      AdminModule.resetLockoutState();
-    }
-    if (typeof AdminModule.openPortal === "function") {
-      AdminModule.openPortal();
-    }
-  }
+  return loadProtectedAdminData();
+}
+
+function loadProtectedAdminData(role) {
+  return AdminModule.loadProtectedAdminData(role);
 }
 
 function closeAdminPortalModal() {

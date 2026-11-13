@@ -82,16 +82,85 @@ function getSessionToken(req) {
 
 function sessionCookie(token) {
   const name = getSessionCookieName();
-  const secure = config.isProduction ? '; Secure' : '';
-  const sameSite = config.isProduction ? 'Strict' : 'Lax';
-  return `${name}=${encodeURIComponent(token)}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=900${secure}`;
+  return `${name}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`;
 }
 
 function clearSessionCookie() {
   const name = getSessionCookieName();
-  const secure = config.isProduction ? '; Secure' : '';
-  const sameSite = config.isProduction ? 'Strict' : 'Lax';
-  return `${name}=; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=0${secure}`;
+  return `${name}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+}
+
+function getEnvPinForRole(role) {
+  if (role === 'owner') {
+    return process.env.ADMIN_PIN_OWNER || process.env.ADMIN_OWNER_PIN || '';
+  }
+  if (role === 'it') {
+    return process.env.ADMIN_PIN_IT || process.env.ADMIN_IT_PIN || '';
+  }
+  return '';
+}
+
+function hasEnvPinsConfigured() {
+  return Boolean(getEnvPinForRole('owner') || getEnvPinForRole('it'));
+}
+
+function verifyEnvPin(role, pin) {
+  if (role !== 'owner' && role !== 'it') return false;
+  const cleanPin = String(pin ?? '').replace(/\D/g, '').trim();
+  const expected = String(getEnvPinForRole(role) || '').trim();
+  if (!cleanPin || !expected) return false;
+  if (expected.startsWith('scrypt$')) {
+    return verifyPin(cleanPin, expected);
+  }
+  const digestA = crypto.createHash('sha256').update(cleanPin, 'utf8').digest();
+  const digestB = crypto.createHash('sha256').update(expected, 'utf8').digest();
+  return crypto.timingSafeEqual(digestA, digestB);
+}
+
+function createStatelessToken(role, expiresAtMs) {
+  const exp = Number.isFinite(expiresAtMs) ? expiresAtMs : Date.now() + SESSION_TTL_MS;
+  const payload = Buffer.from(
+    JSON.stringify({
+      role,
+      exp,
+      nonce: crypto.randomBytes(16).toString('hex')
+    }),
+    'utf8'
+  ).toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', config.sessionSecret)
+    .update(`v1.${payload}`)
+    .digest('base64url');
+  return `v1.${payload}.${sig}`;
+}
+
+function verifyStatelessToken(token) {
+  if (typeof token !== 'string' || !token.startsWith('v1.')) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [, payload, sig] = parts;
+  if (!payload || !sig) return null;
+
+  const expectedSig = crypto
+    .createHmac('sha256', config.sessionSecret)
+    .update(`v1.${payload}`)
+    .digest('base64url');
+
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expBuf = Buffer.from(expectedSig, 'utf8');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data || (data.role !== 'owner' && data.role !== 'it')) return null;
+    const exp = Number(data.exp);
+    if (!Number.isFinite(exp) || exp <= Date.now()) return null;
+    return { role: data.role, expiresAt: new Date(exp).toISOString() };
+  } catch (err) {
+    return null;
+  }
 }
 
 /**
@@ -102,6 +171,12 @@ function clearSessionCookie() {
 async function requireAdmin(req) {
   const token = getSessionToken(req);
   if (!token) throw appError('unauthorized', 'No autorizado.', 401);
+
+  if (token.startsWith('v1.')) {
+    const stateless = verifyStatelessToken(token);
+    if (!stateless) throw appError('unauthorized', 'No autorizado.', 401);
+    return stateless;
+  }
 
   const tokenHash = hashToken(token);
   const db = registry.get('db');
@@ -131,8 +206,13 @@ async function requireAdmin(req) {
 
 module.exports = {
   COOKIE_NAME,
+  SESSION_TTL_MS,
   hashPin,
   verifyPin,
+  hasEnvPinsConfigured,
+  verifyEnvPin,
+  createStatelessToken,
+  verifyStatelessToken,
   newSessionToken,
   hashToken,
   parseCookies,

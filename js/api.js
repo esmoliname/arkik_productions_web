@@ -230,6 +230,7 @@
       },
       logout: function () { return request("POST", "/api/admin/logout"); },
       session: function () { return request("GET", "/api/admin/session"); },
+      dashboard: function () { return request("GET", "/api/admin/dashboard"); },
       stats: function () { return request("GET", "/api/admin/stats"); },
       audit: function (limit) {
         return request("GET", "/api/admin/audit", undefined, { query: { limit: limit } });

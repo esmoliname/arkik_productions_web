@@ -1,8 +1,50 @@
 'use strict';
-// POST /api/admin/login — {role, pin} -> session cookie (sliding, 15 min)
+// POST /api/admin/login — {role, pin} -> HttpOnly, Secure, SameSite=Strict session cookie (15 min)
+// Zero-Trust: validates PIN against process.env.ADMIN_PIN_OWNER / process.env.ADMIN_PIN_IT
+// (or DB-backed service.login) and NEVER exposes session tokens in the response body.
 
 const { withCors } = require('../_lib/cors');
 const registry = require('../_lib/registry');
+
+const ENV_ATTEMPTS = new Map();
+const MAX_ENV_ATTEMPTS = 3;
+const ENV_LOCKOUT_MS = 30 * 1000;
+
+function sanitizeRole(rawRole) {
+  const role = typeof rawRole === 'string' ? rawRole.trim().toLowerCase() : '';
+  if (role === 'tech') return 'it';
+  return role === 'owner' || role === 'it' ? role : '';
+}
+
+function sanitizePin(rawPin) {
+  if (rawPin === null || rawPin === undefined) return '';
+  return String(rawPin).replace(/\D/g, '').trim().slice(0, 12);
+}
+
+function checkEnvLockout(bucketKey, now) {
+  const state = ENV_ATTEMPTS.get(bucketKey);
+  if (!state) return 0;
+  if (state.lockedUntil && state.lockedUntil > now) {
+    return state.lockedUntil - now;
+  }
+  if (state.lockedUntil && state.lockedUntil <= now) {
+    ENV_ATTEMPTS.delete(bucketKey);
+  }
+  return 0;
+}
+
+function recordEnvFailure(bucketKey, now) {
+  const state = ENV_ATTEMPTS.get(bucketKey) || { count: 0, lockedUntil: 0 };
+  state.count += 1;
+  if (state.count >= MAX_ENV_ATTEMPTS) {
+    state.count = 0;
+    state.lockedUntil = now + ENV_LOCKOUT_MS;
+    ENV_ATTEMPTS.set(bucketKey, state);
+    return { locked: true, retryAfterMs: ENV_LOCKOUT_MS };
+  }
+  ENV_ATTEMPTS.set(bucketKey, state);
+  return { locked: false, retryAfterMs: 0 };
+}
 
 async function handler(req, res) {
   const respond = registry.get('respond');
@@ -16,10 +58,45 @@ async function handler(req, res) {
     const service = registry.get('service');
     const auth = registry.get('auth');
 
+    const role = sanitizeRole(body ? body.role : undefined);
+    const pin = sanitizePin(body ? body.pin : undefined);
+    const ip = respond.clientIp(req);
+
+    // Zero-Trust Env-Var Authentication Path (process.env.ADMIN_PIN_OWNER / process.env.ADMIN_PIN_IT)
+    if (typeof auth.hasEnvPinsConfigured === 'function' && auth.hasEnvPinsConfigured()) {
+      const now = Date.now();
+      const bucketKey = `${ip || 'unknown'}:${role || 'unknown'}`;
+      const lockedRemaining = checkEnvLockout(bucketKey, now);
+      if (lockedRemaining > 0) {
+        return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
+          retryAfterMs: Math.ceil(lockedRemaining)
+        });
+      }
+
+      if (!role || !pin || !auth.verifyEnvPin(role, pin)) {
+        const failure = recordEnvFailure(bucketKey, now);
+        if (failure.locked) {
+          return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
+            retryAfterMs: failure.retryAfterMs
+          });
+        }
+        return respond.fail(res, 'unauthorized', 'Credenciales inválidas', 401);
+      }
+
+      ENV_ATTEMPTS.delete(bucketKey);
+      const expiresAtMs = now + (auth.SESSION_TTL_MS || 15 * 60 * 1000);
+      const token = auth.createStatelessToken(role, expiresAtMs);
+      const expiresAt = new Date(expiresAtMs).toISOString();
+
+      res.setHeader('Set-Cookie', auth.sessionCookie(token));
+      // The session token NEVER reaches the response body.
+      return respond.ok(res, { role, expiresAt });
+    }
+
     const result = await service.login({
-      role: body ? body.role : undefined,
-      pin: body ? body.pin : undefined,
-      ip: respond.clientIp(req)
+      role: role || (body ? body.role : undefined),
+      pin: pin || (body ? body.pin : undefined),
+      ip
     });
 
     res.setHeader('Set-Cookie', auth.sessionCookie(result.token));
