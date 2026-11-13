@@ -3258,6 +3258,18 @@ select.ark-input:active {
   box-shadow: 0 0 35px rgba(236, 72, 153, 0.35);
 }
 
+/* Asymmetric Bento Gallery Cards (#gallery-grid) */
+#gallery-grid .gallery-card {
+  background: rgba(13, 8, 24, 0.85);
+  transition: border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#gallery-grid .bento-card-featured {
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.85), 0 0 24px rgba(168, 85, 247, 0.14);
+}
+
 /* Instagram gradient badge on bento cards */
 .bento-card .instagram-badge {
   background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);

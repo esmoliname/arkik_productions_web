@@ -2220,51 +2220,10 @@ const BookingStore = {
         return apiFailure(res);
       }
 
-      // Fallback estático / offline resiliente:
-      // Si la petición falla por error de red, timeout, 404/405 (GitHub Pages) o 5xx:
-      const isDegradedOrOffline = true;
-
-      if (isDegradedOrOffline) {
-        console.warn(`[Arkik] Backend no disponible (status: ${status}, code: ${code}). Activando persistencia local degradada.`);
-
-        // Genera código criptográfico local ARK-[XXXXXXXX] si no lo tiene
-        if (!booking.code || !booking.code.startsWith("ARK-")) {
-          booking.code = (typeof generateBookingCode === "function")
-            ? generateBookingCode()
-            : ("ARK-" + ((typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") ? crypto.randomUUID().split("-")[0].toUpperCase() : Date.now().toString(16).slice(-8).toUpperCase()));
-        }
-
-        booking.status = "pendiente";
-        booking.statusText = "Pendiente de Aprobación";
-        booking.statusLabel = "Pendiente de Aprobación";
-        booking.syncStatus = "offline_unverified";
-        booking.isOfflineDegraded = true;
-        enforceVerifiedTotalsOnBooking(booking, booking);
-        if (!validateBookingSchema(booking)) {
-          return apiError("validation_error", "El registro de reserva no superó la validación de esquema Zero-Trust.");
-        }
-        booking.updatedAt = booking.updatedAt || new Date().toISOString();
-        booking.isOfflineDegraded = true;
-
-        // Persistir en StorageEngine / localStorage (arkik_bookings_v1)
-        this._enqueueOfflineBooking(booking, idempotencyKey, payload);
-        this._data.unshift(booking);
-        this.persist();
-
-        // Actualizar el estado del calendario para ocupar la fecha/hora reservada localmente
-        if (typeof AvailabilityManager !== "undefined") {
-          if (AvailabilityManager._details && AvailabilityManager._details[booking.selectedDate]) {
-            delete AvailabilityManager._details[booking.selectedDate];
-          }
-        }
-        if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-          try { CalendarModule.render(); } catch (e) { }
-        }
-
-        CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
-        return { ok: true, booking: booking, source: "local", degraded: true };
-      }
-
+      // No simular éxito: si el backend no confirmó la persistencia, propagar el fallo.
+      // La cola offline (arkik_pending_sync_v1) se gestiona en el llamador con la misma
+      // clave de idempotencia, sin declarar la reserva como registrada.
+      console.warn(`[Arkik] Backend no disponible (status: ${status}, code: ${code}). Reserva NO confirmada.`);
       return apiFailure(res);
     }
 
@@ -9798,19 +9757,18 @@ function galleryInstagramCard(item) {
   const title = sanitizeInput(item.title);
   const caption = sanitizeInput(item.caption || item.subtitle || "");
   const date = sanitizeInput(item.date || "");
-  const safeUrl = sanitizeUrl(item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr");
-  const thumbnail = sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg");
-  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+  const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1400&q=85");
+  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group rounded-3xl overflow-hidden relative block cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+    <article class="gallery-card ${featuredClass} h-full group rounded-3xl overflow-hidden relative block cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       
-      <!-- Media Aspect Ratio Container -->
-      <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
-        <!-- Background Image with Micro-zoom -->
+      <!-- Media Container -->
+      <div class="relative w-full h-full overflow-hidden bg-black/50">
+        <!-- Background Image with Cinematic Zoom -->
         <img src="${thumbnail}" alt="${title}" loading="lazy"
-             class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
+             class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
 
         <!-- Smooth Dark Gradient Overlay -->
         <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none"></div>
@@ -9862,29 +9820,30 @@ function galleryInstagramCard(item) {
 function galleryVideoCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
-  const thumbnail = sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg");
+  const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=1400&q=85");
   const date = sanitizeInput(item.date || "");
-  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden cursor-pointer"
+    <article class="gallery-card ${featuredClass} h-full group relative rounded-3xl overflow-hidden cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
-      <div id="gallery-media-${sanitizeInput(item.id)}" class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+      <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-black/50">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
-          class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
-        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
-        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
+          class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
+        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10 pointer-events-none">
           <div class="flex items-center gap-1.5">
             ${galleryCategoryBadge(item)}
             ${galleryDynamicBadge(item)}
           </div>
           ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
-        <div class="absolute inset-0 m-auto z-10 w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-900/60 border border-white/20 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110">
-          <span class="absolute inset-0 rounded-full bg-purple-500/40 animate-ping opacity-0 group-hover:opacity-100 [animation-duration:1.6s]"></span>
-          <svg class="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+        <div class="absolute inset-0 m-auto z-10 w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-900/60 border border-white/25 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110 pointer-events-none">
+          <span class="absolute -inset-1.5 rounded-full bg-purple-500/35 animate-pulse"></span>
+          <span class="absolute inset-0 rounded-full bg-pink-500/35 animate-ping opacity-0 group-hover:opacity-100 [animation-duration:1.6s]"></span>
+          <svg class="relative w-6 h-6 text-white ml-0.5 drop-shadow" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
         </div>
-        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
+        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10 pointer-events-none">
           <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
           ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
         </div>
@@ -9899,25 +9858,25 @@ function galleryVideoCard(item) {
 function galleryImageCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
-  const url = sanitizeUrl(item.thumbnail || item.directUrl || "img/Foto Kike .jpg");
+  const url = sanitizeUrl(item.thumbnail || item.directUrl || "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=900&q=85");
   const date = sanitizeInput(item.date || "");
-  const featuredClass = item.featured ? "sm:col-span-2 lg:col-span-2 bento-card-featured" : "";
+  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
 
   return `
-    <article class="gallery-card ${featuredClass} group relative rounded-3xl overflow-hidden cursor-pointer"
+    <article class="gallery-card ${featuredClass} h-full group relative rounded-3xl overflow-hidden cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
-      <div class="relative ${item.featured ? 'aspect-[16/10] sm:aspect-[16/9]' : 'aspect-[4/5]'} overflow-hidden bg-black/50">
+      <div class="relative w-full h-full overflow-hidden bg-black/50">
         <img src="${url}" alt="${title}" loading="lazy"
-          class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" />
-        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
-        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10">
+          class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
+        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10 pointer-events-none">
           <div class="flex items-center gap-1.5">
             ${galleryCategoryBadge(item)}
             ${galleryDynamicBadge(item)}
           </div>
           ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
-        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
+        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10 pointer-events-none">
           <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
           ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
         </div>
@@ -12839,7 +12798,8 @@ async function submitStaticBooking() {
             try { CalendarModule.render(); } catch (e) {}
           }
 
-          saved = { ok: true, booking: record, source: "local", degraded: true };
+           // No se declara como confirmada: la reserva queda pendiente de sincronización.
+           saved = { ok: false, queued: true, booking: record, source: "local", degraded: true };
         }
 
         const created = saved.booking;
