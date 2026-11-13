@@ -3,7 +3,7 @@
 **Date:** 2026-11-13
 **Branch:** main (working tree)
 **Node:** >=22 (engines.node)
-**Tests:** `npm test` → 5 suites, 0 failures
+**Tests:** `npm test` → 6 suites, 0 failures
 
 ## 1. Architecture found
 
@@ -79,7 +79,7 @@
 - `test/contract.test.cjs`: 30 checks, 0 failed
 - `test/load.test.cjs`: 24 checks, 0 failed
 - `test/logic.test.cjs`: 30 checks, 0 failed
-- Total: 5 suites, 0 failures.
+- Total: 6 suites, 0 failures.
 
 ## 6. Vercel deployment
 
@@ -95,7 +95,7 @@
 | Area | Status | Evidence |
 |---|---|---|
 | A. Implementación de código | PASS | Backend remote-first + Neon; seguridad aplicada; offline UX corregida (no success sin servidor). |
-| B. Pruebas automatizadas | PASS | `npm test`: 5 suites, 0 fallos (behavior 13, contract 30, load 24, logic 30, api-client). |
+| B. Pruebas automatizadas | PASS | `npm test`: 6 suites, 0 fallos (behavior 13, contract 30, load 24, logic 30, api-client). |
 | C. Integración real con Neon | BLOCKED | No hay credenciales Neon disponibles en este entorno. Prueba preparada en `test/neon-integration.test.cjs` (pendiente de crear) — ver sección 8. |
 | D. Verificación multidispositivo | NOT VERIFIED (simulated) | Escenario diseñado y flujo validado por código; no ejecutado con dos navegadores reales. |
 | E. Seguridad | PASS (parcial) | Secret obligatorio en prod, cookies Secure en prod, endpoints admin protegidos (401 sin sesión). Brute-force/roles revisados en código. |
@@ -150,3 +150,12 @@ Estado actual: BLOCKED (sin credenciales). No se inventan resultados.
 - docs/QA_REPORT.md
 - docs/CATALOG_AUDIT.md
 - docs/PRODUCTION_READINESS_REPORT.md (this file)
+
+## 12. Rate limiting y revocacion de sesiones (final hardening)
+
+- Rate limiter DB-backed (PostgreSQL/Neon): contadores en tabla ate_limits, actualizados con UPSERT atomico. Compartido entre instancias serverless. Ventanas temporales con expiracion automatica. Sin servicios de pago adicionales.
+- Rate limiter ENV path (fallback sin DB): contadores en memoria local, no compartidos. Aceptable como degradacion. Documentado como limitacion.
+- Anti-lockout: eliminado lockout por rol (evita DoS cross-admin). Throttling por IP e IP+rol con backoff progresivo temporal. Bucket global por rol eliminado.
+- Session revocation: sesiones DB-backed revocables (logout elimina fila). Sesiones stateless (v1.) firmadas con HMAC no revocables antes de expiracion (15 min). Estrategia recomendada: campo session_version en dmin_credentials. No implementada (compatibilidad conservada).
+- Credenciales: PINs se validan contra hashes scrypt en DB o contra env (texto plano o hash scrypt si empieza con scrypt$). Recomendacion: usar hashes scrypt en env. No se cambiaron credenciales reales.
+

@@ -2,13 +2,14 @@
 
 ## Automated tests
 
-`npm test` (2026-11-13): 5 suites, 0 failures.
+`npm test` (2026-11-13): 6 suites, 0 failures.
 
 - api-client.test.cjs — ArkikApi client contract.
 - behavior.test.cjs — 13 checks (HTTP contracts, auth gating).
 - contract.test.cjs — 30 checks (availability range, pricing, auth).
 - load.test.cjs — 24 checks.
 - logic.test.cjs — 30 checks (pricing, capacity, state machine, validation).
+- security.test.cjs — 15 checks (auth gating, log redaction, anti-lockout, no global bucket).
 
 ## Real integration (Neon)
 

@@ -555,9 +555,11 @@ async function login(input) {
   const auth = registry.get('auth');
   const ratelimit = registry.get('ratelimit');
 
+  // Per-IP and per-IP+role throttling only. A global per-role bucket is
+  // intentionally avoided: it would let a single malicious IP exhaust the
+  // authentication budget for every administrator (anti-lockout violation).
   await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}`, limit: 10, windowMs: 60 * 60 * 1000 });
   await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}:${(input.role || '').trim().toLowerCase()}`, limit: 5, windowMs: 15 * 60 * 1000 });
-  await ratelimit.enforce({ bucket: `login:role:${(input.role || '').trim().toLowerCase()}`, limit: 20, windowMs: 60 * 60 * 1000 });
 
   const role = typeof input.role === 'string' ? input.role.trim() : '';
   const pin = typeof input.pin === 'string' ? input.pin : '';
