@@ -7,8 +7,12 @@ const { withCors } = require('../_lib/cors');
 const registry = require('../_lib/registry');
 
 const ENV_ATTEMPTS = new Map();
-const MAX_ENV_ATTEMPTS = 3;
-const ENV_LOCKOUT_MS = 30 * 1000;
+// Per-origin throttling only: a third party must never be able to lock an
+// administrator out globally by sending bad PINs. Backoff is progressive and
+// temporary, and resets automatically.
+const MAX_ENV_ATTEMPTS = 5;
+const ENV_LOCKOUT_BASE_MS = 30 * 1000;
+const ENV_LOCKOUT_MAX_MS = 15 * 60 * 1000;
 
 function sanitizeRole(rawRole) {
   const role = typeof rawRole === 'string' ? rawRole.trim().toLowerCase() : '';
@@ -28,19 +32,22 @@ function checkEnvLockout(bucketKey, now) {
     return state.lockedUntil - now;
   }
   if (state.lockedUntil && state.lockedUntil <= now) {
+    // Reset after the backoff window elapses.
     ENV_ATTEMPTS.delete(bucketKey);
   }
   return 0;
 }
 
 function recordEnvFailure(bucketKey, now) {
-  const state = ENV_ATTEMPTS.get(bucketKey) || { count: 0, lockedUntil: 0 };
+  const state = ENV_ATTEMPTS.get(bucketKey) || { count: 0, level: 0, lockedUntil: 0 };
   state.count += 1;
   if (state.count >= MAX_ENV_ATTEMPTS) {
     state.count = 0;
-    state.lockedUntil = now + ENV_LOCKOUT_MS;
+    const lockMs = Math.min(ENV_LOCKOUT_BASE_MS * Math.pow(2, state.level), ENV_LOCKOUT_MAX_MS);
+    state.level = Math.min(state.level + 1, 6);
+    state.lockedUntil = now + lockMs;
     ENV_ATTEMPTS.set(bucketKey, state);
-    return { locked: true, retryAfterMs: ENV_LOCKOUT_MS };
+    return { locked: true, retryAfterMs: lockMs };
   }
   ENV_ATTEMPTS.set(bucketKey, state);
   return { locked: false, retryAfterMs: 0 };
@@ -68,7 +75,8 @@ async function handler(req, res) {
       const bucketKey = `${ip || 'unknown'}:${role || 'unknown'}`;
       const lockedRemaining = checkEnvLockout(bucketKey, now);
       if (lockedRemaining > 0) {
-        return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
+        res.setHeader('Retry-After', String(Math.ceil(lockedRemaining / 1000)));
+        return respond.fail(res, 'locked', 'Credenciales invǭlidas', 429, {
           retryAfterMs: Math.ceil(lockedRemaining)
         });
       }
@@ -76,7 +84,8 @@ async function handler(req, res) {
       if (!role || !pin || !auth.verifyEnvPin(role, pin)) {
         const failure = recordEnvFailure(bucketKey, now);
         if (failure.locked) {
-          return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
+          res.setHeader('Retry-After', String(Math.ceil(failure.retryAfterMs / 1000)));
+          return respond.fail(res, 'locked', 'Credenciales invǭlidas', 429, {
             retryAfterMs: failure.retryAfterMs
           });
         }
@@ -103,6 +112,9 @@ async function handler(req, res) {
     // The token itself never reaches the response body.
     return respond.ok(res, { role: result.role, expiresAt: result.expiresAt });
   } catch (err) {
+    if (err && err.extra && err.extra.retryAfterMs) {
+      try { res.setHeader('Retry-After', String(Math.ceil(err.extra.retryAfterMs / 1000))); } catch (e) { /* ignore */ }
+    }
     return respond.handleError(res, err, registry.get('log'));
   }
 }

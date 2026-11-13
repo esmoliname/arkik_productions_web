@@ -556,6 +556,8 @@ async function login(input) {
   const ratelimit = registry.get('ratelimit');
 
   await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}`, limit: 10, windowMs: 60 * 60 * 1000 });
+  await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}:${(input.role || '').trim().toLowerCase()}`, limit: 5, windowMs: 15 * 60 * 1000 });
+  await ratelimit.enforce({ bucket: `login:role:${(input.role || '').trim().toLowerCase()}`, limit: 20, windowMs: 60 * 60 * 1000 });
 
   const role = typeof input.role === 'string' ? input.role.trim() : '';
   const pin = typeof input.pin === 'string' ? input.pin : '';
@@ -577,21 +579,11 @@ async function login(input) {
     if (!credential) return { result: 'invalid' };
 
     const now = Date.now();
-    const lockedUntil = credential.locked_until ? new Date(credential.locked_until).getTime() : 0;
-    if (lockedUntil > now) return { result: 'locked', retryAfterMs: lockedUntil - now };
-
+    // NOTE: No per-role lockout is applied here. A third party must not be
+    // able to lock an administrator out by sending bad PINs. Throttling is
+    // enforced per origin + per role + globally (see above) instead.
     if (!auth.verifyPin(pin, credential.pin_hash)) {
       const failed = (Number(credential.failed_attempts) || 0) + 1;
-      if (failed >= MAX_FAILED_ATTEMPTS) {
-        const level = Number(credential.lock_level) || 0;
-        const lockMs = Math.min(LOCK_BASE_MS * Math.pow(2, level), LOCK_MAX_MS);
-        await repo.updateCredential(client, role, {
-          failedAttempts: 0,
-          lockLevel: level + 1,
-          lockedUntil: new Date(now + lockMs)
-        });
-        return { result: 'locked', retryAfterMs: lockMs };
-      }
       await repo.updateCredential(client, role, {
         failedAttempts: failed,
         lockLevel: Number(credential.lock_level) || 0,
@@ -606,19 +598,6 @@ async function login(input) {
     await repo.createSession(client, { tokenHash: auth.hashToken(token), role, expiresAt });
     return { result: 'ok', token, expiresAt };
   });
-
-  if (outcome.result === 'locked') {
-    await recordAudit({
-      action: 'ADMIN_LOGIN_FAILED',
-      entityType: 'admin_credentials',
-      entityId: role,
-      actor: role,
-      metadata: { reason: 'locked' }
-    });
-    throw appError('locked', 'Cuenta bloqueada temporalmente.', 429, {
-      retryAfterMs: Math.max(0, Math.round(outcome.retryAfterMs))
-    });
-  }
 
   if (outcome.result !== 'ok') {
     await recordAudit({

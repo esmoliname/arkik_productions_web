@@ -30,8 +30,9 @@ async function enforce(params) {
   if (!result.allowed) {
     throw appError(
       'rate_limited',
-      params.message || 'Demasiadas solicitudes. Intente más tarde.',
-      429
+      params.message || 'Demasiadas solicitudes. Intente m\u00e1s tarde.',
+      429,
+      { retryAfterMs: Math.max(0, Math.round(result.retryAfterMs || 0)) }
     );
   }
   return result;
