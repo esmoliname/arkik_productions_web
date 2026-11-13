@@ -1,169 +1,208 @@
-# 🎸 Arkik Productions — Executive Operating System & Booking Engine
+# Arkik Productions — Executive Operating System & Booking Engine
 
-> 🚀 **Live Deployment / Despliegue Oficial:** [https://esmoliname.github.io/arkik_productions_web/](https://esmoliname.github.io/arkik_productions_web/)
-> 📁 **Repository:** [https://github.com/esmoliname/arkik_productions_web](https://github.com/esmoliname/arkik_productions_web)
+> **Repository:** [https://github.com/esmoliname/arkik_productions_web](https://github.com/esmoliname/arkik_productions_web)
 
 Plataforma ejecutiva de alto rendimiento (SPA) y sistema operativo de gestión de eventos, cotizaciones dinámicas, validación bancaria **SINPE Móvil**, motor de búsqueda y agregación determinista (**ArkikRAGEngine**) y subsistema de generación de documentos contractuales en **PDF y DOCX** para **Arkik Productions** (Granadilla, Curridabat, San José, Costa Rica).
 
 ---
 
-## 1. System Architecture Overview
+## Project Overview
 
-Arkik OS está diseñado como una aplicación web de una sola página (**Single Page Application**) construida sobre una arquitectura modular pura en Vanilla JavaScript (ES2022+), CSS3 con variables de diseño líquido y Tailwind CSS.
+Arkik Productions es una plataforma web que combina un catálogo público de servicios musicales y sonido con un motor de reservas transaccionales y un panel administrativo. El sistema gestiona cotizaciones en tiempo real, disponibilidad de agenda, validación de comprobantes SINPE Móvil, auditoría de operaciones y exportación de prefacturas en PDF/DOCX.
+
+Funcionalidades principales:
+
+- Catálogo de servicios musicales (Banda RT, Trío, Dúo, Solista, Alquiler de Sonido).
+- Wizard de reserva de 4 pasos con cálculo dinámico de horas extra, DJ en recesos, subwoofers y viáticos.
+- Validación de disponibilidad por fecha/hora con bloqueo automático por capacidad.
+- Validación bancaria SINPE Móvil con comprobante (voucher) y aprobación administrativa.
+- Panel administrativo con dashboard, métricas financieras, auditoría y gestión de precios.
+- Generación de prefacturas en PDF (A4) y Word (.docx).
+- Motor de búsqueda operativa determinista (ArkikRAGEngine) sobre reservas activas.
+
+---
+
+## Architecture
+
+Arquitectura real del proyecto (no se usa Cloudflare en la arquitectura objetivo):
+
+- **Frontend:** Vanilla JavaScript SPA (ES2022+), CSS3 con variables de diseño líquido y Tailwind CSS. Sin frameworks de UI.
+- **Backend:** Vercel Serverless Functions (Node.js 22+) bajo `/api`.
+- **Database:** Neon PostgreSQL (server-side only, vía `DATABASE_URL`).
+- **Persistencia remota primero:** La fuente de verdad de las reservas es Neon PostgreSQL a través de `/api`. `LocalStorage` se utiliza únicamente para caché, preferencias y borradores/cola offline no confirmada. El sistema **no** simula confirmaciones cuando el backend no responde.
 
 ```mermaid
 graph TD
-    Client[Cliente / Navegador] --> UI[Catalog & Booking Wizard 4-Pasos]
-    UI --> Cart[CartState & PriceManager]
-    Cart --> Storage[StorageEngine - LocalStorage & Memory]
-    Storage --> Bookings[BookingStore - Estado Persistente]
-    Bookings --> RAG[ArkikRAGEngine - Motor de Búsqueda e Inteligencia]
-    RAG --> Studio[RAG Analytics Studio & Centro de Acción]
-    Bookings --> Assets[ArkikAssets - Base64 Cache Manager]
-    Assets --> PreInvoice[Pre-Invoice Modal #preInvoicePreviewModal]
-    PreInvoice --> PDF[html2pdf.js - Renderizado A4 794px]
-    PreInvoice --> DOCX[Word Export Engine - .docx Blob]
-    UI --> WhatsApp[WhatsApp Dispatch API wa.me]
-    UI --> Email[EmailJS Dispatcher]
+    Client[Cliente / Navegador] --> UI[SPA Vanilla JS]
+    UI --> API[Vercel Serverless /api]
+    API --> PG[(Neon PostgreSQL)]
+    PG --> API
+    API --> UI
 ```
 
-### Principales Módulos del Sistema:
-- **`js/data.js`**: Definición estricta de fuentes de datos, catálogo de servicios musicales (Banda RT, Trío, Dúo, Solista, Alquiler de Sonido), mapa geográfico de Costa Rica (7 provincias, 84 cantones, clasificación GAM vs. Fuera de GAM), configuración de SINPE Móvil y credenciales criptográficas de acceso administrativo.
-- **`js/app.js`**: Núcleo reactivo que alberga:
-  1. `ArkikAssets`: Pre-cargador asíncrono y gestor de caché de assets en Base64 con fallback SVG determinista.
-  2. `CartState` & `PriceManager`: Máquina de estado para cotizaciones en tiempo real con recálculo instantáneo de horas extra (50% base), DJ en recesos, refuerzo acústico de subwoofers 18" y recargo de viáticos del 12% fuera de GAM.
-  3. `BookingStore`: Almacén transaccional de reservas locales con estados `pendiente`, `confirmado` y `cancelado`.
-  4. `ArkikRAGEngine` & `RAGStudio`: Motor de indexación determinista, métricas financieras en tiempo real y centro de acción táctil.
-  5. `ModalController`: Máquina de estados determinista para modales (`#booking-modal`, `#adminPortalModal`, `#preInvoicePreviewModal`, etc.) que garantiza contención del viewport y cero scroll fantasma.
-  6. Sub-sistema de Exportación Documental: Generador A4 de prefacturas y comprobantes en PDF (vía `html2pdf.js`) y Word (`.docx`).
+Módulos principales:
+
+- `js/data.js`: Catálogo, mapa geográfico (7 provincias, 84 cantones, GAM vs. Fuera de GAM), configuración SINPE y constantes.
+- `js/app.js`: Núcleo reactivo — `ArkikAssets`, `CartState`, `PriceManager`, `BookingStore`, `ArkikRAGEngine`, `ModalController`, exportación documental.
+- `js/api.js`: Cliente HTTP hacia `/api` con manejo de errores y reintentos.
+- `api/_lib/*`: Librerías compartidas (config, auth, db, cors, log, respond, repo, service, ratelimit, registry, logic).
+- `api/admin/*`: Endpoints administrativos protegidos por sesión.
+- `api/bookings/*`, `api/availability/*`, `api/pricing.js`: Endpoints públicos y administrativos.
 
 ---
 
-## 2. Data Flow & RAG Search Engine
+## Requirements
 
-El módulo **`ArkikRAGEngine`** implementa un motor de inteligencia operativa determinista sobre las reservas activas en `BookingStore`, sin dependencias externas de IA generativa ni consumo de APIs de embeddings, garantizando latencia cero y precisión matemática total:
-
-### 2.1 Indexación y Normalización de Registros:
-- **Indexación automática**: Cada reserva en `BookingStore` se indexa con tags operacionales deterministas (`[Pendientes SINPE]`, `[Confirmadas]`, `[Fuera GAM]`, `[Banda RT]`, `[72h Urgentes]`).
-- **Validación SINPE**: Distingue reservas con adelanto liquidado (`depositSettled: true` / estado `confirmado`) frente a solicitudes con validación pendiente.
-- **Regla Operacional de 72h**:
-  - Detección proactiva de eventos programados dentro de las próximas 72 horas con saldo o depósito sin liquidar.
-  - Alerta en el dashboard ejecutivo con nivel de criticidad prioritario para evitar colisiones de agenda o movilización de equipo sin garantía.
-
-### 2.2 Agregados y Métricas Financieras en Vivo:
-- **Total Recaudado**: Sumatoria exacta de depósitos del 50% vía SINPE Móvil verificados.
-- **Saldos Pendientes en Escena**: Montos contratados por liquidar el día del show antes del montaje.
-- **Tasa de Conversión**: Porcentaje de cotizaciones emitidas que culminan en reservas formales confirmadas.
-- **Proyecciones Semanales**: Agrupación cronológica por semanas ISO de ingresos futuros ya comprometidos.
+- Node.js 22+ (ver `package.json` `engines.node`).
+- npm.
+- Git.
+- Cuenta y base de datos Neon PostgreSQL para integración.
+- Cuenta Vercel para despliegue.
 
 ---
 
-## 3. PDF & DOCX Export Subsystem
+## Installation
 
-El subsistema de renderizado documental formaliza las cotizaciones y reservas en comprobantes ejecutivos con fidelidad de impresión A4:
-
-```text
-+-----------------------------------------------------------------------+
-|  PRE-INVOICE MODAL ENGINE (#preInvoicePreviewModal)                   |
-|                                                                       |
-|  [📥 Descargar PDF Oficial]  [📄 Descargar Word (.docx)]  [✕ Cerrar]  |
-|                                                                       |
-|  +-----------------------------------------------------------------+  |
-|  |  Bounded A4 Sheet (max-width: 794px, padding: 28px, box-sizing) |  |
-|  |                                                                 |  |
-|  |  [Logo Base64]   ARKIK PRODUCTIONS       N° ARK-XXXXXXXX        |  |
-|  |                  Música en Vivo & Sonido Fecha: 29/09/2026      |  |
-|  |                                                                 |  |
-|  |  PREFACTURA Y COMPROBANTE DE RESERVA     [Estado Badge]         |  |
-|  |                                                                 |  |
-|  |  Cliente / Contacto            Detalles del Evento              |  |
-|  |  Juan Pérez (+506 8888-8888)   Banda RT · 15 Nov · Heredia      |  |
-|  |                                                                 |  |
-|  |  Ledger de Logística (Montaje: 2h antes · Show · Desmontaje)    |  |
-|  |                                                                 |  |
-|  |  Desglose Financiero: Total ₡ · Adelanto 50% ₡ · Saldo ₡        |  |
-|  |  Instrucciones SINPE Móvil: 6227-4984 (Juan José Ramírez)       |  |
-|  +-----------------------------------------------------------------+  |
-+-----------------------------------------------------------------------+
-```
-
-### 3.1 Manejo de Assets en Base64 (`ArkikAssets`):
-- `ArkikAssets.init()` se ejecuta inmediatamente al cargar el script, solicitando de forma asíncrona `img/arkik_logo.jpg` y convirtiéndola en Data URL Base64 (`ArkikAssets.logoBase64`).
-- **Fallback SVG garantizado**: Si la red o el entorno local offline fallan, `_generateFallbackLogo()` genera un isotipo SVG corporativo codificado en Base64, evitando que los motores `html2canvas` o `html2pdf.js` queden esperando imágenes no resueltas o generen hojas en blanco.
-
-### 3.2 Bounding A4 & Configuración de `html2pdf.js`:
-- El canvas de renderizado está acotado estrictamente a **`794px`** de ancho (equivalente matemático a los $210mm$ de una hoja A4 a $96dpi$) con **`28px`** de padding interno y `box-sizing: border-box`.
-- La llamada a `html2pdf.js` se ejecuta con parámetros calibrados:
-  ```javascript
-  html2pdf().set({
-    margin: 0,
-    filename: 'Prefactura_' + booking.id + '.pdf',
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, windowWidth: 794 },
-    jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }
-  }).from(contentElement).save();
-  ```
-
-### 3.3 Exportador Word (.docx):
-- Genera un documento nativo enriquecido en formato Word Processing ML empaquetado en Blob MIME `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, descargable como `Prefactura_[ID].docx` e interpretable en Microsoft Word, Google Docs y LibreOffice Writer.
-
----
-
-## 4. UI Design System
-
-Inspirado en la estética **Liquid Glass / Obsidian Glass** con micro-interacciones táctiles:
-
-### 4.1 Tipografía Oficial:
-- **Fuente Primaria (UI & Títulos)**: `Plus Jakarta Sans`, sans-serif (pesos 400, 500, 600, 700, 800) importada vía Google Fonts.
-- **Fuente Numérica y Código**: `JetBrains Mono`, monospace (pesos 400, 600, 700) aplicada a columnas monetarias (₡), hashes de reserva (`ARK-XXXXXXXX`), contadores y badges numéricos para alineación tabular perfecta (`tabular-nums`).
-
-### 4.2 Paleta de Colores & Acentos:
-- **Base / Dark Canvas**: `#07040e` / `#0b0914` con orbes de luz ambiental púrpura, índigo y fucsia.
-- **Púrpura Ejecutivo (Primary)**: `#8b5cf6` / `#6d28d9` / `#4c1d95`.
-- **Esmeralda Éxito (SINPE Verificado)**: `#10b981` / `#047857` / `rgba(16, 185, 129, 0.3)`.
-- **Ámbar Alerta (SINPE Pendiente)**: `#f59e0b` / `#b45309`.
-- **Cian Inteligencia (Métricas & Proyecciones)**: `#06b6d4` / `#0891b2`.
-
-### 4.3 Componentes y Micro-Interacciones:
-- **Centro de Acción ("Centro de Acción" en `#ragStudioView`)**:
-  - `rag-action--export`: Glow púrpura `hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] bg-purple-900/30 border-purple-500/30 text-purple-200`.
-  - `rag-action--whatsapp`: Glow esmeralda `hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] bg-emerald-900/30 border-emerald-500/30 text-emerald-200`.
-  - `rag-action--projection`: Glow cian `hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] bg-cyan-900/30 border-cyan-500/30 text-cyan-200`.
-  - Respuesta háptica: `active:scale-95 transition-all duration-150`.
-- **Glass Trigger Pills en Tarjetas de Reserva**:
-  - Botones píldora translúcidos (`rag-pill-btn`) para **Previsualizar**, **Generar PDF**, **WhatsApp** y **Editar**.
-
----
-
-## 5. Installation, Local Running & Automated Testing
-
-### Requisitos Previos:
-- **Node.js** v18.0.0 o superior.
-- Navegador web moderno compatible con ES Modules y Canvas 2D (Chrome, Firefox, Safari, Edge).
-
-### Instalación de Dependencias:
 ```bash
 npm install
 ```
 
-### Ejecución Local:
-Para iniciar el servidor de desarrollo estático:
+---
+
+## Development
+
+Iniciar el servidor de desarrollo estático:
+
 ```bash
 npm run dev
 ```
-O bien abrir directamente `index.html` en el navegador web o mediante extensiones como Live Server.
 
-### Suite de Pruebas Automatizadas:
-Para validar la integridad de sintaxis, alcances y tipos en todos los módulos JavaScript del sistema:
+También se puede abrir `index.html` directamente en el navegador o mediante Live Server.
+
+Comprobación de sintaxis:
+
 ```bash
-npm test
+npm run check
 ```
-Este comando ejecuta de manera estricta:
-```bash
-node --check js/app.js && node --check js/data.js
-```
-Garantizando **0 errores de sintaxis** y consistencia en el árbol de ejecución del motor.
 
 ---
 
-© 2026 **Arkik Productions** — Música en Vivo & Sonido Profesional · Granadilla, San José, Costa Rica.
+## Environment Variables
+
+Variables de entorno (nombres y propósito). **Nunca incluir valores reales.** Usar placeholders seguros.
+
+| Variable | Propósito |
+|---|---|
+| `DATABASE_URL` | Cadena de conexión PostgreSQL de Neon (solo server-side). |
+| `APP_ENV` | Entorno: `development`, `preview` o `production`. |
+| `SEED_MODE` | `true` permite insertar datos demo (solo desarrollo local); `false` en producción. |
+| `ADMIN_OWNER_PIN` | PIN del rol Owner (solo server-side, nunca en código ni cliente). |
+| `ADMIN_IT_PIN` | PIN del rol IT (solo server-side). |
+| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en producción. |
+| `ALLOWED_ORIGINS` | Orígenes permitidos para CORS (separados por coma). Vacío = same-origin únicamente. |
+| `PUBLIC_APP_URL` | URL pública de la app (para links/emails). |
+
+Copiar `.env.example` a `.env.local` para desarrollo. Nunca commitear `.env` real.
+
+---
+
+## Database
+
+- **Neon PostgreSQL** como base de datos oficial.
+- Migraciones en `db/migrations/` (`001_initial_schema.sql`, `002_indexes.sql`, `003_config_seed.sql`).
+- Inicialización: `npm run db:migrate`.
+- Semillas de desarrollo: `npm run db:seed:dev` (solo con `SEED_MODE=true`).
+- Separación de entornos por `DATABASE_URL` y `APP_ENV`.
+- Bases vacías: el sistema arranca vacío en producción (`SEED_MODE=false`); no se insertan datos demo.
+- Protección de datos existentes: las migraciones son idempotentes (`ON CONFLICT`); no se sobrescriben datos de producción.
+
+---
+
+## API
+
+### Endpoints públicos
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/health` | Estado del servicio. |
+| `POST` | `/api/bookings` | Creación de reserva (rate limited, idempotente). |
+| `GET` | `/api/availability` | Mapa de disponibilidad bloqueada (+ `?date=`, `?from=&to=`). |
+| `GET` | `/api/pricing` | Precios públicos (catálogo, overrides, rates). |
+
+### Endpoints administrativos (requieren sesión)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/admin/login` | Autenticación por PIN. |
+| `GET` | `/api/admin/session` | Sesión actual o 401. |
+| `POST` | `/api/admin/logout` | Cierre de sesión. |
+| `GET` | `/api/admin/dashboard` | Payload del panel administrativo. |
+| `GET` | `/api/admin/stats` | Agregados. |
+| `GET` | `/api/admin/audit` | Eventos de auditoría. |
+| `GET/PUT` | `/api/admin/pricing` | Gestión de precios (PUT solo Owner). |
+| `GET` | `/api/bookings` | Listado de reservas (admin). |
+| `GET/PATCH` | `/api/bookings/[code]` | Detalle / edición de contacto. |
+| `PATCH` | `/api/bookings/[code]/status` | Transición de estado. |
+| `PATCH` | `/api/bookings/[code]/reschedule` | Reagendamiento. |
+| `PUT/DELETE` | `/api/availability` | Gestión de disponibilidad (solo Owner). |
+
+---
+
+## Security
+
+- **Autenticación:** PIN administrativo validado exclusivamente en el servidor, hashes scrypt con salt único, comparación en tiempo constante.
+- **Sesiones:** Tokens aleatorios firmados con HMAC-SHA256 (stateless `v1.`) o sesiones persistidas en DB con expiración deslizante (15 min). Cookies `HttpOnly`, `Secure` en producción, `SameSite=Strict`.
+- **Roles:** `owner` e `it`, verificados en el servidor. Operaciones sensibles (precios, disponibilidad) reservadas al Owner.
+- **Protección de login:** Rate limiting por IP, por IP+rol y global por rol; backoff progresivo temporal; sin bloqueo permanente del administrador por intentos fallidos de terceros.
+- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en producción (el getter lanza si no está configurado). Ningún secreto en el frontend.
+- **CORS:** Same-origin por defecto; orígenes explícitos cuando se configuran. Preflight restringido.
+- **Logs:** Redacción automática de secretos, PINs, tokens, cookies y URLs de conexión.
+- **Auditoría:** Eventos de login, logout, cambios de estado, precios y disponibilidad.
+
+---
+
+## Testing
+
+```bash
+npm test
+```
+
+Suites existentes:
+
+- `test/api-client.test.cjs`: Cliente HTTP, idempotencia, rate limiting, manejo de errores.
+- `test/behavior.test.cjs`: Comportamiento de handlers (auth, métodos, DB caída).
+- `test/contract.test.cjs`: Contratos de availability range y pricing.
+- `test/load.test.cjs`: Carga de módulos y registro.
+- `test/logic.test.cjs`: Lógica de negocio (precios, capacidad, transiciones, validación).
+
+No se eliminan pruebas para obtener resultados positivos.
+
+---
+
+## Deployment
+
+Preparación para:
+
+- **Vercel Preview:** Entorno de prueba con su propia `DATABASE_URL` y credenciales.
+- **Vercel Production:** `SEED_MODE=false`, `ADMIN_SESSION_SECRET` obligatorio, `APP_ENV=production`.
+- **Neon PostgreSQL:** Base de datos por entorno (desarrollo/preview/producción).
+- **Dominio personalizado:** Configurar en Vercel; usar `PUBLIC_APP_URL`.
+
+No incluir credenciales ni URLs privadas con parámetros sensibles en la documentación.
+
+---
+
+## Documentation Index
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/DATABASE.md`](docs/DATABASE.md)
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
+- [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md)
+- [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)
+- [`docs/QA_REPORT.md`](docs/QA_REPORT.md)
+- [`docs/CATALOG_AUDIT.md`](docs/CATALOG_AUDIT.md)
+- [`docs/PRODUCTION_READINESS_REPORT.md`](docs/PRODUCTION_READINESS_REPORT.md)
+
+---
+
+© 2026 **Arkik Productions** — Música en Vivo & Sonido Profesional — Granadilla, San José, Costa Rica.
