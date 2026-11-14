@@ -64,7 +64,11 @@ module.exports = {
     const value = readEnv('ADMIN_SESSION_SECRET', '');
     if (!value) {
       if (this.isProduction) {
-        throw new Error('ADMIN_SESSION_SECRET is required in production');
+        const err = new Error('ADMIN_SESSION_SECRET no está configurado en producción.');
+        err.arkikApp = true;
+        err.code = 'service_unavailable';
+        err.status = 503;
+        throw err;
       }
       return 'dev-secret-change-me';
     }

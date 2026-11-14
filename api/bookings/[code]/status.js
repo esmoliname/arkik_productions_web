@@ -1,5 +1,5 @@
 'use strict';
-// PATCH /api/bookings/[code]/status — admin state transition {status}
+// PATCH /api/bookings/[code]/status — owner state transition {status}
 
 const { withCors } = require('../../_lib/cors');
 const registry = require('../../_lib/registry');
@@ -13,7 +13,7 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    await auth.requireAdmin(req);
+    await auth.requireOwner(req);
 
     const body = await respond.readBody(req);
     const status = body && body.status;

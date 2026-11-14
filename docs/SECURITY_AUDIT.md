@@ -1,83 +1,47 @@
 # Arkik Productions — Security Audit
 
 **Fecha de auditoría:** 2026-11-13
-**Alcance:** Revisión pre-commit del código pendiente, auditoría de secretos, autenticación, protección anti-abuso, seguridad de API, dependencias y documentación.
+**Alcance:** Revisión completa tras remediación P0 del sistema de autenticación administrativa, secretos, sesiones, cookies, RBAC, protección anti-abuso, seguridad de API y pruebas automatizadas.
 
 ## 1. Alcance
 
-- Archivos inspeccionados: código JavaScript (frontend y backend), configuración, migraciones, tests, documentación, historial Git.
-- Entornos considerados: desarrollo local, Vercel Preview, Vercel Production.
-- No se realizaron pruebas destructivas ni contra terceros.
+- Archivos inspeccionados: `api/_lib/*.js`, `api/admin/*.js`, `api/bookings/**/*.js`, `api/availability/index.js`, `api/pricing.js`, `api/health.js`, `db/migrate.js`, `db/migrations/*.sql`, `js/app.js`, `js/api.js`, `js/data.js`, `index.html`, `vercel.json`, `.env.example`, `package.json`, `test/*.test.cjs`.
+- Entornos considerados: desarrollo local (sin credenciales Neon/Vercel), Vercel Preview/Staging (pendiente de ejecución real), Vercel Production (pendiente de ejecución real).
+- No se realizaron pruebas destructivas ni contra servicios externos.
 
-## 2. Archivos inspeccionados
+## 2. Controles verificados
 
-- `api/_lib/config.js`, `api/_lib/auth.js`, `api/_lib/db.js`, `api/_lib/cors.js`, `api/_lib/ratelimit.js`, `api/_lib/service.js`, `api/_lib/respond.js`, `api/_lib/log.js`, `api/_lib/repo.js`
-- `api/admin/*.js`, `api/bookings/**/*.js`, `api/availability/index.js`, `api/pricing.js`, `api/health.js`
-- `js/app.js`, `js/data.js`, `js/api.js`, `index.html`
-- `.env.example`, `.gitignore`, `vercel.json`, `package.json`, `package-lock.json`
-- `test/*.test.cjs`, `docs/*`, `README.md`
+- **Secretos y código fuente**: escaneo sobre JS/HTML/CJS (`api/`, `js/`, `db/`, `index.html`) — 0 PINs hardcoded, 0 cadenas `postgres://` reales, 0 hashes reales embebidos.
+- **SQL Injection**: todas las consultas en `api/_lib/repo.js` y `db/migrate.js` usan placeholders parametrizados (`$1..$N`).
+- **Hashing y comparación**: `scryptSync` (`N=16384, r=8, p=1`, salt aleatorio de 16 bytes, clave de 64 bytes) con validación estricta `isValidScryptHash` y `crypto.timingSafeEqual`.
+- **Sesiones y cookies**: tokens de 256 bits aleatorios almacenados únicamente como HMAC-SHA256 (`hashToken`); tokens nunca expuestos en JSON de respuesta; cookies `HttpOnly; SameSite=Strict; Path=/; Max-Age=900` (`__Host-session` + `Secure` en producción).
+- **Redacción de logs**: `api/_lib/log.js` redacta claves sensibles (`pin`, `token`, `password`, `secret`, `database_url`, etc.).
 
-## 3. Amenazas identificadas
+## 3. Hallazgos y remediaciones (incluye recuperación P0 de login)
 
-- Fuerza bruta / credential stuffing contra el login administrativo.
-- Bloqueo de administrador legítimo por intentos fallidos de terceros (anti-lockout).
-- Exposición de secretos en código, historial Git o frontend.
-- Spoofing de IP para evadir rate limiting.
-- Cross-origin abuse / CORS permisivo.
-- Escalada de privilegios (IT realizando operaciones de Owner).
-- Simulación de éxito offline en reservas.
-- Abuso de endpoints (spam, duplicados, manipulación de precios).
-- Vulnerabilidades en dependencias de desarrollo.
-
-## 4. Hallazgos y remediaciones
-
-| ID | Archivo | Descripción | Severidad | Evidencia (no sensible) | Corrección | Estado |
+| ID | Archivo | Descripción | Severidad | Evidencia | Corrección | Estado |
 |---|---|---|---|---|---|---|
-| SA-01 | `api/_lib/config.js` | `sessionSecret` devolvía fallback en producción si no estaba configurado. | HIGH | Getter sin validación de entorno. | Ahora lanza error en producción si `ADMIN_SESSION_SECRET` no está configurado. | REMEDIATED |
-| SA-02 | `api/_lib/auth.js` | Cookie `Secure` siempre activa, rompía desarrollo HTTP. | MEDIUM | Atributo Secure incondicional. | `Secure` condicionado a `isProduction`. | REMEDIATED |
-| SA-03 | `api/_lib/auth.js` | Sin verificación de rol Owner para operaciones sensibles. | MEDIUM | `requireAdmin` no distinguía roles. | Añadido `requireOwner`; pricing PUT y availability PUT/DELETE lo usan. | REMEDIATED |
-| SA-04 | `api/_lib/service.js` | Lockout por rol tras 3 intentos permitía DoS al administrador. | CRITICAL | `locked_until` por rol en DB. | Eliminado lockout por rol; throttling por IP e IP+rol con backoff temporal. Bucket global por rol eliminado para evitar DoS cross-admin. | REMEDIATED |
-| SA-13 | `api/_lib/service.js` | Bucket global `login:role:*` permitía agotar el presupuesto de autenticación de todos los administradores. | HIGH | Presente en versión anterior. | Eliminado. Solo se conservan buckets por IP y por IP+rol. | REMEDIATED |
-| SA-05 | `api/admin/login.js` | Lockout en memoria con 3 intentos/30s permitía DoS y no se compartía entre instancias. | HIGH | `ENV_ATTEMPTS` Map, 3 intentos. | Umbral a 5, backoff progresivo hasta 15 min, solo por origen. | REMEDIATED (parcial) |
-| SA-06 | `api/_lib/respond.js` | `clientIp` confiaba en `X-Forwarded-For` sin validar proxy. | HIGH | Spoofing posible. | Solo confía en `X-Forwarded-For` en Vercel/producción; fallback a socket address. | REMEDIATED |
-| SA-07 | `api/_lib/cors.js` | Preflight `OPTIONS` respondía 204 incluso para orígenes no permitidos. | MEDIUM | Sin validación de origin en preflight. | Preflight rechaza orígenes no permitidos con 403 cuando hay allowlist. | REMEDIATED |
-| SA-08 | `api/_lib/ratelimit.js` | `enforce` no exponía `retryAfterMs` en el error. | LOW | Sin header Retry-After. | `retryAfterMs` incluido en `extra`; `handleError` y login setean `Retry-After`. | REMEDIATED |
-| SA-09 | `js/app.js` | Fallback offline simulaba confirmación de reserva exitosa. | HIGH | `isDegradedOrOffline = true` siempre. | Eliminado fallback que simulaba éxito; ahora propaga fallo. | REMEDIATED |
-| SA-10 | `package-lock.json` | 4 vulnerabilidades high en dependencias dev. | LOW | `npm audit` report. | `npm audit fix` aplicado; 0 vulnerabilidades. | REMEDIATED |
-| SA-11 | Historial Git | Sin secretos reales encontrados en historial ni archivos actuales. | INFO | `git grep` sobre todos los commits. | N/A — no se requiere acción. | VERIFIED |
-| SA-12 | Frontend | Sin secretos privados en HTML/JS entregado al navegador. | INFO | Búsqueda de patrones. | N/A. | VERIFIED |
+| SA-01..SA-13 | Varios | Hardening previo de cookies, `sessionSecret`, `requireOwner`, eliminación de bucket global por rol, CORS preflight, IP proxy, redacción de logs y cola offline. | HIGH–CRITICAL | Commits `5d029a2`..`bf81bbb` | Implementado en commits previos y preservado. | REMEDIATED |
+| SA-14 | `api/admin/login.js`, `api/_lib/auth.js` | **Split-brain auth bypass**: presencia de un env PIN (`ADMIN_OWNER_PIN`/`ADMIN_IT_PIN`) puenteaba `service.login`, PostgreSQL `admin_credentials`, `admin_sessions`, `rate_limits` y `audit_log`, e imposibilitaba login del rol faltante. | CRITICAL | `hasEnvPinsConfigured()` corría antes que `service.login()`. | `service.login()` es autoritativo siempre que `DATABASE_URL` esté configurado; env fallback limitado exclusivamente a entornos sin `DATABASE_URL`; `requireAdmin` rechaza tokens `v1.` cuando `DATABASE_URL` está activo. | REMEDIATED |
+| SA-15 | `db/migrate.js` | **Double hashing en seed**: `bootstrapAdmins()` aplicaba `hashPin()` incluso si `ADMIN_OWNER_PIN` / `ADMIN_IT_PIN` ya venía pre-hasheado con `scrypt$...`, rompiendo el login en PostgreSQL. | HIGH | `auth.hashPin(pin)` incondicional; faltaban aliases `ADMIN_PIN_*`. | Validación `auth.isValidScryptHash` para almacenar `scrypt$` sin re-hashear, rechazo explícito de formatos `scrypt$` corruptos y soporte de ambos aliases manteniendo `ON CONFLICT DO NOTHING`. | REMEDIATED |
+| SA-16 | `js/app.js`, `api/admin/login.js`, `api/_lib/auth.js`, `index.html` | **Desajuste de sanitización de PIN**: `.replace(/\D/g, '')` y `maxlength="8"` truncaban silenciosamente PINs con caracteres no numéricos o >8 caracteres respecto a `db/migrate.js` y `service.login`. | MEDIUM | Inconsistencia entre normalizadores y hasher. | Estandarizado `.trim()` (sin destruir caracteres válidos) en UI (`SecurityModule.normalizePin`, `maxlength="32"`), `sanitizePin`, `verifyEnvPin` y `service.login`. | REMEDIATED |
+| SA-17 | `js/app.js` | **Enmascaramiento de errores 503/5xx/red**: cualquier fallo de infraestructura se reportaba como `"Credenciales inválidas"` y cargaba el contador de bloqueo local. | HIGH | `verifyPin` llamaba `registerFailedAttempt()` ante `503`/`500`/`404`/red. | Discriminación explícita (`infraError: true` en `503`/`5xx`/`404`/`status 0`) sin tocar el contador de intentos ni mostrar `"Credenciales inválidas"`. | REMEDIATED |
+| SA-18 | `api/admin/logout.js`, `api/_lib/service.js` | **Cookie huérfana en logout si DB falla**: `logout.js` fallaba con `503` antes de emitir `Set-Cookie: clearSessionCookie()` cuando la DB no respondía o el token era `v1.`. | MEDIUM | `await service.logout(token)` previo a `res.setHeader('Set-Cookie', ...)`. | `clearSessionCookie()` se emite siempre antes de limpiar la sesión en DB; tokens `v1.` se manejan limpiamente y fallos de DB no dejan cookie activa en el navegador. | REMEDIATED |
+| SA-19 | `api/admin/dashboard.js`, `api/_lib/service.js` | **Ocultación de DB rota y tablas vacías**: `dashboard.js` tragaba errores `503` devolviendo `DEFAULT_STATS` incompatibles incluso con `DATABASE_URL` activo; `service.login` confundía `admin_credentials` vacía con `401`. | MEDIUM | Fallback en `dashboard.js` y lookup único en `service.login`. | `dashboard.js` solo usa `DEFAULT_STATS` (ya alineado al esquema de `repo.getStats`) cuando `!config.databaseUrl`; `service.login` devuelve `503` explícito si `admin_credentials` tiene 0 filas o hash corrupto (anti-enumeración mantenida cuando existen roles). | REMEDIATED |
 
-## 5. Pruebas ejecutadas
+## 4. Pruebas de seguridad ejecutadas
 
-- `npm run check` — 0 errores de sintaxis.
-- `npm test` — 5/5 suites pasan (api-client, behavior, contract, load, logic).
-- `npm audit` — 0 vulnerabilidades.
-- `git diff --check` — sin errores de whitespace.
-- Búsqueda de secretos en archivos actuales e historial Git — sin hallazgos.
+- `npm run check` — **PASS** (0 errores de sintaxis).
+- `npm test` — **PASS** (7/7 archivos de suite, 14/14 tests en runner principal + sub-checks; incluye `test/auth-recovery.test.cjs` con 20 escenarios + servidor HTTP local/en-memoria + VM `SecurityModule`, y `test/security.test.cjs`).
+- `git diff --check` — **PASS** (0 errores de whitespace).
+- Escaneo de secretos en árbol de trabajo (`node`) — **PASS** (`SECRET_SCAN_HITS: 0`).
+- `npm audit` y `npm audit --omit=dev` — **BLOCKED** en este entorno offline (`ENOTFOUND registry.npmjs.org`).
 
-## 6. Riesgos residuales
+## 5. Riesgos residuales y controles NO VERIFICADOS
 
-- CSRF: mitigado por `SameSite=Strict`; no hay token CSRF separado. (NOT VERIFIED en producción con navegadores legacy.)
-- Tokens stateless (`v1.`) no son invalidables antes de su expiración (15 min). Un token capturado sigue siendo válido hasta expirar. Recomendación: reducir TTL o implementar lista de revocación si se requiere invalidación inmediata.
-- Rate limiting ENV path usa memoria local (no compartida entre instancias serverless). Aceptable como degradación cuando la DB no está disponible. (NOT VERIFIED en multi-instancia.)
-- Rate limiting DB-backed (PostgreSQL) es compartido entre instancias serverless: los contadores `rate_limits` se almacenan en Neon y se actualizan con UPSERT atómico. Expiración por ventana temporal. Riesgo: si Neon está saturado, el propio rate limiter puede añadir carga; mitigado por límite de 1 conexión (max:1) y consultas simples. (NOT VERIFIED bajo carga real.)
-- Session revocation: las sesiones DB-backed (`admin_sessions`) se pueden revocar (logout elimina la fila). Las sesiones stateless (`v1.`) firmadas con HMAC no son revocables antes de su expiración (15 min). Estrategia recomendada: añadir un campo `session_version` en `admin_credentials` y verificarlo en `verifyStatelessToken`; incrementarlo al cambiar PIN/rol o al revocar. Migración no implementada (compatibilidad conservada). (NOT VERIFIED.)
-- No hay WAF ni protección DDoS a nivel de aplicación; se confía en la plataforma Vercel.
-- Procedimiento de rotación de secretos no documentado.
-- `ADMIN_OWNER_PIN`/`ADMIN_IT_PIN` pueden almacenarse en texto plano en env (por diseño del propietario). Recomendación: usar hashes scrypt (`scrypt$...`) en env para mayor seguridad.
-
-## 7. Recomendaciones operativas
-
-1. Configurar `ADMIN_SESSION_SECRET` (64+ chars) en Vercel antes de producción.
-2. Configurar `SEED_MODE=false` en producción.
-3. Usar PINs como hashes scrypt en variables de entorno (`ADMIN_OWNER_PIN=scrypt$...`).
-4. Revisar logs de auditoría periódicamente (`/api/admin/audit`).
-5. Rotar `ADMIN_SESSION_SECRET` si se sospecha compromiso (invalida todas las sesiones).
-6. Mantener `ALLOWED_ORIGINS` vacío (same-origin) salvo necesidad explícita.
-
-## 8. Controles no probados (NOT VERIFIED)
-
-- Pruebas de fuerza bruta en staging (Test D) — no ejecutadas contra entorno real.
-- Rate limiting distribuido multi-instancia (Test E) — no verificado.
-- Pruebas de carga moderadas (Test I) — no ejecutadas.
-- Verificación de cookies en producción HTTPS — no verificada en este entorno.
+- **Integración Neon PostgreSQL real**: **NOT VERIFIED / BLOCKED** (sin `DATABASE_URL` ni credenciales en este workspace).
+- **Cookies `__Host-session; Secure` sobre HTTPS real en Vercel Preview/Production**: **NOT VERIFIED / BLOCKED** (pendiente de deploy del propietario).
+- **Rate limiting distribuido multi-instancia bajo concurrencia real**: **NOT VERIFIED / BLOCKED** (probado contra pool simulado único, no en múltiples lambdas Vercel simultáneas).
+- **Auditoría npm en línea (`npm audit`)**: **BLOCKED** por falta de acceso de red al registry desde el sandbox.
+- **CSRF adicional**: mitigado por `SameSite=Strict`; sin token CSRF explícito separado (riesgo bajo en navegadores modernos, documentado).
+- **Política de PIN en env**: recordar usar hashes `scrypt$` al poblar `ADMIN_OWNER_PIN` / `ADMIN_IT_PIN` según `docs/VERCEL_STAGING_GUIDE.md`.

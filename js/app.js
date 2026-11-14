@@ -2899,12 +2899,12 @@ const SecurityModule = {
   },
 
   /**
-   * Sanitiza la entrada de PIN a su valor numérico limpio.
+   * Sanitiza el PIN preservando sus caracteres exactos sin recorte silencioso de símbolos/letras.
    * @returns {string}
    */
   normalizePin(pin) {
     if (pin === null || pin === undefined) return "";
-    return String(pin).trim().replace(/\D/g, "").slice(0, 12);
+    return String(pin).trim().slice(0, 64);
   },
 
   /**
@@ -2995,10 +2995,12 @@ const SecurityModule = {
 
   /**
    * Autenticación Zero-Trust delegada exclusivamente al servidor:
-   * 1. Sanitiza el PIN numérico y ejecuta POST /api/admin/login con `{ role, pin }`.
+   * 1. Sanitiza el PIN y ejecuta POST /api/admin/login con `{ role, pin }`.
    * 2. Ante HTTP 200 válido, limpia el estado de bloqueo y devuelve el rol confirmado.
-   * 3. Ante 401, 403, 404, 429 o error de red, incrementa el contador local y
-   *    devuelve siempre el mensaje genérico "Credenciales inválidas" (anti-enumeración).
+   * 3. Ante 401/403 incrementa el contador local con mensaje "Credenciales inválidas".
+   * 4. Ante 429 sincroniza el tiempo de espera del servidor.
+   * 5. Ante 503, 5xx, 404 o fallo de red (status 0), reporta error operativo SIN
+   *    incrementar intentos fallidos ni enmascararlo como "Credenciales inválidas".
    */
   async verifyPin(roleId, pin) {
     this.purgeExpiredLockout();
@@ -3011,7 +3013,7 @@ const SecurityModule = {
         status: 429,
         locked: true,
         waitMs: this._data.lockoutUntil - now,
-        message: "Credenciales inválidas"
+        message: "Demasiados intentos fallidos. Esperá antes de reintentar."
       };
     }
 
@@ -3022,15 +3024,30 @@ const SecurityModule = {
         ok: false,
         status: 400,
         locked: false,
+        infraError: false,
         remaining: max - (this._data.attempts || 0),
-        message: "Credenciales inválidas"
+        message: "Ingresá tu PIN administrativo."
+      };
+    }
+
+    if (typeof API_CONFIG !== "undefined" && API_CONFIG && API_CONFIG.enabled === false) {
+      return {
+        ok: false,
+        status: 0,
+        locked: false,
+        infraError: true,
+        code: "api_disabled",
+        message: "El cliente API está deshabilitado en js/data.js (API_CONFIG.enabled = false)."
       };
     }
 
     const selectedRole = (roleId === "it" || roleId === "tech") ? "it" : "owner";
+    const base = (typeof API_CONFIG !== "undefined" && API_CONFIG && typeof API_CONFIG.baseUrl === "string")
+      ? API_CONFIG.baseUrl.replace(/\/+$/, "")
+      : "";
 
     try {
-      const response = await fetch("/api/admin/login", {
+      const response = await fetch(`${base}/api/admin/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3042,14 +3059,39 @@ const SecurityModule = {
       });
 
       let payload = null;
+      const contentType = (response.headers && typeof response.headers.get === "function")
+        ? String(response.headers.get("content-type") || "").toLowerCase()
+        : "";
       const text = await response.text();
       if (text) {
         try { payload = JSON.parse(text); } catch (parseErr) { payload = null; }
       }
 
-      if (response.status === 200 && (!payload || payload.success !== false)) {
+      if (payload === null && (contentType.includes("text/html") || /^\s*<!doctype|^\s*<html/i.test(text || ""))) {
+        return {
+          ok: false,
+          status: response.status || 502,
+          locked: false,
+          infraError: true,
+          code: "static_server_html",
+          message: "El servidor respondió HTML en /api/admin/login en lugar de JSON. Iniciá el servidor full-stack (npm run dev) o verificá las rutas API en Vercel."
+        };
+      }
+
+      if (response.status === 200 && (!payload || typeof payload !== "object")) {
+        return {
+          ok: false,
+          status: 502,
+          locked: false,
+          infraError: true,
+          code: "invalid_json_response",
+          message: "Respuesta inesperada (no JSON) del servidor de autenticación."
+        };
+      }
+
+      if (response.status === 200 && payload && payload.success !== false) {
         this.clearLockState();
-        const data = (payload && payload.data) ? payload.data : (payload || {});
+        const data = (payload && payload.data) ? payload.data : {};
         const granted = (data && data.role)
           ? (data.role === "tech" ? "it" : data.role)
           : selectedRole;
@@ -3061,27 +3103,70 @@ const SecurityModule = {
         };
       }
 
+      const errObj = (payload && payload.error && typeof payload.error === "object") ? payload.error : {};
+
       if (response.status === 429) {
-        const errObj = (payload && payload.error) ? payload.error : {};
         const retryMs = Number(errObj.retryAfterMs);
         const waitMs = Number.isFinite(retryMs) && retryMs > 0 ? retryMs : 30000;
-        const failState = this.registerFailedAttempt(now, {
-          forceWaitMs: waitMs,
-          message: "Credenciales inválidas"
-        });
-        return Object.assign({ status: 429 }, failState);
+        this._data.lockoutUntil = now + waitMs;
+        this._data.attempts = 0;
+        this.persist();
+        return {
+          ok: false,
+          status: 429,
+          locked: true,
+          waitMs,
+          remaining: 0,
+          message: "Demasiados intentos fallidos. Esperá antes de reintentar."
+        };
       }
 
-      // 401, 403, 404 u otro estado no autorizado -> mensaje unificado anti-enumeración
-      const failState = this.registerFailedAttempt(now, {
-        message: "Credenciales inválidas"
-      });
-      return Object.assign({ status: response.status || 401 }, failState);
+      if (response.status === 401 || response.status === 403) {
+        const failState = this.registerFailedAttempt(now, {
+          message: "Credenciales inválidas"
+        });
+        return Object.assign({ status: response.status, infraError: false }, failState);
+      }
+
+      if (response.status === 400) {
+        return {
+          ok: false,
+          status: 400,
+          locked: false,
+          infraError: false,
+          code: errObj.code || "validation_error",
+          message: errObj.message || "Solicitud de acceso inválida."
+        };
+      }
+
+      // 503 (DB no configurada / migración pendiente), 404 (API no montada), 5xx -> NUNCA contar como fallo de PIN
+      let infraMsg = errObj.message;
+      if (!infraMsg) {
+        if (response.status === 404) {
+          infraMsg = "Endpoint de autenticación (/api/admin/login) no disponible (404). Verificá el servidor.";
+        } else if (response.status === 503) {
+          infraMsg = "Servicio de autenticación o base de datos no disponible (503).";
+        } else {
+          infraMsg = `Error del servidor de autenticación (HTTP ${response.status}).`;
+        }
+      }
+      return {
+        ok: false,
+        status: response.status || 500,
+        locked: false,
+        infraError: true,
+        code: errObj.code || "server_error",
+        message: infraMsg
+      };
     } catch (networkErr) {
-      const failState = this.registerFailedAttempt(now, {
-        message: "Credenciales inválidas"
-      });
-      return Object.assign({ status: 0 }, failState);
+      return {
+        ok: false,
+        status: 0,
+        locked: false,
+        infraError: true,
+        code: "network",
+        message: "No se pudo conectar con el servidor de autenticación. Verificá tu conexión o entorno."
+      };
     }
   }
 };
@@ -4008,6 +4093,7 @@ const AdminModule = {
   calCursor: "",         // AAAA-MM visible en el calendario de disponibilidad
   calSelectedDay: "",    // AAAA-MM-DD seleccionado en el calendario ("" = ningún día)
   reschedCode: "",       // Código de la reserva pendiente de reprogramación
+  serverAuditEvents: [], // Eventos reales de audit_log hidratados desde /api/admin/dashboard
 
   // ---- Apertura / Cierre (Login) ----
 
@@ -4016,10 +4102,6 @@ const AdminModule = {
     if (!modal) return;
     trackModal(true);
     this.resetLockoutState();
-    // El modal se abre siempre desbloqueado a nivel de interfaz. El bloqueo
-    // acumulado en localStorage se conserva a propósito (cerrar y reabrir no
-    // puede ser un bypass del rate limit); se libera con el PIN correcto, al
-    // expirar la cuenta regresiva o con resetAdminLock() desde la consola.
     resetLoginTrap();
     this.setRole("owner");
     this.clearAuthError();
@@ -4029,6 +4111,13 @@ const AdminModule = {
       pin.type = "password";
     }
     // Instant modal launch via deterministic ModalController (honors [data-autofocus])
+    ModalController.open("adminLoginModal");
+    const lockStatus = SecurityModule.status();
+    if (lockStatus && lockStatus.locked && lockStatus.waitMs > 0) {
+      this.showAuthError("Demasiados intentos fallidos. Esperá antes de reintentar.");
+      this.startLockoutCountdown(lockStatus.waitMs);
+      return;
+    }
     ModalController.open("adminLoginModal");
     if (pin && !pin.disabled) {
       requestAnimationFrame(() => pin.focus({ preventScroll: true }));
@@ -4178,6 +4267,7 @@ const AdminModule = {
     // para evitar recargas o cierres no deseados de la consola.
     if (e && typeof e.preventDefault === "function") e.preventDefault();
     if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+    if (this._loggingIn) return;
 
     const pin = document.getElementById("admin-pin");
     const pinValue = SecurityModule.normalizePin(pin ? pin.value : "");
@@ -4188,15 +4278,23 @@ const AdminModule = {
       return;
     }
     if (!pinValue) {
-      this.showAuthError("Credenciales inválidas");
+      this.showAuthError("Ingresá tu PIN administrativo.");
       if (pin) pin.focus();
       return;
     }
 
     const selectedRole = (this.role === "it" || this.role === "tech") ? "it" : "owner";
-    const result = await SecurityModule.verifyPin(selectedRole, pinValue);
+    this._loggingIn = true;
+    this.enablePinUI(false);
 
-    if (result.ok) {
+    let result;
+    try {
+      result = await SecurityModule.verifyPin(selectedRole, pinValue);
+    } finally {
+      this._loggingIn = false;
+    }
+
+    if (result && result.ok) {
       const grantedRole = (result.role === "tech" ? "it" : result.role) || selectedRole;
       if (this.role !== grantedRole) this.setRole(grantedRole);
       this.role = grantedRole;
@@ -4205,26 +4303,39 @@ const AdminModule = {
 
       // 2. Transición Fluida y Redirección Virtual (sin window.location.reload):
       //  • Purga inmediata del input PIN del DOM.
-      //  • Cierre suave del modal de la Bóveda Operativa mediante ModalController.
-      //  • Disparo único de loadProtectedAdminData(role) para Lazy Hydration.
+      //  • Se mantiene el modal abierto mientras loadProtectedAdminData(role) verifica la sesión
+      //    y se cierra automáticamente en openPortal() solo cuando el dashboard respondió 200.
       if (pin) pin.value = "";
       this.clearAuthError();
-      ModalController.close("adminLoginModal");
-      await loadProtectedAdminData(grantedRole);
+      const hydrated = await this.loadProtectedAdminData(grantedRole, { keepLoginOpenOnError: true });
+      this.enablePinUI(true);
+      if (!hydrated || !hydrated.ok) {
+        if (pin) pin.focus();
+      }
       return;
     }
 
-    if (result.locked) {
+    if (result && result.infraError) {
+      this.enablePinUI(true);
+      this.showAuthError(result.message || "Error de conexión con el servicio de autenticación.");
+      if (pin) {
+        pin.value = "";
+        pin.focus();
+      }
+      return;
+    }
+
+    if (result && result.locked) {
       await authJitterDelay();
-      this.showAuthError("Credenciales inválidas");
+      this.showAuthError(result.message || "Demasiados intentos fallidos. Esperá antes de reintentar.");
       this.startLockoutCountdown(result.waitMs || 30000);
       if (pin) pin.value = "";
       return;
     }
 
     await authJitterDelay();
-    // Sin revelar si falló el rol o el PIN: mensaje unificado "Credenciales inválidas"
-    this.showAuthError("Credenciales inválidas");
+    this.enablePinUI(true);
+    this.showAuthError((result && result.message) || "Credenciales inválidas");
     if (pin) {
       pin.value = "";
       pin.focus();
@@ -4237,15 +4348,20 @@ const AdminModule = {
    * los datos financieros, el panel de control y las tablas de reserva en el DOM.
    * Si la sesión es inválida o falla la respuesta, expulsa a la vista pública.
    */
-  async loadProtectedAdminData(role) {
+  async loadProtectedAdminData(role, options) {
+    const keepLoginOpenOnError = Boolean(options && options.keepLoginOpenOnError);
     const requestedRole = (role === "it" || role === "tech")
       ? "it"
       : ((role === "owner") ? "owner" : ((this.role === "it" || this.role === "tech") ? "it" : "owner"));
 
+    const base = (typeof API_CONFIG !== "undefined" && API_CONFIG && typeof API_CONFIG.baseUrl === "string")
+      ? API_CONFIG.baseUrl.replace(/\/+$/, "")
+      : "";
+
     let response = null;
     let payload = null;
     try {
-      response = await fetch("/api/admin/dashboard", {
+      response = await fetch(`${base}/api/admin/dashboard`, {
         method: "GET",
         headers: { "Accept": "application/json" },
         credentials: "same-origin",
@@ -4269,10 +4385,28 @@ const AdminModule = {
     );
 
     if (!validPayload) {
+      const status = response ? response.status : 0;
+      const errMsg = (payload && payload.error && payload.error.message) ? payload.error.message : "";
+      if (keepLoginOpenOnError) {
+        this.clearSession();
+        this.serverAuditEvents = [];
+        ADMIN_SESSION.role = "";
+        ADMIN_SESSION.token = null;
+        this.enablePinUI(true);
+        const detailedMsg = (status === 401 || status === 403)
+          ? "Login aceptado, pero el navegador no conservó la cookie de sesión (/api/admin/dashboard -> 401). Si probás en HTTP local, asegurá NODE_ENV distinto de production."
+          : (errMsg || `No se pudo abrir el portal administrativo (HTTP ${status || "red"}).`);
+        this.showAuthError(detailedMsg);
+        return { ok: false, status };
+      }
       this.terminateSession();
       window.scrollTo({ top: 0, behavior: "smooth" });
-      showToast("Sesión inválida o expirada. Acceso restringido a la vista pública.", "error");
-      return { ok: false, status: response ? response.status : 0 };
+      if (status === 401 || status === 403) {
+        showToast("Sesión inválida o expirada. Acceso restringido a la vista pública.", "error");
+      } else {
+        showToast(errMsg || `No se pudo cargar el portal administrativo (HTTP ${status || "red"}).`, "error");
+      }
+      return { ok: false, status };
     }
 
     const data = payload.data;
@@ -4305,6 +4439,7 @@ const AdminModule = {
     if (data.stats && typeof data.stats === "object") {
       this.serverStats = data.stats;
     }
+    this.serverAuditEvents = Array.isArray(data.auditEvents) ? data.auditEvents : [];
 
     this.openPortal();
     showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
@@ -4313,7 +4448,10 @@ const AdminModule = {
 
   startLockoutCountdown(waitMs) {
     this.enablePinUI(false);
-    this.showAuthError("Credenciales inválidas");
+    const errEl = document.getElementById("admin-auth-error");
+    if (!errEl || errEl.classList.contains("hidden") || !errEl.textContent) {
+      this.showAuthError("Demasiados intentos fallidos. Esperá antes de reintentar.");
+    }
     const box = document.getElementById("login-lockout-banner") || document.getElementById("admin-lockout-box");
     const msg = document.getElementById("admin-lockout-msg");
     if (!box) return;
@@ -4328,7 +4466,7 @@ const AdminModule = {
         const total = Math.max(0, remaining);
         const mm = String(Math.floor(total / 60)).padStart(2, "0");
         const ss = String(total % 60).padStart(2, "0");
-        msg.textContent = `Bloqueo por 30s tras 3 intentos fallidos · ${mm}:${ss}`;
+        msg.textContent = `Bloqueo temporal activo · ${mm}:${ss}`;
       }
       remaining -= 1;
       if (remaining < 0) {
@@ -4482,6 +4620,7 @@ const AdminModule = {
     ADMIN_SESSION.role = "";
     ADMIN_SESSION.token = null;
     this.role = "";
+    this.serverAuditEvents = [];
     const pin = document.getElementById("admin-pin");
     if (pin) pin.value = "";
     const loginModal = document.getElementById("adminLoginModal");
@@ -5500,26 +5639,37 @@ const AdminModule = {
         </span>
       </div>`).join("");
 
-    const events = Array.isArray(audit.events) ? audit.events : [];
+    const localEvents = Array.isArray(audit.events) ? audit.events : [];
+    const remoteEvents = Array.isArray(this.serverAuditEvents) ? this.serverAuditEvents : [];
     const LOG_TYPES = ["login", "block", "price", "gallery", "backup", "reset"];
     const fmtTime = at => new Date(at).toLocaleString("es-CR",
       { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    const logRows = events.length
-      ? events.slice(0, 20).map(ev => {
-        const type = LOG_TYPES.includes(ev.type) ? ev.type : "login";
-        return `
+    const mapRemoteType = action => {
+      const a = String(action || "").toUpperCase();
+      if (a.includes("AVAIL") || a.includes("BLOCK")) return "block";
+      if (a.includes("PRIC")) return "price";
+      if (a.includes("LOGIN") || a.includes("CREDENTIAL")) return "login";
+      return "backup";
+    };
+    const mergedRemote = remoteEvents.map(ev => ({
+      at: ev.createdAt || Date.now(),
+      type: mapRemoteType(ev.action),
+      message: `[DB] ${ev.action || "EVENT"}${ev.entityId ? ` (${ev.entityId})` : ""}${ev.actor ? ` · ${ev.actor}` : ""}`
+    }));
+    const mergedLocal = localEvents.length
+      ? localEvents
+      : audit.logins.map(l => ({ at: l.at, type: "login", message: `Acceso registrado: ${l.role}` }));
+    const combinedEvents = mergedRemote.concat(mergedLocal)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+    const logRows = combinedEvents.slice(0, 25).map(ev => {
+      const type = LOG_TYPES.includes(ev.type) ? ev.type : "login";
+      return `
             <div class="it-log-row">
               <span class="it-log-time">${fmtTime(ev.at)}</span>
               <span class="it-log-type it-log-type--${type}">${type}</span>
               <span class="it-log-message">${sanitizeInput(ev.message)}</span>
             </div>`;
-      }).join("")
-      : audit.logins.slice(0, 20).map(l => `
-          <div class="it-log-row">
-            <span class="it-log-time">${fmtTime(l.at)}</span>
-            <span class="it-log-type it-log-type--login">login</span>
-            <span class="it-log-message">Acceso registrado: ${sanitizeInput(l.role)}</span>
-          </div>`).join("");
+    }).join("");
 
     return `
       <div class="space-y-5">
@@ -5580,7 +5730,7 @@ const AdminModule = {
         <div class="it-console-panel space-y-4">
           <div class="it-panel-header">
             <p class="text-xs font-bold text-gray-300 uppercase tracking-wider">Telemetría de Auditoría en Vivo</p>
-            <span class="text-[10px] font-mono text-emerald-400 font-bold">${events.length + audit.logins.length} eventos</span>
+            <span class="text-[10px] font-mono text-emerald-400 font-bold">${combinedEvents.length} eventos</span>
           </div>
           <div class="it-log-feed">
             ${logRows || '<p class="text-xs text-gray-500 py-3">Sin eventos todavía. La actividad del rol IT quedará registrada aquí (bloqueos, tarifas, backups, accesos).</p>'}
@@ -10942,79 +11092,6 @@ function generateSQLBackup(payload) {
 /**
  * Persistencia en vivo de la suite IT: lee los inputs actuales de la matriz
  * y los guarda con recálculo global (catálogo + resumen) sin recargar.
- * Con la API activa el lote completo viaja en UN solo PUT y, si el servidor
- * lo rechaza, persistRemote restaura el snapshot previo (rollback).
- */
-async function persistITLiveInputs() {
-  const priceSnapshot = PriceManager.snapshot();
-  const inputs = document.querySelectorAll("#admin-it-prices [data-price]");
-  let changed = 0;
-  inputs.forEach(input => {
-    const key = input.getAttribute("data-price");
-    const val = Number(input.value) || 0;
-    if (key.startsWith("service-")) {
-      PriceManager.setServicePrice(Number(key.split("-")[1]), val);
-    } else {
-      PriceManager.setExtraPrice(key.split("-")[1], val);
-    }
-    changed += 1;
-  });
-  let ratesChanged = false;
-  const multInput = document.getElementById("admin-extra-multiplier");
-  if (multInput) {
-    const val = parseFloat(multInput.value);
-    if (Number.isFinite(val) && val > 0) {
-      StorageEngine.setConfig("extraHourMultiplier", val);
-      ratesChanged = true;
-    }
-  }
-  const travelInput = document.getElementById("admin-travel-rate");
-  if (travelInput) {
-    const val = parseFloat(travelInput.value);
-    if (Number.isFinite(val) && val >= 0) {
-      StorageEngine.setConfig("travelSurchargeRate", val / 100);
-      ratesChanged = true;
-    }
-  }
-  if (changed > 0 || ratesChanged) {
-    const saved = await PriceManager.persistRemote(priceSnapshot);
-    if (!saved.ok) return; // rollback + toast de error ya los hizo persistRemote
-    if (changed > 0) {
-      AuditLog.recordEvent("price", `Tarifas persistidas en tiempo real (${changed} campos).`);
-      showToast("Tarifas persistidas y catálogo recalibrado en tiempo real.", "info");
-    }
-  }
-}
-
-/**
- * Latencia real de lectura/escritura del backend de persistencia
- * (PING del sistema). Mide el backend efectivo: localStorage o el respaldo
- * en memoria cuando el navegador lo bloquea.
- */
-function measureStorageLatency() {
-  const t0 = performance.now();
-  try {
-    const k = "__ark_lat_probe__";
-    SafeStorage.setItem(k, "1");
-    SafeStorage.getItem(k);
-    SafeStorage.removeItem(k);
-  } catch (e) { /* almacenamiento no disponible */ }
-  return Math.max(1, Math.round(performance.now() - t0));
-}
-
-function importAdminBackup(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const payload = JSON.parse(reader.result);
-      const validation = validateBackupPayload(payload);
-      if (!validation.ok) {
-        showToast(`Backup rechazado: ${validation.error}`, "error");
-        return;
-      }
-      StorageEngine.importFullDatabase(payload);
-      AdminModule.renderIT();
-      renderCatalog(CATALOG_SERVICES, currentCatalogCategory);
       showToast("Respaldo validado e importado. Base de datos restaurada.", "success");
     } catch (err) {
       showToast("Error: archivo de respaldo corrupto o incompatible.", "error");
@@ -11125,8 +11202,8 @@ function openAdminPortalModal() {
   return loadProtectedAdminData();
 }
 
-function loadProtectedAdminData(role) {
-  return AdminModule.loadProtectedAdminData(role);
+function loadProtectedAdminData(role, options) {
+  return AdminModule.loadProtectedAdminData(role, options);
 }
 
 function closeAdminPortalModal() {
@@ -12492,8 +12569,8 @@ function handleBookingCreateFailure(res) {
     if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
       AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
         if (typeof renderTimeSelector === "function") renderTimeSelector();
-      }).catch(function () {});
-      AvailabilityManager.hydrate(true).catch(function () {});
+      }).catch(function () { });
+      AvailabilityManager.hydrate(true).catch(function () { });
     }
     if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
       CalendarModule.render();
@@ -12657,184 +12734,184 @@ async function submitStaticBooking() {
   // anunciar el código cuando solo falló la pintura del voucher.
   let bookingCode = "";
 
-      try {
-        cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
+  try {
+    cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
 
-        // Código provisorio (ARK-XXXXXXXX): solo lo consume el modo local.
-        // Con la API activa el código definitivo lo genera el servidor.
-        bookingCode = generateBookingCode();
+    // Código provisorio (ARK-XXXXXXXX): solo lo consume el modo local.
+    // Con la API activa el código definitivo lo genera el servidor.
+    bookingCode = generateBookingCode();
 
-        const extrasList = [];
-        if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
-        if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
-        if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
+    const extrasList = [];
+    if (cart.extraHoursCount > 0) extrasList.push(`• Horas Extras: ${cart.extraHoursCount} hr(s) (${formatCRC(cart.extraHoursTotal)})`);
+    if (cart.djHoursCount > 0) extrasList.push(`• DJ en Recesos: ${cart.djHoursCount} hr(s) (${formatCRC(cart.djTotal)})`);
+    if (cart.subwoofersCount > 0) extrasList.push(`• Subwoofers 18": ${cart.subwoofersCount} un(es) (${formatCRC(cart.subwoofersTotal)})`);
 
-        const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
+    const extrasFormatted = extrasList.length > 0 ? extrasList.join("\n") : "• Ninguno";
 
-        const surchargeText = cart.isNonGam
-          ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
-          : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
+    const surchargeText = cart.isNonGam
+      ? `🚚 *Viáticos (12% fuera GAM):* ${formatCRC(cart.travelSurcharge)}`
+      : `🚚 *Viáticos (GAM):* ₡0 (Sin Recargo)`;
 
-        const service = cart.selectedService;
-        const setupDisplay = service ? service.setup_display : "2h antes";
-        const teardownDisplay = service ? service.teardown_display : "1h después";
+    const service = cart.selectedService;
+    const setupDisplay = service ? service.setup_display : "2h antes";
+    const teardownDisplay = service ? service.teardown_display : "1h después";
 
-        const record = {
-          code: bookingCode,
-          lockId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : ('lock-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)),
-          lockTimestamp: Date.now(),
-          createdAt: new Date().toISOString(),
-          status: "pendiente", // Inicia siempre como Pendiente de Aprobación
-          clientName: cart.clientName,
-          clientPhone: cart.clientPhone,
-          clientEmail: cart.clientEmail,
-          eventType: cart.eventType,
-          serviceId: service.id,
-          serviceName: service.name,
-          setupDisplay: setupDisplay,
-          teardownDisplay: teardownDisplay,
-          selectedDate: cart.selectedDate,
-          selectedTime: cart.selectedTime,
-          voucherImage: cart.voucherImage,
-          province: cart.province,
-          canton: cart.canton,
-          address: cart.address,
-          extras: {
-            extraHoursCount: cart.extraHoursCount,
-            djHoursCount: cart.djHoursCount,
-            subwoofersCount: cart.subwoofersCount,
-            extraHoursTotal: cart.extraHoursTotal,
-            djTotal: cart.djTotal,
-            subwoofersTotal: cart.subwoofersTotal
-          },
-          subtotal: cart.subtotal,
-          travelSurcharge: cart.travelSurcharge,
-          granTotal: cart.granTotal,
-          deposit50Amount: cart.deposit50Amount,
-          remainingBalance: cart.remainingBalance,
-          extrasTotal: cart.extrasTotal,
-          deposit50: cart.deposit50Amount,
-          referenceSinpe: cart.sinpeRef,
-          sinpeRef: cart.sinpeRef
-        };
+    const record = {
+      code: bookingCode,
+      lockId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : ('lock-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)),
+      lockTimestamp: Date.now(),
+      createdAt: new Date().toISOString(),
+      status: "pendiente", // Inicia siempre como Pendiente de Aprobación
+      clientName: cart.clientName,
+      clientPhone: cart.clientPhone,
+      clientEmail: cart.clientEmail,
+      eventType: cart.eventType,
+      serviceId: service.id,
+      serviceName: service.name,
+      setupDisplay: setupDisplay,
+      teardownDisplay: teardownDisplay,
+      selectedDate: cart.selectedDate,
+      selectedTime: cart.selectedTime,
+      voucherImage: cart.voucherImage,
+      province: cart.province,
+      canton: cart.canton,
+      address: cart.address,
+      extras: {
+        extraHoursCount: cart.extraHoursCount,
+        djHoursCount: cart.djHoursCount,
+        subwoofersCount: cart.subwoofersCount,
+        extraHoursTotal: cart.extraHoursTotal,
+        djTotal: cart.djTotal,
+        subwoofersTotal: cart.subwoofersTotal
+      },
+      subtotal: cart.subtotal,
+      travelSurcharge: cart.travelSurcharge,
+      granTotal: cart.granTotal,
+      deposit50Amount: cart.deposit50Amount,
+      remainingBalance: cart.remainingBalance,
+      extrasTotal: cart.extrasTotal,
+      deposit50: cart.deposit50Amount,
+      referenceSinpe: cart.sinpeRef,
+      sinpeRef: cart.sinpeRef
+    };
 
-        // Creación en la fuente de verdad: código, montos, cupo e idempotencia
-        // se resuelven en el servidor (POST /api/bookings). El servidor ya
-        // valida cupo/horario dentro de la transacción, así que no hace falta
-        // revalidar localmente después de construir el registro.
-        if (btn) {
-          btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Guardando…';
-        }
-        enforceVerifiedTotalsOnBooking(record, cart);
-        validateBookingSchema(record);
+    // Creación en la fuente de verdad: código, montos, cupo e idempotencia
+    // se resuelven en el servidor (POST /api/bookings). El servidor ya
+    // valida cupo/horario dentro de la transacción, así que no hace falta
+    // revalidar localmente después de construir el registro.
+    if (btn) {
+      btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Guardando…';
+    }
+    enforceVerifiedTotalsOnBooking(record, cart);
+    validateBookingSchema(record);
 
-        if (typeof window !== "undefined" && cart.voucherImage) {
-          window._activeVoucherBlob = cart.voucherImage;
-        }
+    if (typeof window !== "undefined" && cart.voucherImage) {
+      window._activeVoucherBlob = cart.voucherImage;
+    }
 
-        const idemKey = idempotencyKeyFor();
-        let saved = null;
+    const idemKey = idempotencyKeyFor();
+    let saved = null;
 
-        // Non-Blocking Cloud Push: Promise.race with strict 2500ms timeout
-        try {
-          const pushTimeout = new Promise(function (resolve) {
-            setTimeout(function () {
-              resolve({ ok: false, code: "timeout", status: 0, degraded: true });
-            }, 2000);
-          });
-          saved = await Promise.race([
-            BookingStore.add(record, idemKey),
-            pushTimeout
-          ]);
-        } catch (pushErr) {
-          console.warn("[Arkik] Cloud push falló o dio timeout, degradando a offline:", pushErr);
-          saved = { ok: false, code: "network", status: 0, degraded: true };
-        }
+    // Non-Blocking Cloud Push: Promise.race with strict 2500ms timeout
+    try {
+      const pushTimeout = new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve({ ok: false, code: "timeout", status: 0, degraded: true });
+        }, 2000);
+      });
+      saved = await Promise.race([
+        BookingStore.add(record, idemKey),
+        pushTimeout
+      ]);
+    } catch (pushErr) {
+      console.warn("[Arkik] Cloud push falló o dio timeout, degradando a offline:", pushErr);
+      saved = { ok: false, code: "network", status: 0, degraded: true };
+    }
 
-        // Si hubo conflicto real de fecha/cupo (409) confirmado por servidor:
-        if (saved && !saved.ok && (saved.code === "day_full" || saved.code === "slot_taken" || saved.code === "blackout" || saved.code === "soldout" || saved.status === 409)) {
-          handleBookingCreateFailure(saved);
-          return;
-        }
+    // Si hubo conflicto real de fecha/cupo (409) confirmado por servidor:
+    if (saved && !saved.ok && (saved.code === "day_full" || saved.code === "slot_taken" || saved.code === "blackout" || saved.code === "soldout" || saved.status === 409)) {
+      handleBookingCreateFailure(saved);
+      return;
+    }
 
-        // Si falló por 404, 405, 5xx, timeout, network failure, etc:
-        // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
-        if (!saved || !saved.ok || saved.degraded) {
-          console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
-          record.syncStatus = "offline_unverified";
-          record.isOfflineDegraded = true;
-          enforceVerifiedTotalsOnBooking(record, cart);
-          validateBookingSchema(record);
+    // Si falló por 404, 405, 5xx, timeout, network failure, etc:
+    // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
+    if (!saved || !saved.ok || saved.degraded) {
+      console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
+      record.syncStatus = "offline_unverified";
+      record.isOfflineDegraded = true;
+      enforceVerifiedTotalsOnBooking(record, cart);
+      validateBookingSchema(record);
 
-          BookingStore._enqueueOfflineBooking(record, idemKey, {
-            clientName: record.clientName,
-            clientPhone: record.clientPhone,
-            clientEmail: record.clientEmail,
-            eventType: record.eventType,
-            serviceId: record.serviceId,
-            selectedDate: record.selectedDate,
-            selectedTime: record.selectedTime,
-            province: record.province,
-            canton: record.canton,
-            address: record.address,
-            sinpeRef: record.sinpeRef,
-            extras: record.extras,
-            voucherImage: record.voucherImage
-          });
+      BookingStore._enqueueOfflineBooking(record, idemKey, {
+        clientName: record.clientName,
+        clientPhone: record.clientPhone,
+        clientEmail: record.clientEmail,
+        eventType: record.eventType,
+        serviceId: record.serviceId,
+        selectedDate: record.selectedDate,
+        selectedTime: record.selectedTime,
+        province: record.province,
+        canton: record.canton,
+        address: record.address,
+        sinpeRef: record.sinpeRef,
+        extras: record.extras,
+        voucherImage: record.voucherImage
+      });
 
-          if (!BookingStore._data) BookingStore.load();
-          const existingIdx = BookingStore._data.findIndex(function (b) { return b && b.code === record.code; });
-          if (existingIdx >= 0) {
-            BookingStore._data[existingIdx] = record;
-          } else {
-            BookingStore._data.unshift(record);
-          }
-          BookingStore.persist();
+      if (!BookingStore._data) BookingStore.load();
+      const existingIdx = BookingStore._data.findIndex(function (b) { return b && b.code === record.code; });
+      if (existingIdx >= 0) {
+        BookingStore._data[existingIdx] = record;
+      } else {
+        BookingStore._data.unshift(record);
+      }
+      BookingStore.persist();
 
-          if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[record.selectedDate]) {
-            delete AvailabilityManager._details[record.selectedDate];
-          }
-          if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-            try { CalendarModule.render(); } catch (e) {}
-          }
+      if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[record.selectedDate]) {
+        delete AvailabilityManager._details[record.selectedDate];
+      }
+      if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
+        try { CalendarModule.render(); } catch (e) { }
+      }
 
-           // No se declara como confirmada: la reserva queda pendiente de sincronización.
-           saved = { ok: false, queued: true, booking: record, source: "local", degraded: true };
-        }
+      // No se declara como confirmada: la reserva queda pendiente de sincronización.
+      saved = { ok: false, queued: true, booking: record, source: "local", degraded: true };
+    }
 
-        const created = saved.booking;
-        bookingCode = created.code || bookingCode;
+    const created = saved.booking;
+    bookingCode = created.code || bookingCode;
 
-        if (saved.source === "remote") {
-          // Lo que se imprime en el voucher es lo que calculó la base de datos.
-          if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
-          if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
-          if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
-          if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
-          if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
-        }
-        if (saved.source !== "remote" || saved.degraded) {
-          created.syncStatus = "offline_unverified";
-          created.isOfflineDegraded = true;
-          enforceVerifiedTotalsOnBooking(created, cart);
-          updateOfflineModeBanner(true);
-        } else {
-          created.syncStatus = "synced";
-          updateOfflineModeBanner(false);
-        }
-        cart.createdBooking = created;
+    if (saved.source === "remote") {
+      // Lo que se imprime en el voucher es lo que calculó la base de datos.
+      if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
+      if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
+      if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
+      if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
+      if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
+    }
+    if (saved.source !== "remote" || saved.degraded) {
+      created.syncStatus = "offline_unverified";
+      created.isOfflineDegraded = true;
+      enforceVerifiedTotalsOnBooking(created, cart);
+      updateOfflineModeBanner(true);
+    } else {
+      created.syncStatus = "synced";
+      updateOfflineModeBanner(false);
+    }
+    cart.createdBooking = created;
 
-        const offlineBadge = document.getElementById("confirm-offline-badge");
-        if (offlineBadge) {
-          if (saved.degraded || saved.source === "local" || created.syncStatus === "offline_unverified") {
-            offlineBadge.classList.remove("hidden");
-          } else {
-            offlineBadge.classList.add("hidden");
-          }
-        }
+    const offlineBadge = document.getElementById("confirm-offline-badge");
+    if (offlineBadge) {
+      if (saved.degraded || saved.source === "local" || created.syncStatus === "offline_unverified") {
+        offlineBadge.classList.remove("hidden");
+      } else {
+        offlineBadge.classList.add("hidden");
+      }
+    }
 
-        const rawMsg =
-          `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
+    const rawMsg =
+      `🎸 *ARKIK PRODUCTIONS - RESERVA & COTIZACIÓN*
 ----------------------------------------
 📌 *Código:* ${bookingCode}
 👤 *Cliente / Empresa:* ${cart.clientName}
@@ -12865,74 +12942,74 @@ ${surchargeText}
 ----------------------------------------
 📎 *Comprobante SINPE:* Adjuntado y registrado en el expediente digital de Arkik Productions.`;
 
-        const verifiedMsg = buildWhatsAppMessage(created || record);
-        const encodedMsg = encodeURIComponent(verifiedMsg);
-        const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
+    const verifiedMsg = buildWhatsAppMessage(created || record);
+    const encodedMsg = encodeURIComponent(verifiedMsg);
+    const whatsappUrl = `https://wa.me/${SINPE_CONFIG.cleanPhone}?text=${encodedMsg}`;
 
-        // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
-        document.getElementById("confirm-booking-code").textContent = bookingCode;
-        const badgeEl = document.getElementById("confirm-booking-badge");
-        if (badgeEl) badgeEl.textContent = bookingCode;
+    // Actualización del Voucher en el DOM usando textContent (seguridad estricta)
+    document.getElementById("confirm-booking-code").textContent = bookingCode;
+    const badgeEl = document.getElementById("confirm-booking-badge");
+    if (badgeEl) badgeEl.textContent = bookingCode;
 
-        document.getElementById("confirm-client-name").textContent = cart.clientName;
-        document.getElementById("confirm-event-type").textContent = cart.eventType;
-        document.getElementById("confirm-service-name").textContent = service.name;
+    document.getElementById("confirm-client-name").textContent = cart.clientName;
+    document.getElementById("confirm-event-type").textContent = cart.eventType;
+    document.getElementById("confirm-service-name").textContent = service.name;
 
-        const logInfoEl = document.getElementById("confirm-logistics-info");
-        if (logInfoEl) {
-          logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
-        }
+    const logInfoEl = document.getElementById("confirm-logistics-info");
+    if (logInfoEl) {
+      logInfoEl.textContent = `Montaje: ${setupDisplay} · Desmontaje: ${teardownDisplay}`;
+    }
 
-        document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
-        document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
-        const verifiedForDom = calculateVerifiedTotals(created || record);
-        document.getElementById("confirm-gran-total").textContent = formatCRC(verifiedForDom.granTotal);
-        document.getElementById("confirm-deposit-50").textContent = formatCRC(verifiedForDom.deposit50);
+    document.getElementById("confirm-event-date").textContent = `${formatDisplayDate(cart.selectedDate)}${cart.selectedTime ? " a las " + cart.selectedTime : ""}`;
+    document.getElementById("confirm-location").textContent = `${cart.canton}, ${cart.province}`;
+    const verifiedForDom = calculateVerifiedTotals(created || record);
+    document.getElementById("confirm-gran-total").textContent = formatCRC(verifiedForDom.granTotal);
+    document.getElementById("confirm-deposit-50").textContent = formatCRC(verifiedForDom.deposit50);
 
 
-        const remBalEl = document.getElementById("confirm-remaining-balance");
-        if (remBalEl) remBalEl.textContent = formatCRC(verifiedForDom.remainingBalance);
+    const remBalEl = document.getElementById("confirm-remaining-balance");
+    if (remBalEl) remBalEl.textContent = formatCRC(verifiedForDom.remainingBalance);
 
-        const waBtn = document.getElementById("btn-whatsapp-client");
-        if (waBtn) waBtn.href = whatsappUrl;
+    const waBtn = document.getElementById("btn-whatsapp-client");
+    if (waBtn) waBtn.href = whatsappUrl;
 
-        cart.clearStoredState();
-        // Cadena de idempotencia consumida: solo ahora se libera, para que un
-        // reintento posterior (si el servidor nunca confirmó) reuse la clave.
-        clearIdempotencyKey();
+    cart.clearStoredState();
+    // Cadena de idempotencia consumida: solo ahora se libera, para que un
+    // reintento posterior (si el servidor nunca confirmó) reuse la clave.
+    clearIdempotencyKey();
 
+    goToStep(4);
+
+    showToast("✓ ¡Reserva registrada con éxito!", "success");
+
+    // Fire-and-forget: refresca el cupo del día elegido y agenda la
+    // revalidación de las vistas abiertas.
+    if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.fetchDetail === "function") {
+      AvailabilityManager.fetchDetail(created.selectedDate).catch(function () { });
+    }
+    if (typeof CloudSync !== "undefined" && typeof CloudSync.notify === "function") {
+      CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
+    }
+
+    // Renderiza el voucher formal emitido en el Paso 4 sin cerrar el modal ni resetear el carrito
+    renderConfirmedVoucherScreen(created || record, whatsappUrl);
+  } catch (err) {
+    console.error("Booking submission failed:", err);
+    if (cart.createdBooking) {
+      try {
         goToStep(4);
-
-        showToast("✓ ¡Reserva registrada con éxito!", "success");
-
-        // Fire-and-forget: refresca el cupo del día elegido y agenda la
-        // revalidación de las vistas abiertas.
-        if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.fetchDetail === "function") {
-          AvailabilityManager.fetchDetail(created.selectedDate).catch(function () {});
-        }
-        if (typeof CloudSync !== "undefined" && typeof CloudSync.notify === "function") {
-          CloudSync.notify("bookings", { code: bookingCode, date: created.selectedDate });
-        }
-
-        // Renderiza el voucher formal emitido en el Paso 4 sin cerrar el modal ni resetear el carrito
-        renderConfirmedVoucherScreen(created || record, whatsappUrl);
-      } catch (err) {
-        console.error("Booking submission failed:", err);
-        if (cart.createdBooking) {
-          try {
-            goToStep(4);
-            const wa = typeof whatsappUrl !== "undefined" ? whatsappUrl : "";
-            renderConfirmedVoucherScreen(cart.createdBooking, wa);
-          } catch (err2) { /* noop */ }
-          clearIdempotencyKey();
-          showToast(`Reserva registrada con el código ${cart.createdBooking.code || bookingCode}.`, "success");
-        } else {
-          showToast("No se pudo generar la reserva. Revise los datos e intente nuevamente.", "error");
-        }
-      } finally {
-        // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
-        releaseLock();
-      }
+        const wa = typeof whatsappUrl !== "undefined" ? whatsappUrl : "";
+        renderConfirmedVoucherScreen(cart.createdBooking, wa);
+      } catch (err2) { /* noop */ }
+      clearIdempotencyKey();
+      showToast(`Reserva registrada con el código ${cart.createdBooking.code || bookingCode}.`, "success");
+    } else {
+      showToast("No se pudo generar la reserva. Revise los datos e intente nuevamente.", "error");
+    }
+  } finally {
+    // Nunca dejar el botón bloqueado: un error no debe inhabilitar el reenvío.
+    releaseLock();
+  }
 }
 
 /**
@@ -12969,10 +13046,10 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
   const verified = (typeof calculateVerifiedTotals === "function")
     ? calculateVerifiedTotals(b)
     : {
-        granTotal: Number(b.granTotal) || 0,
-        deposit50: Number(b.deposit50Amount || b.deposit50) || 0,
-        remainingBalance: Number(b.remainingBalance) || 0
-      };
+      granTotal: Number(b.granTotal) || 0,
+      deposit50: Number(b.deposit50Amount || b.deposit50) || 0,
+      remainingBalance: Number(b.remainingBalance) || 0
+    };
 
   const rawImg = b.voucherImage || (typeof cart !== "undefined" ? cart.voucherImage : "") || (typeof window !== "undefined" ? window._activeVoucherBlob : "");
   const safeImg = (typeof safeImageDataUrl === "function") ? safeImageDataUrl(rawImg) : (rawImg || "");
@@ -13254,7 +13331,7 @@ function showSlotConflictAlert(detail) {
   if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
     AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
       if (typeof renderTimeSelector === "function") renderTimeSelector();
-    }).catch(function () {});
+    }).catch(function () { });
   }
   if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
     CalendarModule.render();
@@ -13283,7 +13360,7 @@ function hideSlotConflictAlert() {
     if (typeof cart !== "undefined" && cart && cart.selectedDate && typeof AvailabilityManager !== "undefined") {
       AvailabilityManager.fetchDetail(cart.selectedDate).then(function () {
         if (typeof renderTimeSelector === "function") renderTimeSelector();
-      }).catch(function () {});
+      }).catch(function () { });
     }
     if (typeof CalendarModule !== "undefined" && CalendarModule.render) {
       CalendarModule.render();
@@ -14284,7 +14361,7 @@ const RAGConsole = {
       )
       .join("");
 
-// Centro de acción: 1 clic con diseño premium y micro-interacciones
+    // Centro de acción: 1 clic con diseño premium y micro-interacciones
     const pending = agg.totals.pendingSinpe;
     const latestBookingId = (scoped && scoped.length && (scoped[0].id || scoped[0].code)) || "";
     const actions = [
@@ -14698,6 +14775,5 @@ window.safeSaveBookings = safeSaveBookings;
 window.purgeExpiredVouchers = purgeExpiredVouchers;
 window.buildWhatsAppMessage = buildWhatsAppMessage;
 window.updateOfflineModeBanner = updateOfflineModeBanner;
-
 
 

@@ -49,22 +49,64 @@ function safeError(err) {
   return message.replace(/postgres(ql)?:\/\/\S+/gi, '[redacted]');
 }
 
-// Seed admin_credentials from env pins. Existing rows are NEVER rotated.
+// Seed admin_credentials from env pins. Existing rows are NEVER rotated automatically.
 async function bootstrapAdmins(pool) {
   const auth = require('../api/_lib/auth');
 
-  const existing = await pool.query('SELECT role FROM admin_credentials');
-  const present = new Set(existing.rows.map((row) => row.role));
+  const existing = await pool.query('SELECT role, pin_hash FROM admin_credentials');
+  const existingByRole = new Map();
+  for (const row of existing.rows || []) {
+    existingByRole.set(row.role, row);
+  }
 
   const targets = [
-    { role: 'owner', envName: 'ADMIN_OWNER_PIN' },
-    { role: 'it', envName: 'ADMIN_IT_PIN' }
+    { role: 'owner', envNames: ['ADMIN_OWNER_PIN', 'ADMIN_PIN_OWNER'] },
+    { role: 'it', envNames: ['ADMIN_IT_PIN', 'ADMIN_PIN_IT'] }
   ];
 
   for (const target of targets) {
-    const pin = (process.env[target.envName] || '').trim();
-    if (!pin || present.has(target.role)) continue;
-    const pinHash = auth.hashPin(pin);
+    let rawPin = '';
+    for (const name of target.envNames) {
+      const candidate = (process.env[name] || '').trim();
+      if (candidate) {
+        rawPin = candidate;
+        break;
+      }
+    }
+
+    const existingRow = existingByRole.get(target.role);
+    if (existingRow) {
+      if (typeof existingRow.pin_hash === 'string') {
+        if (!auth.isValidScryptHash(existingRow.pin_hash)) {
+          console.warn(
+            `[ARKIK DB] WARNING: stored credential hash for role "${target.role}" is corrupted. Run "npm run admin:verify" and "npm run admin:rotate -- --role ${target.role} --confirm" to fix it.`
+          );
+        } else if (rawPin) {
+          const matches = rawPin.startsWith('scrypt$')
+            ? rawPin === existingRow.pin_hash
+            : await auth.verifyPin(rawPin, existingRow.pin_hash);
+          if (!matches) {
+            console.warn(
+              `[ARKIK DB] WARNING: role "${target.role}" already exists in admin_credentials and does NOT match the current env PIN (never overwritten automatically). Run "npm run admin:rotate -- --role ${target.role} --confirm" to update it intentionally.`
+            );
+          }
+        }
+      }
+      continue;
+    }
+
+    if (!rawPin) continue;
+
+    let pinHash;
+    if (rawPin.startsWith('scrypt$')) {
+      if (!auth.isValidScryptHash(rawPin)) {
+        throw new Error(`Invalid pre-hashed scrypt string supplied for role "${target.role}"`);
+      }
+      pinHash = rawPin;
+    } else {
+      pinHash = auth.hashPin(rawPin);
+    }
+
     await pool.query('INSERT INTO admin_credentials (role, pin_hash) VALUES ($1, $2) ON CONFLICT (role) DO NOTHING', [
       target.role,
       pinHash
@@ -75,7 +117,7 @@ async function bootstrapAdmins(pool) {
   const after = await pool.query('SELECT role FROM admin_credentials');
   if (after.rows.length === 0) {
     console.warn('[ARKIK DB] WARNING: no admin credentials exist. Admin login stays unavailable');
-    console.warn('[ARKIK DB] WARNING: until ADMIN_OWNER_PIN / ADMIN_IT_PIN are set and this runner is re-executed.');
+    console.warn('[ARKIK DB] WARNING: until ADMIN_OWNER_PIN / ADMIN_PIN_OWNER or ADMIN_IT_PIN / ADMIN_PIN_IT are set and this runner is re-executed.');
   }
 }
 
@@ -160,4 +202,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { loadEnvFiles };
+module.exports = { loadEnvFiles, bootstrapAdmins };

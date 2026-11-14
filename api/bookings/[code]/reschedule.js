@@ -1,5 +1,5 @@
 'use strict';
-// PATCH /api/bookings/[code]/reschedule — admin move {selectedDate, selectedTime}
+// PATCH /api/bookings/[code]/reschedule — owner move {selectedDate, selectedTime}
 
 const { withCors } = require('../../_lib/cors');
 const registry = require('../../_lib/registry');
@@ -13,7 +13,7 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    await auth.requireAdmin(req);
+    await auth.requireOwner(req);
 
     const body = await respond.readBody(req);
     const service = registry.get('service');

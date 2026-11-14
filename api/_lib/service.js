@@ -561,8 +561,9 @@ async function login(input) {
   await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}`, limit: 10, windowMs: 60 * 60 * 1000 });
   await ratelimit.enforce({ bucket: `login:${input.ip || 'unknown'}:${(input.role || '').trim().toLowerCase()}`, limit: 5, windowMs: 15 * 60 * 1000 });
 
-  const role = typeof input.role === 'string' ? input.role.trim() : '';
-  const pin = typeof input.pin === 'string' ? input.pin : '';
+  const rawRole = typeof input.role === 'string' ? input.role.trim().toLowerCase() : '';
+  const role = rawRole === 'tech' ? 'it' : rawRole;
+  const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
   const generic = () => appError('unauthorized', 'Credenciales inválidas.', 401);
 
   if ((role !== 'owner' && role !== 'it') || !pin) {
@@ -578,7 +579,17 @@ async function login(input) {
 
   const outcome = await db.withTransaction(async (client) => {
     const credential = await repo.getCredentialForUpdate(client, role);
-    if (!credential) return { result: 'invalid' };
+    if (!credential) {
+      const roles = typeof repo.listCredentialRoles === 'function' ? await repo.listCredentialRoles(client) : null;
+      if (Array.isArray(roles) && roles.length === 0) {
+        return { result: 'not_initialized' };
+      }
+      return { result: 'missing_role' };
+    }
+
+    if (typeof auth.isValidScryptHash === 'function' && !auth.isValidScryptHash(credential.pin_hash)) {
+      return { result: 'corrupted_hash' };
+    }
 
     const now = Date.now();
     // NOTE: No per-role lockout is applied here. A third party must not be
@@ -601,13 +612,36 @@ async function login(input) {
     return { result: 'ok', token, expiresAt };
   });
 
+  if (outcome.result === 'not_initialized') {
+    const log = registry.get('log');
+    if (log && typeof log.error === 'function') log.error('admin_credentials_empty', { role });
+    throw appError(
+      'service_unavailable',
+      'Credenciales administrativas no inicializadas. Ejecutá la migración de base de datos con ADMIN_OWNER_PIN / ADMIN_IT_PIN.',
+      503
+    );
+  }
+
+  if (outcome.result === 'corrupted_hash') {
+    const log = registry.get('log');
+    if (log && typeof log.error === 'function') log.error('admin_credential_corrupted', { role });
+    await recordAudit({
+      action: 'ADMIN_LOGIN_FAILED',
+      entityType: 'admin_credentials',
+      entityId: role,
+      actor: role,
+      metadata: { reason: 'corrupted_hash' }
+    });
+    throw appError('service_unavailable', 'Configuración de credencial inválida en el servidor.', 503);
+  }
+
   if (outcome.result !== 'ok') {
     await recordAudit({
       action: 'ADMIN_LOGIN_FAILED',
       entityType: 'admin_credentials',
       entityId: role,
       actor: role,
-      metadata: { reason: 'invalid' }
+      metadata: { reason: outcome.result }
     });
     throw generic();
   }
@@ -624,7 +658,8 @@ async function login(input) {
 }
 
 async function logout(token) {
-  if (!token) return { ok: true };
+  if (!token || typeof token !== 'string') return { ok: true };
+  if (token.startsWith('v1.')) return { ok: true, stateless: true };
   const db = registry.get('db');
   const repo = registry.get('repo');
   const auth = registry.get('auth');

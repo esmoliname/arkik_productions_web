@@ -24,29 +24,45 @@ function hashPin(pin) {
   return `scrypt$${SCRYPT.cost}$${SCRYPT.blockSize}$${SCRYPT.parallelization}$${salt.toString('hex')}$${derived.toString('hex')}`;
 }
 
-function verifyPin(pin, stored) {
-  if (typeof stored !== 'string') return false;
+function parseScryptHash(stored) {
+  if (typeof stored !== 'string') return null;
   const parts = stored.split('$');
-  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return null;
   const cost = Number(parts[1]);
   const blockSize = Number(parts[2]);
   const parallelization = Number(parts[3]);
-  const salt = Buffer.from(parts[4], 'hex');
-  const expected = Buffer.from(parts[5], 'hex');
-  if (!Number.isInteger(cost) || !Number.isInteger(blockSize) || !Number.isInteger(parallelization)) return false;
-  if (!salt.length || !expected.length) return false;
+  const saltHex = parts[4];
+  const expectedHex = parts[5];
+  if (!/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(expectedHex)) return null;
+  if (saltHex.length % 2 !== 0 || expectedHex.length % 2 !== 0) return null;
+  const salt = Buffer.from(saltHex, 'hex');
+  const expected = Buffer.from(expectedHex, 'hex');
+  if (!Number.isInteger(cost) || cost < 1024 || !Number.isInteger(blockSize) || blockSize < 1 || !Number.isInteger(parallelization) || parallelization < 1) {
+    return null;
+  }
+  if (salt.length < 8 || expected.length < 16) return null;
+  return { cost, blockSize, parallelization, salt, expected };
+}
+
+function isValidScryptHash(stored) {
+  return parseScryptHash(stored) !== null;
+}
+
+function verifyPin(pin, stored) {
+  const parsed = parseScryptHash(stored);
+  if (!parsed) return false;
   let derived;
   try {
-    derived = crypto.scryptSync(String(pin), salt, expected.length, {
-      cost,
-      blockSize,
-      parallelization,
+    derived = crypto.scryptSync(String(pin), parsed.salt, parsed.expected.length, {
+      cost: parsed.cost,
+      blockSize: parsed.blockSize,
+      parallelization: parsed.parallelization,
       maxmem: SCRYPT.maxmem
     });
   } catch (err) {
     return false;
   }
-  return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+  return derived.length === parsed.expected.length && crypto.timingSafeEqual(derived, parsed.expected);
 }
 
 function newSessionToken() {
@@ -71,8 +87,12 @@ function parseCookies(req) {
   return jar;
 }
 
+function isSecureCookieContext() {
+  return config.isProduction || process.env.VERCEL === '1' || process.env.VERCEL_ENV === 'preview';
+}
+
 function getSessionCookieName() {
-  return config.isProduction ? '__Host-session' : COOKIE_NAME;
+  return isSecureCookieContext() ? '__Host-session' : COOKIE_NAME;
 }
 
 function getSessionToken(req) {
@@ -82,13 +102,13 @@ function getSessionToken(req) {
 
 function sessionCookie(token) {
   const name = getSessionCookieName();
-  const secure = config.isProduction ? ' Secure;' : '';
+  const secure = isSecureCookieContext() ? ' Secure;' : '';
   return `${name}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=900`;
 }
 
 function clearSessionCookie() {
   const name = getSessionCookieName();
-  const secure = config.isProduction ? ' Secure;' : '';
+  const secure = isSecureCookieContext() ? ' Secure;' : '';
   return `${name}=; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=0`;
 }
 
@@ -108,7 +128,7 @@ function hasEnvPinsConfigured() {
 
 function verifyEnvPin(role, pin) {
   if (role !== 'owner' && role !== 'it') return false;
-  const cleanPin = String(pin ?? '').replace(/\D/g, '').trim();
+  const cleanPin = String(pin ?? '').trim();
   const expected = String(getEnvPinForRole(role) || '').trim();
   if (!cleanPin || !expected) return false;
   if (expected.startsWith('scrypt$')) {
@@ -175,6 +195,9 @@ async function requireAdmin(req) {
   if (!token) throw appError('unauthorized', 'No autorizado.', 401);
 
   if (token.startsWith('v1.')) {
+    if (config.databaseUrl) {
+      throw appError('unauthorized', 'No autorizado.', 401);
+    }
     const stateless = verifyStatelessToken(token);
     if (!stateless) throw appError('unauthorized', 'No autorizado.', 401);
     return stateless;
@@ -222,6 +245,7 @@ module.exports = {
   COOKIE_NAME,
   SESSION_TTL_MS,
   hashPin,
+  isValidScryptHash,
   verifyPin,
   hasEnvPinsConfigured,
   verifyEnvPin,

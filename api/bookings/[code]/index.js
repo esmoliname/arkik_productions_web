@@ -1,6 +1,6 @@
 'use strict';
 // GET   /api/bookings/[code] — admin detail; voucher payload only with ?include=voucher
-// PATCH /api/bookings/[code] — admin edit of contact fields only
+// PATCH /api/bookings/[code] — owner edit of contact fields only
 
 const { withCors } = require('../../_lib/cors');
 const registry = require('../../_lib/registry');
@@ -22,7 +22,7 @@ async function handler(req, res) {
 
     if (req.method === 'PATCH') {
       const auth = registry.get('auth');
-      await auth.requireAdmin(req);
+      await auth.requireOwner(req);
       const body = await respond.readBody(req);
       const service = registry.get('service');
       const data = await service.updateBooking(code, body);

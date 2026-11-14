@@ -7,14 +7,16 @@ const { withCors } = require('../_lib/cors');
 const registry = require('../_lib/registry');
 
 const DEFAULT_STATS = {
-  totalBookings: 0,
-  confirmedCount: 0,
-  pendingCount: 0,
-  completedCount: 0,
-  cancelledCount: 0,
-  confirmedRevenue: 0,
-  pendingDeposits: 0,
-  upcomingEventsCount: 0
+  total: 0,
+  pendiente: 0,
+  confirmada: 0,
+  realizada: 0,
+  cancelada: 0,
+  revenue: { gross: 0, deposits: 0, balances: 0 },
+  byProvince: [],
+  upcoming: [],
+  blockedCount: 0,
+  pendingVouchers: 0
 };
 
 async function handler(req, res) {
@@ -40,13 +42,15 @@ async function handler(req, res) {
       rates: Object.assign({}, config.DEFAULTS ? config.DEFAULTS.rates : {})
     };
     let availability = {};
+    let auditEvents = [];
 
     try {
-      const [statsRes, bookingsRes, pricingRes, availabilityRes] = await Promise.all([
+      const [statsRes, bookingsRes, pricingRes, availabilityRes, auditRes] = await Promise.all([
         service.getStats(),
         service.listBookings({ limit: 500 }),
         service.getPricing(),
-        service.getAvailability()
+        service.getAvailability(),
+        typeof service.listAudit === 'function' ? service.listAudit(50) : Promise.resolve({ events: [] })
       ]);
 
       if (statsRes && typeof statsRes === 'object') stats = statsRes;
@@ -58,11 +62,14 @@ async function handler(req, res) {
       if (availabilityRes && availabilityRes.blocked && typeof availabilityRes.blocked === 'object') {
         availability = availabilityRes.blocked;
       }
+      if (auditRes && Array.isArray(auditRes.events)) {
+        auditEvents = auditRes.events;
+      }
     } catch (dbErr) {
-      // If running in stateless env-PIN mode without a database connection,
-      // still return the authenticated session envelope and baseline structures.
-      const isDbUnavailable = dbErr && (dbErr.kind === 'db_unavailable' || dbErr.code === 'no_database' || dbErr.status === 503);
-      if (!isDbUnavailable) throw dbErr;
+      // Allow empty dashboard fallback ONLY when running in database-less env-PIN mode.
+      // When DATABASE_URL IS configured, database/migration failures must surface as 503.
+      const isNoDatabase = !config.databaseUrl && dbErr && (dbErr.kind === 'db_unavailable' || dbErr.code === 'no_database' || dbErr.status === 503);
+      if (!isNoDatabase) throw dbErr;
     }
 
     res.setHeader('Cache-Control', 'private, no-store');
@@ -73,7 +80,8 @@ async function handler(req, res) {
       bookings,
       total,
       pricing,
-      availability
+      availability,
+      auditEvents
     });
   } catch (err) {
     return respond.handleError(res, err, registry.get('log'));

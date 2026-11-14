@@ -15,10 +15,16 @@ async function handler(req, res) {
     const auth = registry.get('auth');
     const service = registry.get('service');
 
-    const token = auth.getSessionToken(req);
-    const data = await service.logout(token);
-
+    // Always clear the browser cookie on logout, even if session cleanup fails.
     res.setHeader('Set-Cookie', auth.clearSessionCookie());
+    const token = auth.getSessionToken(req);
+    let data = { ok: true };
+    try {
+      data = await service.logout(token);
+    } catch (err) {
+      const isDbDown = err && (err.kind === 'db_unavailable' || err.code === 'no_database' || err.status === 503);
+      if (!isDbDown) throw err;
+    }
     return respond.ok(res, data);
   } catch (err) {
     return respond.handleError(res, err, registry.get('log'));

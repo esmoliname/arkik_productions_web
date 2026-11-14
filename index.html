@@ -2193,7 +2193,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <input type="password" id="admin-pin" data-autofocus="true" inputmode="numeric" maxlength="8"
+          <input type="password" id="admin-pin" data-autofocus="true" inputmode="numeric" maxlength="32"
             autocomplete="current-password" placeholder="••••••••" aria-label="PIN de acceso"
             class="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-600 font-mono text-lg tracking-[0.35em] outline-none p-0">
           <button type="button" id="admin-pin-toggle" aria-label="Mostrar u ocultar PIN"
@@ -2210,6 +2210,7 @@
 
       <!-- Honeypot anti-bot -->
       <input type="text" id="login-website-trap" name="website_trap" tabindex="-1" autocomplete="off" aria-hidden="true"
+        data-lpignore="true" data-1p-ignore="true" data-bwignore="true"
         style="opacity: 0; position: absolute; top: -9999px; left: -9999px;" />
 
       <!-- Cyber-Defense UI: Error & Rate-Limiting Lockout Banner (#login-lockout-banner) -->

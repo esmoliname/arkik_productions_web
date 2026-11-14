@@ -22,7 +22,7 @@ function sanitizeRole(rawRole) {
 
 function sanitizePin(rawPin) {
   if (rawPin === null || rawPin === undefined) return '';
-  return String(rawPin).replace(/\D/g, '').trim().slice(0, 12);
+  return String(rawPin).trim().slice(0, 64);
 }
 
 function checkEnvLockout(bucketKey, now) {
@@ -64,19 +64,22 @@ async function handler(req, res) {
     const body = await respond.readBody(req);
     const service = registry.get('service');
     const auth = registry.get('auth');
+    const config = registry.get('config');
 
     const role = sanitizeRole(body ? body.role : undefined);
     const pin = sanitizePin(body ? body.pin : undefined);
     const ip = respond.clientIp(req);
 
-    // Zero-Trust Env-Var Authentication Path (process.env.ADMIN_PIN_OWNER / process.env.ADMIN_PIN_IT)
-    if (typeof auth.hasEnvPinsConfigured === 'function' && auth.hasEnvPinsConfigured()) {
+    // Database authentication (Neon admin_credentials + admin_sessions + distributed rate_limits)
+    // is authoritative whenever DATABASE_URL is configured. Stateless env-PIN mode only activates
+    // when no database is configured (e.g., ephemeral preview/prototype environments).
+    if (!config.databaseUrl && typeof auth.hasEnvPinsConfigured === 'function' && auth.hasEnvPinsConfigured()) {
       const now = Date.now();
       const bucketKey = `${ip || 'unknown'}:${role || 'unknown'}`;
       const lockedRemaining = checkEnvLockout(bucketKey, now);
       if (lockedRemaining > 0) {
         res.setHeader('Retry-After', String(Math.ceil(lockedRemaining / 1000)));
-        return respond.fail(res, 'locked', 'Credenciales invǭlidas', 429, {
+        return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
           retryAfterMs: Math.ceil(lockedRemaining)
         });
       }
@@ -85,7 +88,7 @@ async function handler(req, res) {
         const failure = recordEnvFailure(bucketKey, now);
         if (failure.locked) {
           res.setHeader('Retry-After', String(Math.ceil(failure.retryAfterMs / 1000)));
-          return respond.fail(res, 'locked', 'Credenciales invǭlidas', 429, {
+          return respond.fail(res, 'locked', 'Credenciales inválidas', 429, {
             retryAfterMs: failure.retryAfterMs
           });
         }
@@ -102,9 +105,10 @@ async function handler(req, res) {
       return respond.ok(res, { role, expiresAt });
     }
 
+    const fallbackRole = body && typeof body.role === 'string' ? body.role.trim().toLowerCase() : '';
     const result = await service.login({
-      role: role || (body ? body.role : undefined),
-      pin: pin || (body ? body.pin : undefined),
+      role: role || fallbackRole,
+      pin,
       ip
     });
 

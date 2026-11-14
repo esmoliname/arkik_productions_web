@@ -3,11 +3,16 @@
   "version": "2.0.0",
   "description": "Arkik Productions — SPA vanilla + Vercel Serverless API + Neon PostgreSQL",
   "scripts": {
-    "dev": "serve -s .",
-    "check": "node --check js/app.js && node --check js/data.js && node --check js/api.js",
+    "dev": "node scripts/dev-server.js",
+    "dev:static": "serve -s .",
+    "check": "node --check js/app.js && node --check js/data.js && node --check js/api.js && node --check db/migrate.js && node --check db/manage-admin-pins.js && node --check scripts/dev-server.js && node --check scripts/predeploy-check.js",
     "test": "npm run check && node --test \"test/*.test.cjs\"",
+    "predeploy:check": "node scripts/predeploy-check.js",
     "db:migrate": "node db/migrate.js",
-    "db:seed:dev": "node db/seed-dev.js"
+    "db:seed:dev": "node db/seed-dev.js",
+    "admin:verify": "node db/manage-admin-pins.js verify",
+    "admin:rotate": "node db/manage-admin-pins.js rotate",
+    "admin:hash": "node db/manage-admin-pins.js hash"
   },
   "engines": {
     "node": ">=22"
