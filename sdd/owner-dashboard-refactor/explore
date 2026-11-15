@@ -1,7 +1,7 @@
 ## Exploration: owner-dashboard-refactor
 
 ### Current State
-The owner dashboard is part of the Staff Portal (AdminModule) in the Arkik Productions static SPA. It exists within a single large `js/app.js` file (~3500+ lines) and provides financial analytics and booking management for the owner role (Propietario - Juan José Ramos). The dashboard is accessed via staff login (PIN: 2580) and renders when `AdminModule.setRole("owner")` is called followed by `AdminModule.renderOwner()`.
+The owner dashboard is part of the Staff Portal (AdminModule) in the Arkik Productions static SPA. It exists within a single large `js/app.js` file (~3500+ lines) and provides financial analytics and booking management for the owner role (Propietario - Juan José Ramos). The dashboard is accessed via staff login ([REDACTED_HISTORICAL_PIN]) and renders when `AdminModule.setRole("owner")` is called followed by `AdminModule.renderOwner()`.
 
 **Key existing owner dashboard features:**
 - Period filters: hoy, semana, mes, año, total
