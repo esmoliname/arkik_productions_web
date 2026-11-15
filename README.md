@@ -71,13 +71,13 @@ npm install
 
 ## Development
 
-Iniciar el servidor de desarrollo estático:
+Iniciar el servidor full-stack de desarrollo local (`scripts/dev-server.js`, sirve estáticos y enruta `/api/*` + rutas SPA):
 
 ```bash
 npm run dev
 ```
 
-También se puede abrir `index.html` directamente en el navegador o mediante Live Server.
+Solo si se necesita un servidor estático puro sin API, existe `npm run dev:static` (`serve -s .`).
 
 Comprobación de sintaxis:
 
@@ -94,11 +94,11 @@ Variables de entorno (nombres y propósito). **Nunca incluir valores reales.** U
 | Variable | Propósito |
 |---|---|
 | `DATABASE_URL` | Cadena de conexión PostgreSQL de Neon (solo server-side). |
-| `APP_ENV` | Entorno: `development`, `preview` o `production`. |
+| `APP_ENV` | Entorno: `development`, `staging`, `preview` o `production` (`APP_ENV=development` explícito requerido para fallback local sin DB). |
 | `SEED_MODE` | `true` permite insertar datos demo (solo desarrollo local); `false` en producción. |
 | `ADMIN_OWNER_PIN` | PIN del rol Owner (solo server-side, nunca en código ni cliente). |
 | `ADMIN_IT_PIN` | PIN del rol IT (solo server-side). |
-| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en producción. |
+| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en producción y cloud/preview (`503` si falta). |
 | `ALLOWED_ORIGINS` | Orígenes permitidos para CORS (separados por coma). Vacío = same-origin únicamente. |
 | `PUBLIC_APP_URL` | URL pública de la app (para links/emails). |
 
@@ -124,7 +124,8 @@ Copiar `.env.example` a `.env.local` para desarrollo. Nunca commitear `.env` rea
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/api/health` | Estado del servicio. |
+| `GET` | `/api/health` | Probe de liveness puro (`200`, `status: "ok"`, `database: "not_checked"`, cero queries SQL). |
+| `GET` | `/api/ready` | Único probe de readiness PostgreSQL (`200` solo tras `SELECT 1` válido; `503` si falla o falta `DATABASE_URL`). |
 | `POST` | `/api/bookings` | Creación de reserva (rate limited, idempotente). |
 | `GET` | `/api/availability` | Mapa de disponibilidad bloqueada (+ `?date=`, `?from=&to=`). |
 | `GET` | `/api/pricing` | Precios públicos (catálogo, overrides, rates). |
@@ -151,13 +152,14 @@ Copiar `.env.example` a `.env.local` para desarrollo. Nunca commitear `.env` rea
 ## Security
 
 - **Autenticación:** PIN administrativo validado exclusivamente en el servidor, hashes scrypt con salt único, comparación en tiempo constante.
-- **Sesiones:** Tokens aleatorios firmados con HMAC-SHA256 (stateless `v1.`) o sesiones persistidas en DB con expiración deslizante (15 min). Cookies `HttpOnly`, `Secure` en producción, `SameSite=Strict`.
-- **Roles:** `owner` e `it`, verificados en el servidor. Operaciones sensibles (precios, disponibilidad) reservadas al Owner.
-- **Protección de login:** Rate limiting por IP, por IP+rol y global por rol; backoff progresivo temporal; sin bloqueo permanente del administrador por intentos fallidos de terceros.
-- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en producción (el getter lanza si no está configurado). Ningún secreto en el frontend.
+- **Sesiones:** Sesiones opacas persistidas en PostgreSQL (`admin_sessions`) con expiración deslizante (15 min) siempre que `DATABASE_URL` esté configurada; modo local stateless `v1.` únicamente con `APP_ENV=development` explícito, sin `DATABASE_URL` y sin flags cloud/producción. Cookies `HttpOnly`, `Secure` en Preview/Producción (`__Host-session`), `SameSite=Strict`.
+- **Roles:** `owner` e `it`, verificados en el servidor. Operaciones sensibles (precios, disponibilidad, gestión de reservas) reservadas al Owner.
+- **Protección de login:** Rate limiting por IP y por IP+rol (PostgreSQL `rate_limits`); backoff progresivo temporal; sin bloqueo global por rol para evitar DoS por terceros.
+- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en producción y en entornos cloud/preview (`VERCEL=1`, `VERCEL_ENV` o `isProduction`; responde `503` si falta o usa el valor por defecto dev). Ningún secreto en el frontend.
 - **CORS:** Same-origin por defecto; orígenes explícitos cuando se configuran. Preflight restringido.
 - **Logs:** Redacción automática de secretos, PINs, tokens, cookies y URLs de conexión.
 - **Auditoría:** Eventos de login, logout, cambios de estado, precios y disponibilidad.
+- **Sincronización cliente (`CloudSync`):** Sin polling continuo en la vista pública (sincronización al arranque, al abrir modal de reserva, al seleccionar fecha, pre-submit y retorno de foco con cooldown >= 60 s); en el portal administrativo, actualización manual + intervalo moderado (45 s) solo con el portal abierto y pestaña visible.
 
 ---
 

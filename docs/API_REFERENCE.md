@@ -4,7 +4,8 @@ Base path: `/api`. All responses use `{success, data}` / `{success, error:{code,
 
 ## Public
 
-- `GET /api/health` — service + database status.
+- `GET /api/health` — pure liveness probe (`200` `{success: true, service: "arkik-api", status: "ok", database: "not_checked", timestamp}`, `Cache-Control: no-store`, zero DB queries).
+- `GET /api/ready` — sole PostgreSQL readiness probe (`200` `{ready: true, database: "connected"}` after single `SELECT 1`; `503` when `"unconfigured"` or `"unavailable"`, `Cache-Control: no-store`).
 - `GET /api/pricing` — catalog, overrides, rates.
 - `GET /api/availability?date=ISO` or `?from=&to=` — capacity/blocked.
 - `POST /api/bookings` (header `X-Idempotency-Key`) — create booking.

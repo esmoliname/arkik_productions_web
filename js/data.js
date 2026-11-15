@@ -40,13 +40,16 @@ const EMAILJS_CONFIG = {
 //                  admin PIN can never authenticate (no secret ships here).
 //   baseUrl        "" (same origin) or an absolute origin such as
 //                  "https://arkik-productions.vercel.app".
-//   pollIntervalMs how often the admin views revalidate against the server.
+//   pollIntervalMs      0 = disabled on public view (on-demand sync only).
+//   adminPollIntervalMs 45000 = gentle background sync only while admin portal is open & visible.
+//   focusCooldownMs     60000 = minimum gap between focus/visibility background refreshes.
 //   timeoutMs      per-request cap so the UI never hangs.
 const API_CONFIG = {
   enabled: true,
   baseUrl: "",
-  pollIntervalMs: 5000,
-  adminPollIntervalMs: 3500,
+  pollIntervalMs: 0,
+  adminPollIntervalMs: 45000,
+  focusCooldownMs: 60000,
   timeoutMs: 8000
 };
 

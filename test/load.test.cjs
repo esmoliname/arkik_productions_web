@@ -5,6 +5,7 @@ const path = require('path');
 const roots = ['api/_lib'];
 const files = [
   'api/health.js',
+  'api/ready.js',
   'api/bookings/index.js',
   'api/bookings/[code]/index.js',
   'api/bookings/[code]/status.js',

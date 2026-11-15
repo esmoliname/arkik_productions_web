@@ -59,13 +59,40 @@ function expect(name, condition, detail) {
 }
 
 (async () => {
-  // 1. health without DATABASE_URL -> 200 configured
+  // 1. health without DATABASE_URL -> 200 pure liveness (no DB check)
   let res = await call('api/health.js', makeReq('GET', '/api/health'));
   expect(
-    'health no-database 200 configured',
-    res.statusCode === 200 && res.body && res.body.database === 'configured' && res.body.service === 'arkik-api',
+    'health no-database 200 pure liveness',
+    res.statusCode === 200 &&
+      res.body &&
+      res.body.success === true &&
+      res.body.status === 'ok' &&
+      res.body.database === 'not_checked' &&
+      res.body.service === 'arkik-api' &&
+      res.headers['Cache-Control'] === 'no-store',
     brief(res)
   );
+
+  // 1a. health HEAD -> 200
+  res = await call('api/health.js', makeReq('HEAD', '/api/health'));
+  expect('health HEAD 200', res.statusCode === 200 && res.headers['Cache-Control'] === 'no-store', brief(res));
+
+  // 1b. ready without DATABASE_URL -> 503 unconfigured (readiness requires DB)
+  res = await call('api/ready.js', makeReq('GET', '/api/ready'));
+  expect(
+    'ready no-database 503 unconfigured',
+    res.statusCode === 503 &&
+      res.body &&
+      res.body.success === false &&
+      res.body.ready === false &&
+      res.body.database === 'unconfigured' &&
+      res.headers['Cache-Control'] === 'no-store',
+    brief(res)
+  );
+
+  // 1c. ready rejects POST -> 405
+  res = await call('api/ready.js', makeReq('POST', '/api/ready'));
+  expect('ready POST 405', res.statusCode === 405 && res.body.error.code === 'method_not_allowed', brief(res));
 
   // 2. health rejects POST
   res = await call('api/health.js', makeReq('POST', '/api/health'));

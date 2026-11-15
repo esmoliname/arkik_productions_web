@@ -31,18 +31,31 @@ const MIME_TYPES = {
 
 const BLOCKED_TOP_LEVEL = new Set([
   'api',
+  'backups',
   'db',
   'docs',
   'node_modules',
   'scripts',
+  'sdd',
   'test',
+  'README.md',
   'package.json',
   'package-lock.json',
   'vercel.json'
 ]);
 
+const SPA_ENTRY_PATHS = new Set([
+  '/admin',
+  '/panel',
+  '/bookings',
+  '/booking',
+  '/reserva',
+  '/reservas'
+]);
+
 const STATIC_API_MAP = new Map([
   ['/api/health', '../api/health.js'],
+  ['/api/ready', '../api/ready.js'],
   ['/api/pricing', '../api/pricing.js'],
   ['/api/admin/audit', '../api/admin/audit.js'],
   ['/api/admin/dashboard', '../api/admin/dashboard.js'],
@@ -168,7 +181,21 @@ function serveStatic(req, res, urlObj) {
     return;
   }
 
-  const target = isSafePublicPath(urlObj.pathname);
+  const pathname = urlObj.pathname || '/';
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    const withoutTrailingSlash = pathname.slice(0, -1).toLowerCase();
+    if (SPA_ENTRY_PATHS.has(withoutTrailingSlash)) {
+      res.statusCode = 308;
+      res.setHeader('Location', `${withoutTrailingSlash}${urlObj.search || ''}`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end();
+      return;
+    }
+  }
+
+  const mappedPath = SPA_ENTRY_PATHS.has(pathname.toLowerCase()) ? '/index.html' : pathname;
+
+  const target = isSafePublicPath(mappedPath);
   if (!target || !fs.existsSync(target) || fs.statSync(target).isDirectory()) {
     res.statusCode = 404;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -219,7 +246,16 @@ if (require.main === module) {
     console.log(`[arkik dev] Full-stack local server listening on http://${host}:${port}`);
     console.log('[arkik dev] Static assets + /api/* Vercel handlers active.');
     if (!process.env.DATABASE_URL) {
-      console.log('[arkik dev] DATABASE_URL not set: using stateless env-var fallback mode (no DB persistence).');
+      const explicitDev = String(process.env.APP_ENV || '').trim().toLowerCase() === 'development';
+      const cloudOrProd =
+        process.env.VERCEL === '1' ||
+        Boolean(process.env.VERCEL_ENV) ||
+        String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (explicitDev && !cloudOrProd) {
+        console.log('[arkik dev] DATABASE_URL not set + APP_ENV=development: local stateless env-var fallback active (no DB persistence).');
+      } else {
+        console.log('[arkik dev] DATABASE_URL not set and APP_ENV!=development: stateless fallback disabled (set DATABASE_URL or explicit APP_ENV=development in .env.local).');
+      }
     }
   });
 }

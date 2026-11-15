@@ -1,7 +1,7 @@
 'use strict';
-// POST /api/admin/login — {role, pin} -> HttpOnly, Secure, SameSite=Strict session cookie (15 min)
-// Zero-Trust: validates PIN against process.env.ADMIN_PIN_OWNER / process.env.ADMIN_PIN_IT
-// (or DB-backed service.login) and NEVER exposes session tokens in the response body.
+// POST /api/admin/login — {role, pin} -> HttpOnly, SameSite=Strict (Secure in Preview/Prod) session cookie (15 min)
+// Authoritative DB auth (service.login -> admin_credentials + admin_sessions) whenever DATABASE_URL is configured.
+// Env-var stateless fallback is strictly limited to local non-production runs without DATABASE_URL.
 
 const { withCors } = require('../_lib/cors');
 const registry = require('../_lib/registry');
@@ -71,9 +71,15 @@ async function handler(req, res) {
     const ip = respond.clientIp(req);
 
     // Database authentication (Neon admin_credentials + admin_sessions + distributed rate_limits)
-    // is authoritative whenever DATABASE_URL is configured. Stateless env-PIN mode only activates
-    // when no database is configured (e.g., ephemeral preview/prototype environments).
-    if (!config.databaseUrl && typeof auth.hasEnvPinsConfigured === 'function' && auth.hasEnvPinsConfigured()) {
+    // is exclusive whenever DATABASE_URL is configured, and required in any cloud/production runtime.
+    // Stateless env-PIN mode only activates in local development/testing when DATABASE_URL is absent.
+    const allowLocalEnvFallback =
+      !config.databaseUrl &&
+      Boolean(config.isExplicitLocalDev) &&
+      typeof auth.canUseLocalEnvPinFallback === 'function' &&
+      auth.canUseLocalEnvPinFallback();
+
+    if (allowLocalEnvFallback) {
       const now = Date.now();
       const bucketKey = `${ip || 'unknown'}:${role || 'unknown'}`;
       const lockedRemaining = checkEnvLockout(bucketKey, now);

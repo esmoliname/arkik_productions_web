@@ -1,0 +1,31 @@
+# Excluir herramientas locales, entorno, documentación y scripts internos del bundle público de Vercel
+# (Vercel conserva package.json y package-lock.json para instalar @neondatabase/serverless en api/)
+
+.git
+.gitignore
+.atl
+.vscode
+.idea
+
+.env
+.env.*
+.env.local
+.vercel
+node_modules
+coverage
+backups
+
+db
+docs
+scripts
+test
+sdd
+
+README.md
+sdd-init-results.json
+update_script*.js
+*.log
+*.dump
+*.enc
+*.sha256
+*.tmp

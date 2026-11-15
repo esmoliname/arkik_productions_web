@@ -44,12 +44,16 @@ function readEnv(name, fallback) {
   return value === undefined || value === '' ? fallback : value;
 }
 
+function normalizeEnv(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 module.exports = {
   DEFAULTS,
   TIME_SLOTS,
 
   get databaseUrl() {
-    return readEnv('DATABASE_URL', '');
+    return String(readEnv('DATABASE_URL', '')).trim();
   },
 
   // Empty => same-origin only (frontend + API served from the same Vercel app).
@@ -61,10 +65,10 @@ module.exports = {
   },
 
   get sessionSecret() {
-    const value = readEnv('ADMIN_SESSION_SECRET', '');
-    if (!value) {
-      if (this.isProduction) {
-        const err = new Error('ADMIN_SESSION_SECRET no está configurado en producción.');
+    const value = String(readEnv('ADMIN_SESSION_SECRET', '')).trim();
+    if (!value || value === 'dev-secret-change-me') {
+      if (this.isProduction || this.isCloud) {
+        const err = new Error('ADMIN_SESSION_SECRET no está configurado en producción o cloud.');
         err.arkikApp = true;
         err.code = 'service_unavailable';
         err.status = 503;
@@ -75,8 +79,19 @@ module.exports = {
     return value;
   },
 
+  get vercelEnv() {
+    return normalizeEnv(readEnv('VERCEL_ENV', ''));
+  },
+
+  get isCloud() {
+    return String(readEnv('VERCEL', '')).trim() === '1' || Boolean(this.vercelEnv);
+  },
+
   get appEnv() {
-    return readEnv('APP_ENV', readEnv('NODE_ENV', 'development'));
+    const explicitAppEnv = normalizeEnv(readEnv('APP_ENV', ''));
+    if (explicitAppEnv) return explicitAppEnv;
+    if (this.vercelEnv) return this.vercelEnv;
+    return normalizeEnv(readEnv('NODE_ENV', 'development')) || 'development';
   },
 
   get seedMode() {
@@ -84,6 +99,19 @@ module.exports = {
   },
 
   get isProduction() {
-    return process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+    return (
+      normalizeEnv(readEnv('APP_ENV', '')) === 'production' ||
+      this.vercelEnv === 'production' ||
+      normalizeEnv(readEnv('NODE_ENV', '')) === 'production'
+    );
+  },
+
+  get isExplicitLocalDev() {
+    if (this.databaseUrl) return false;
+    if (this.isProduction || this.isCloud) return false;
+    return (
+      normalizeEnv(readEnv('APP_ENV', '')) === 'development' &&
+      normalizeEnv(readEnv('NODE_ENV', '')) !== 'production'
+    );
   }
 };

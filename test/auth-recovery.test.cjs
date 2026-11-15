@@ -734,7 +734,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
   });
 
   test('16-18: Cookie attributes dev vs prod, RBAC (Owner vs IT), and CORS enforcement', async () => {
-    await withEnv({ NODE_ENV: 'development', VERCEL_ENV: null }, async () => {
+    await withEnv({ NODE_ENV: 'development', APP_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, async () => {
       const devSet = auth.sessionCookie('abc');
       assert.match(devSet, /^arkik_session=abc;/);
       assert.match(devSet, /HttpOnly/);
@@ -1219,7 +1219,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     const bookingResched = require(path.join(__dirname, '..', 'api', 'bookings', '[code]', 'reschedule.js'));
 
     const secret = 'test-secret-0123456789abcdef';
-    await withEnv({ DATABASE_URL: null, ADMIN_SESSION_SECRET: secret, NODE_ENV: 'test' }, async () => {
+    await withEnv({ DATABASE_URL: null, ADMIN_SESSION_SECRET: secret, APP_ENV: 'development', NODE_ENV: 'test', VERCEL: null, VERCEL_ENV: null }, async () => {
       const itToken = auth.createStatelessToken('it', secret, 60000);
       const cookieHeader = `arkik_session=${encodeURIComponent(itToken)}`;
 
@@ -1258,7 +1258,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     });
 
     try {
-      await withEnv({ DATABASE_URL: null, ADMIN_SESSION_SECRET: secret, NODE_ENV: 'test' }, async () => {
+      await withEnv({ DATABASE_URL: null, ADMIN_SESSION_SECRET: secret, APP_ENV: 'development', NODE_ENV: 'test', VERCEL: null, VERCEL_ENV: null }, async () => {
         const token = auth.createStatelessToken('it', secret, 60000);
         const res = makeRes();
         await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: `arkik_session=${encodeURIComponent(token)}` } }), res);
@@ -1647,7 +1647,10 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       ADMIN_OWNER_PIN: 'dev-owner-555',
       ADMIN_IT_PIN: 'dev-it-555',
       ADMIN_SESSION_SECRET: 'dev-server-test-secret-0123456789',
-      NODE_ENV: 'development'
+      APP_ENV: 'development',
+      NODE_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null
     }, async () => {
       const rootRes = await runHttp('GET', '/');
       assert.equal(rootRes.status, 200);
@@ -1674,5 +1677,1008 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       const envBlocked = await runHttp('GET', '/.env.example');
       assert.equal(envBlocked.status, 404);
     });
+  });
+
+  test('31: Full 6-scenario auth matrix (A-F) guarantees exclusive PostgreSQL auth, persisted sessions, dashboard, RBAC, logout, & v1 rejection', async () => {
+    const secret = 'matrix-test-secret-0123456789abcdef';
+
+    function decodeToken(cookiePair) {
+      const idx = cookiePair.indexOf('=');
+      return decodeURIComponent(cookiePair.slice(idx + 1));
+    }
+
+    // Scenario A: DATABASE_URL absent & no env PINs -> login fails closed (503), protected routes 401
+    await withEnv({
+      DATABASE_URL: null,
+      ADMIN_OWNER_PIN: null,
+      ADMIN_IT_PIN: null,
+      ADMIN_PIN_OWNER: null,
+      ADMIN_PIN_IT: null,
+      ADMIN_SESSION_SECRET: secret,
+      NODE_ENV: 'development',
+      APP_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null
+    }, async () => {
+      const loginRes = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.201' }), loginRes);
+      assert.equal(loginRes.statusCode, 503);
+      assert.equal(loginRes.getHeader('set-cookie'), undefined);
+
+      const dashRes = makeRes();
+      await dashboardHandler(makeReq('GET', '/api/admin/dashboard'), dashRes);
+      assert.equal(dashRes.statusCode, 401);
+    });
+
+    // Scenario B: DATABASE_URL absent & env PIN configured
+    // B1: Local non-production mode allows stateless fallback & full cycle
+    await withEnv({
+      DATABASE_URL: null,
+      ADMIN_OWNER_PIN: 'local-owner-777',
+      ADMIN_IT_PIN: 'local-it-777',
+      ADMIN_PIN_OWNER: null,
+      ADMIN_PIN_IT: null,
+      ADMIN_SESSION_SECRET: secret,
+      NODE_ENV: 'development',
+      APP_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null
+    }, async () => {
+      const ownerLogin = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'local-owner-777' }, ip: '198.51.100.202' }), ownerLogin);
+      assert.equal(ownerLogin.statusCode, 200);
+      const ownerCookie = extractCookiePair(ownerLogin.getHeader('set-cookie'));
+      assert.ok(decodeToken(ownerCookie).startsWith('v1.'));
+
+      const sessionRes = makeRes();
+      await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: ownerCookie } }), sessionRes);
+      assert.equal(sessionRes.statusCode, 200);
+      assert.equal(sessionRes.body.data.role, 'owner');
+
+      const dashRes = makeRes();
+      await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: ownerCookie } }), dashRes);
+      assert.equal(dashRes.statusCode, 200);
+      assert.equal(dashRes.body.data.role, 'owner');
+
+      const itLogin = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'it', pin: 'local-it-777' }, ip: '198.51.100.203' }), itLogin);
+      assert.equal(itLogin.statusCode, 200);
+      const itCookie = extractCookiePair(itLogin.getHeader('set-cookie'));
+      const itRbac = makeRes();
+      await pricingAdminHandler(makeReq('PUT', '/api/admin/pricing', { headers: { cookie: itCookie }, body: {} }), itRbac);
+      assert.equal(itRbac.statusCode, 403);
+
+      const logoutRes = makeRes();
+      await logoutHandler(makeReq('POST', '/api/admin/logout', { headers: { cookie: ownerCookie } }), logoutRes);
+      assert.equal(logoutRes.statusCode, 200);
+      assert.match(String(logoutRes.getHeader('set-cookie') || ''), /Max-Age=0/);
+    });
+
+    // B2: Cloud / Production runtime with missing DATABASE_URL MUST fail closed even if env PINs exist
+    for (const cloudEnv of [
+      { APP_ENV: 'production', NODE_ENV: 'test', VERCEL: null, VERCEL_ENV: null },
+      { APP_ENV: 'preview', NODE_ENV: 'test', VERCEL: '1', VERCEL_ENV: 'preview' }
+    ]) {
+      await withEnv(Object.assign({
+        DATABASE_URL: null,
+        ADMIN_OWNER_PIN: 'local-owner-777',
+        ADMIN_IT_PIN: 'local-it-777',
+        ADMIN_SESSION_SECRET: secret
+      }, cloudEnv), async () => {
+        const res = makeRes();
+        await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'local-owner-777' }, ip: '198.51.100.204' }), res);
+        assert.equal(res.statusCode, 503, 'Cloud/Prod without DATABASE_URL must fail closed instead of issuing v1 tokens');
+        assert.equal(res.getHeader('set-cookie'), undefined);
+      });
+    }
+
+    // Scenarios C, D, E, F: DATABASE_URL configured -> PostgreSQL login exclusively
+    const matrixScenarios = [
+      {
+        label: 'C: DB configured, no env PINs',
+        env: { ADMIN_OWNER_PIN: null, ADMIN_IT_PIN: null, ADMIN_PIN_OWNER: null, ADMIN_PIN_IT: null },
+        stalePins: [],
+        ipBase: 210
+      },
+      {
+        label: 'D: DB configured + conflicting ADMIN_OWNER_PIN',
+        env: { ADMIN_OWNER_PIN: 'stale-owner-env', ADMIN_IT_PIN: null, ADMIN_PIN_OWNER: null, ADMIN_PIN_IT: null },
+        stalePins: [['owner', 'stale-owner-env']],
+        ipBase: 220
+      },
+      {
+        label: 'E: DB configured + conflicting ADMIN_IT_PIN',
+        env: { ADMIN_OWNER_PIN: null, ADMIN_IT_PIN: 'stale-it-env', ADMIN_PIN_OWNER: null, ADMIN_PIN_IT: null },
+        stalePins: [['it', 'stale-it-env']],
+        ipBase: 230
+      },
+      {
+        label: 'F: DB configured + BOTH conflicting ADMIN_OWNER_PIN & ADMIN_IT_PIN',
+        env: { ADMIN_OWNER_PIN: 'stale-owner-env', ADMIN_IT_PIN: 'stale-it-env', ADMIN_PIN_OWNER: null, ADMIN_PIN_IT: null },
+        stalePins: [['owner', 'stale-owner-env'], ['it', 'stale-it-env']],
+        ipBase: 240
+      }
+    ];
+
+    for (const sc of matrixScenarios) {
+      const ownerHash = auth.hashPin(OWNER_PIN);
+      const itHash = auth.hashPin(IT_PIN);
+      const { state, fakePool } = createInMemoryDb([
+        ['owner', { role: 'owner', pin_hash: ownerHash, failed_attempts: 0, lock_level: 0, locked_until: null }],
+        ['it', { role: 'it', pin_hash: itHash, failed_attempts: 0, lock_level: 0, locked_until: null }]
+      ]);
+
+      await withEnv(Object.assign({
+        DATABASE_URL: 'postgres://mock:mock@localhost:5432/arkik_matrix',
+        ADMIN_SESSION_SECRET: secret,
+        NODE_ENV: 'test',
+        APP_ENV: 'staging',
+        VERCEL: null,
+        VERCEL_ENV: null
+      }, sc.env), async () => {
+        db.setPoolFactoryForTests(() => fakePool);
+        try {
+          // Env PINs must NEVER authorize when DATABASE_URL is configured
+          for (let i = 0; i < sc.stalePins.length; i++) {
+            const [sRole, sPin] = sc.stalePins[i];
+            const badRes = makeRes();
+            await loginHandler(makeReq('POST', '/api/admin/login', {
+              body: { role: sRole, pin: sPin },
+              ip: `198.51.100.${sc.ipBase + 5 + i}`
+            }), badRes);
+            assert.equal(badRes.statusCode, 401, `${sc.label}: stale env PIN for ${sRole} must be rejected`);
+          }
+
+          // Owner DB login -> cookie -> persisted session -> session -> dashboard -> RBAC PUT 200 -> logout -> replay 401
+          const ownerLogin = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', {
+            body: { role: 'owner', pin: OWNER_PIN },
+            ip: `198.51.100.${sc.ipBase}`
+          }), ownerLogin);
+          assert.equal(ownerLogin.statusCode, 200, `${sc.label}: owner DB login must succeed`);
+          const ownerCookie = extractCookiePair(ownerLogin.getHeader('set-cookie'));
+          const ownerToken = decodeToken(ownerCookie);
+          assert.equal(ownerToken.startsWith('v1.'), false, `${sc.label}: must NOT issue v1 stateless token`);
+          assert.equal(state.sessions.size, 1, `${sc.label}: session must persist in admin_sessions`);
+          assert.ok(state.sessions.has(auth.hashToken(ownerToken)), `${sc.label}: hashed token stored in admin_sessions`);
+
+          const ownerSess = makeRes();
+          await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: ownerCookie } }), ownerSess);
+          assert.equal(ownerSess.statusCode, 200);
+          assert.equal(ownerSess.body.data.role, 'owner');
+
+          const ownerDash = makeRes();
+          await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: ownerCookie } }), ownerDash);
+          assert.equal(ownerDash.statusCode, 200);
+          assert.equal(ownerDash.body.data.role, 'owner');
+
+          const ownerPut = makeRes();
+          await pricingAdminHandler(makeReq('PUT', '/api/admin/pricing', {
+            headers: { cookie: ownerCookie },
+            body: { overrides: { services: { '1': 660000 }, extras: {} }, rates: { extraHourMultiplier: 0.5, travelSurchargeRate: 0.12 } }
+          }), ownerPut);
+          assert.equal(ownerPut.statusCode, 200);
+
+          const ownerLogout = makeRes();
+          await logoutHandler(makeReq('POST', '/api/admin/logout', { headers: { cookie: ownerCookie } }), ownerLogout);
+          assert.equal(ownerLogout.statusCode, 200);
+          assert.equal(state.sessions.size, 0, `${sc.label}: logout must delete admin_sessions row`);
+
+          const ownerReplay = makeRes();
+          await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: ownerCookie } }), ownerReplay);
+          assert.equal(ownerReplay.statusCode, 401, `${sc.label}: post-logout session replay must return 401`);
+
+          // IT DB login -> persisted session -> dashboard 200 -> RBAC 403 -> logout -> replay 401
+          const itLogin = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', {
+            body: { role: 'it', pin: IT_PIN },
+            ip: `198.51.100.${sc.ipBase + 1}`
+          }), itLogin);
+          assert.equal(itLogin.statusCode, 200, `${sc.label}: IT DB login must succeed`);
+          const itCookie = extractCookiePair(itLogin.getHeader('set-cookie'));
+          const itToken = decodeToken(itCookie);
+          assert.equal(itToken.startsWith('v1.'), false, `${sc.label}: IT must NOT receive v1 token`);
+          assert.equal(state.sessions.size, 1);
+
+          const itDash = makeRes();
+          await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: itCookie } }), itDash);
+          assert.equal(itDash.statusCode, 200);
+          assert.equal(itDash.body.data.role, 'it');
+
+          const itForbidden = makeRes();
+          await availabilityHandler(makeReq('PUT', '/api/availability', {
+            headers: { cookie: itCookie },
+            body: { date: '2027-06-15', state: 'disabled', reason: 'RBAC check' }
+          }), itForbidden);
+          assert.equal(itForbidden.statusCode, 403, `${sc.label}: IT RBAC must reject owner write with 403`);
+
+          const itLogout = makeRes();
+          await logoutHandler(makeReq('POST', '/api/admin/logout', { headers: { cookie: itCookie } }), itLogout);
+          assert.equal(itLogout.statusCode, 200);
+          assert.equal(state.sessions.size, 0);
+
+          const itReplay = makeRes();
+          await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: itCookie } }), itReplay);
+          assert.equal(itReplay.statusCode, 401);
+
+          // Validly signed v1 token MUST still be rejected when DATABASE_URL is configured
+          const v1Token = auth.createStatelessToken('owner', Date.now() + 60000);
+          const v1Cookie = `arkik_session=${encodeURIComponent(v1Token)}`;
+          const v1Dash = makeRes();
+          await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: v1Cookie } }), v1Dash);
+          assert.equal(v1Dash.statusCode, 401, `${sc.label}: v1 stateless token must be rejected when DB is active`);
+        } finally {
+          db.setPoolFactoryForTests(null);
+        }
+      });
+    }
+  });
+
+  test('32: Liveness (/api/health) stays DB-free 200 and Readiness (/api/ready) owns PostgreSQL checks, single SELECT 1, timeouts & secret isolation', async () => {
+    const healthHandler = load('api/health.js');
+    const readyHandler = load('api/ready.js');
+    const healthSrc = fs.readFileSync(path.join(REPO, 'api', 'health.js'), 'utf8');
+
+    // 1) api/health.js contains zero DB imports or SELECT 1 queries
+    assert.equal(healthSrc.includes('./_lib/db'), false, 'api/health.js must not import ./_lib/db');
+    assert.equal(healthSrc.includes('probeConnection'), false, 'api/health.js must not call probeConnection');
+    assert.equal(/SELECT\s+1/i.test(healthSrc), false, 'api/health.js must not contain SQL');
+
+    // 2) No DATABASE_URL -> /api/health returns 200 pure liveness (Cache-Control: no-store), /api/ready returns 503 unconfigured
+    await withEnv({ DATABASE_URL: null }, async () => {
+      const hRes = makeRes();
+      await healthHandler(makeReq('GET', '/api/health'), hRes);
+      assert.equal(hRes.statusCode, 200);
+      assert.equal(hRes.getHeader('cache-control'), 'no-store');
+      assert.equal(hRes.body.success, true);
+      assert.equal(hRes.body.service, 'arkik-api');
+      assert.equal(hRes.body.status, 'ok');
+      assert.equal(hRes.body.database, 'not_checked');
+
+      const hHead = makeRes();
+      await healthHandler(makeReq('HEAD', '/api/health'), hHead);
+      assert.equal(hHead.statusCode, 200);
+
+      const hPost = makeRes();
+      await healthHandler(makeReq('POST', '/api/health'), hPost);
+      assert.equal(hPost.statusCode, 405);
+
+      const rRes = makeRes();
+      await readyHandler(makeReq('GET', '/api/ready'), rRes);
+      assert.equal(rRes.statusCode, 503);
+      assert.equal(rRes.getHeader('cache-control'), 'no-store');
+      assert.equal(rRes.body.success, false);
+      assert.equal(rRes.body.ready, false);
+      assert.equal(rRes.body.database, 'unconfigured');
+    });
+
+    // 3-4) DATABASE_URL set + DB down -> /api/health STILL returns 200 with ZERO connect calls; /api/ready returns 503 without secret leak
+    await withEnv({ DATABASE_URL: 'postgres://user:supersecret@db.internal:5432/prod' }, async () => {
+      let connectAttemptsOnBroken = 0;
+      db.setPoolFactoryForTests(() => ({
+        async connect() {
+          connectAttemptsOnBroken += 1;
+          const err = new Error('connect ECONNREFUSED postgres://user:supersecret@db.internal:5432/prod');
+          err.code = 'ECONNREFUSED';
+          throw err;
+        }
+      }));
+      try {
+        const hRes = makeRes();
+        await healthHandler(makeReq('GET', '/api/health'), hRes);
+        assert.equal(hRes.statusCode, 200);
+        assert.equal(hRes.body.database, 'not_checked');
+        assert.equal(connectAttemptsOnBroken, 0, '/api/health must never connect to DB even when DATABASE_URL exists');
+
+        const rRes = makeRes();
+        await readyHandler(makeReq('GET', '/api/ready'), rRes);
+        assert.equal(rRes.statusCode, 503);
+        assert.equal(rRes.getHeader('cache-control'), 'no-store');
+        assert.equal(rRes.body.ready, false);
+        assert.equal(rRes.body.database, 'unavailable');
+        assert.equal(JSON.stringify(rRes.body).includes('supersecret'), false);
+        assert.equal(JSON.stringify(rRes.body).includes('ECONNREFUSED'), false);
+        assert.equal(connectAttemptsOnBroken, 1);
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+
+      // 5) Timeout in /api/ready discards hung client & recovers cleanly on next call (zero wedged max:1 pool)
+      let releaseErrs = [];
+      let callIndex = 0;
+      db.setPoolFactoryForTests(() => ({
+        async connect() {
+          callIndex += 1;
+          const current = callIndex;
+          return {
+            query(sql) {
+              if (current === 1) return new Promise(() => {}); // hung SELECT 1 on first probe
+              return Promise.resolve({ rows: [{ '?column?': 1 }], rowCount: 1, sql: String(sql) });
+            },
+            release(err) {
+              releaseErrs.push(err || null);
+            }
+          };
+        }
+      }));
+      try {
+        const hungProbe = await db.probeConnection(db, 25);
+        assert.deepEqual(hungProbe, { ok: false, database: 'unavailable' });
+        assert.equal(releaseErrs.length, 1);
+        assert.ok(releaseErrs[0], 'timed-out probe client must be discarded with release(err)');
+
+        const nextProbe = await db.probeConnection(db, 50);
+        assert.deepEqual(nextProbe, { ok: true, database: 'connected' });
+        assert.equal(releaseErrs.length, 2);
+        assert.equal(releaseErrs[1], null, 'healthy probe client releases cleanly');
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+
+      // 6-7) DATABASE_URL configured + simulated SELECT 1 succeeds -> /api/health zero SQL calls, /api/ready 200 with single SELECT 1
+      const queriesSeen = [];
+      const okPool = {
+        async connect() {
+          return {
+            async query(sql) {
+              queriesSeen.push(String(sql).trim());
+              return { rows: [{ '?column?': 1 }], rowCount: 1 };
+            },
+            release() {}
+          };
+        }
+      };
+      db.setPoolFactoryForTests(() => okPool);
+      try {
+        const hRes = makeRes();
+        await healthHandler(makeReq('GET', '/api/health'), hRes);
+        assert.equal(hRes.statusCode, 200);
+        assert.equal(hRes.body.database, 'not_checked');
+        assert.equal(queriesSeen.length, 0, '/api/health must execute zero SQL queries');
+
+        const rRes = makeRes();
+        await readyHandler(makeReq('GET', '/api/ready'), rRes);
+        assert.equal(rRes.statusCode, 200);
+        assert.equal(rRes.getHeader('cache-control'), 'no-store');
+        assert.equal(rRes.body.ready, true);
+        assert.equal(rRes.body.database, 'connected');
+        assert.deepEqual(queriesSeen, ['SELECT 1']);
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+    });
+  });
+
+  test('33: dev-server enforces 308 trailing-slash redirect on all 6 SPA routes without touching POST, /api/*, or 404s', async () => {
+    const devServer = require(path.join(__dirname, '..', 'scripts', 'dev-server.js'));
+    const { Readable, Writable } = require('stream');
+    const server = devServer.createDevServer();
+
+    function runHttp(method, urlPath) {
+      return new Promise((resolve) => {
+        const req = new Readable({ read() { this.push(null); } });
+        req.method = method;
+        req.url = urlPath;
+        req.headers = { host: '127.0.0.1:3000' };
+        req.socket = { remoteAddress: '127.0.0.1' };
+        const chunks = [];
+        const resHeaders = {};
+        const res = new Writable({
+          write(chunk, _enc, cb) { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); cb(); }
+        });
+        res.statusCode = 200;
+        res.headersSent = false;
+        res.setHeader = (k, v) => { resHeaders[String(k).toLowerCase()] = v; };
+        res.getHeader = (k) => resHeaders[String(k).toLowerCase()];
+        res.on('finish', () => {
+          resolve({ status: res.statusCode, headers: resHeaders, body: Buffer.concat(chunks).toString('utf8') });
+        });
+        server.emit('request', req, res);
+      });
+    }
+
+    for (const spaPath of ['/admin', '/panel', '/bookings', '/booking', '/reserva', '/reservas']) {
+      const slashRes = await runHttp('GET', `${spaPath}/`);
+      assert.equal(slashRes.status, 308, `${spaPath}/ must redirect 308`);
+      assert.equal(slashRes.headers.location, spaPath);
+
+      const queryRes = await runHttp('GET', `${spaPath}/?source=test&tab=1`);
+      assert.equal(queryRes.status, 308);
+      assert.equal(queryRes.headers.location, `${spaPath}?source=test&tab=1`);
+    }
+
+    const headAdmin = await runHttp('HEAD', '/admin');
+    assert.equal(headAdmin.status, 200);
+    assert.match(headAdmin.headers['content-type'], /text\/html/);
+    assert.equal(headAdmin.body.length, 0);
+
+    const postSlash = await runHttp('POST', '/admin/');
+    assert.equal(postSlash.status, 405);
+
+    const unknownSlash = await runHttp('GET', '/unknown-route/');
+    assert.equal(unknownSlash.status, 404);
+
+    await withEnv({ DATABASE_URL: null }, async () => {
+      const readyRes = await runHttp('GET', '/api/ready');
+      assert.equal(readyRes.status, 503);
+      assert.match(readyRes.headers['content-type'], /application\/json/);
+      assert.equal(JSON.parse(readyRes.body).database, 'unconfigured');
+    });
+  });
+
+  test('34: Pool timeouts, client release on success/SQL error/rollback-fail/query-timeout/connect-hang, & max:1 recovery (simulated pool; real PG cancellation needs live Neon)', async () => {
+    assert.deepEqual(db.DEFAULT_POOL_OPTIONS, {
+      max: 1,
+      connectionTimeoutMillis: 8000,
+      statement_timeout: 10000,
+      query_timeout: 12000,
+      idleTimeoutMillis: 10000
+    });
+    const poolCfg = db.getPoolConfig('postgres://user:pass@localhost:5432/test');
+    assert.equal(poolCfg.max, 1);
+    assert.equal(poolCfg.connectionTimeoutMillis, 8000);
+    assert.equal(poolCfg.statement_timeout, 10000);
+    assert.equal(poolCfg.query_timeout, 12000);
+    assert.equal(poolCfg.idleTimeoutMillis, 10000);
+
+    // Verify @neondatabase/serverless@0.10.4 instantiates with DEFAULT_POOL_OPTIONS without network call
+    const neonMod = await import('@neondatabase/serverless');
+    const NeonPool = neonMod.Pool || (neonMod.default && neonMod.default.Pool);
+    const instantiated = new NeonPool(poolCfg);
+    assert.equal(instantiated.options.max, 1);
+    assert.equal(instantiated.options.connectionTimeoutMillis, 8000);
+    assert.equal(instantiated.options.statement_timeout, 10000);
+    assert.equal(instantiated.options.query_timeout, 12000);
+    assert.equal(instantiated.options.idleTimeoutMillis, 10000);
+    await instantiated.end();
+
+    // Instrumented max:1 pool enforcing single active client slot
+    let inUse = 0;
+    let nextClientSeq = 0;
+    const clientRecords = [];
+    let connectDelayMs = 0;
+    let failRollback = false;
+    let hangQuery = false;
+
+    const instrumentedPool = {
+      async connect() {
+        const mySeq = ++nextClientSeq;
+        if (connectDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, connectDelayMs));
+        }
+        assert.equal(inUse, 0, `max:1 pool violation before client #${mySeq}`);
+        inUse += 1;
+        const rec = { id: mySeq, releases: [] };
+        clientRecords.push(rec);
+        return {
+          async query(sql) {
+            const text = typeof sql === 'string' ? sql : String(sql && sql.text ? sql.text : '');
+            if (hangQuery && text !== 'BEGIN' && text !== 'ROLLBACK') {
+              return new Promise(() => {});
+            }
+            if (failRollback && text === 'ROLLBACK') {
+              const err = new Error('rollback broken socket');
+              err.code = 'ECONNRESET';
+              throw err;
+            }
+            return { rows: [{ ok: true, sql: text }], rowCount: 1 };
+          },
+          release(err) {
+            assert.equal(rec.releases.length, 0, `client #${mySeq} released more than once`);
+            rec.releases.push(err || null);
+            inUse -= 1;
+          }
+        };
+      }
+    };
+
+    await withEnv({ DATABASE_URL: 'postgres://mock:mock@localhost:5432/pool_test' }, async () => {
+      db.setPoolFactoryForTests(() => instrumentedPool);
+      try {
+        // 1) Healthy query returns client cleanly (release() with no error)
+        const s0 = db.getStats();
+        const res1 = await db.withClient((c) => c.query('SELECT 1'));
+        assert.equal(res1.rows[0].ok, true);
+        assert.equal(inUse, 0);
+        assert.equal(clientRecords[0].releases.length, 1);
+        assert.equal(clientRecords[0].releases[0], null);
+        const s1 = db.getStats();
+        assert.equal(s1.used - s0.used, 1);
+        assert.equal(s1.closed - s0.closed, 1);
+        assert.equal(s1.discarded - s0.discarded, 0);
+
+        // 2) Normal SQL constraint error inside withTransaction runs ROLLBACK and returns healthy client cleanly
+        await assert.rejects(
+          () =>
+            db.withTransaction(async () => {
+              const dup = new Error('duplicate key');
+              dup.code = '23505';
+              throw dup;
+            }),
+          (err) => err && err.code === '23505'
+        );
+        assert.equal(inUse, 0);
+        assert.equal(clientRecords[1].releases[0], null);
+        assert.equal(db.getStats().discarded, s1.discarded);
+
+        // 3) ROLLBACK failure inside withTransaction discards broken client via release(err)
+        failRollback = true;
+        await assert.rejects(
+          () =>
+            db.withTransaction(async () => {
+              throw new Error('domain error triggering rollback');
+            }),
+          /domain error triggering rollback/
+        );
+        failRollback = false;
+        assert.equal(inUse, 0);
+        assert.equal(clientRecords[2].releases.length, 1);
+        assert.ok(clientRecords[2].releases[0], 'failed rollback must discard client with err');
+        assert.equal(db.getStats().discarded - s1.discarded, 1);
+
+        // 4) Query hang past bounded timeoutMs rejects cleanly, discards timed-out client, & unblocks max:1 immediately
+        hangQuery = true;
+        await assert.rejects(
+          () => db.withClient((c) => c.query('SELECT pg_sleep(60)'), { timeoutMs: 25 }),
+          (err) => err && err.code === 'query_timeout'
+        );
+        hangQuery = false;
+        assert.equal(inUse, 0, 'max:1 slot must be freed immediately after query timeout');
+        assert.equal(clientRecords[3].releases.length, 1);
+        assert.equal(clientRecords[3].releases[0].code, 'query_timeout');
+        assert.equal(db.getStats().discarded - s1.discarded, 2);
+
+        const recoveredAfterQueryTimeout = await db.withClient((c) => c.query('SELECT 42'));
+        assert.equal(recoveredAfterQueryTimeout.rows[0].ok, true);
+        assert.equal(inUse, 0);
+
+        // 5) Slow connect() exceeding connectTimeoutMs rejects early and discards late client upon resolution
+        connectDelayMs = 60;
+        await assert.rejects(
+          () => db.withClient((c) => c.query('SELECT 99'), { timeoutMs: 20 }),
+          (err) => err && err.code === 'connect_timeout'
+        );
+        // Wait for slow connect() to finish resolving in background, then confirm cleanup
+        await new Promise((r) => setTimeout(r, 80));
+        connectDelayMs = 0;
+        assert.equal(inUse, 0, 'late client arriving after connect_timeout must be released immediately');
+        const lateRec = clientRecords[5];
+        assert.equal(lateRec.releases.length, 1);
+        assert.equal(lateRec.releases[0].code, 'connect_timeout');
+
+        const recoveredAfterConnectTimeout = await db.withClient((c) => c.query('SELECT 100'));
+        assert.equal(recoveredAfterConnectTimeout.rows[0].ok, true);
+        assert.equal(inUse, 0);
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+    });
+  });
+
+  test('35: Complete 10-case Security & Env Auth Matrix (A-J) in isolated environments + 503 on missing/dev ADMIN_SESSION_SECRET in Prod & Cloud', async () => {
+    const secret = 'matrix10-test-secret-0123456789abcdef';
+
+    function decodeToken(cookiePair) {
+      const idx = cookiePair.indexOf('=');
+      return decodeURIComponent(cookiePair.slice(idx + 1));
+    }
+
+    // A) DATABASE_URL configured + valid DB -> PostgreSQL auth only; v1 tokens rejected 401
+    {
+      const ownerHash = auth.hashPin(OWNER_PIN);
+      const { state, fakePool } = createInMemoryDb([
+        ['owner', { role: 'owner', pin_hash: ownerHash, failed_attempts: 0, lock_level: 0, locked_until: null }]
+      ]);
+      await withEnv({
+        DATABASE_URL: 'postgres://mock:mock@localhost:5432/case_a',
+        ADMIN_SESSION_SECRET: secret,
+        ADMIN_OWNER_PIN: null,
+        ADMIN_IT_PIN: null,
+        APP_ENV: 'production',
+        NODE_ENV: 'production',
+        VERCEL: '1',
+        VERCEL_ENV: 'production'
+      }, async () => {
+        db.setPoolFactoryForTests(() => fakePool);
+        try {
+          assert.equal(config.isExplicitLocalDev, false);
+          assert.equal(auth.canUseLocalEnvPinFallback(), false);
+          const loginRes = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.11' }), loginRes);
+          assert.equal(loginRes.statusCode, 200);
+          const cookie = extractCookiePair(loginRes.getHeader('set-cookie'));
+          assert.match(cookie, /^__Host-session=/);
+          assert.equal(decodeToken(cookie).startsWith('v1.'), false);
+          assert.equal(state.sessions.size, 1);
+
+          const v1Tok = auth.createStatelessToken('owner', Date.now() + 60000);
+          const v1Res = makeRes();
+          await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: `arkik_session=${encodeURIComponent(v1Tok)}` } }), v1Res);
+          assert.equal(v1Res.statusCode, 401);
+        } finally {
+          db.setPoolFactoryForTests(null);
+        }
+      });
+    }
+
+    // B) DATABASE_URL configured + env PINs present + DB down -> NO stateless fallback (503) & v1 rejected 401
+    await withEnv({
+      DATABASE_URL: 'postgres://mock:mock@localhost:5432/case_b',
+      ADMIN_SESSION_SECRET: secret,
+      ADMIN_OWNER_PIN: 'fallback-should-not-work',
+      ADMIN_IT_PIN: 'fallback-it-no',
+      APP_ENV: 'development',
+      NODE_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null
+    }, async () => {
+      db.setPoolFactoryForTests(() => ({
+        async connect() {
+          const err = new Error('connect ECONNREFUSED');
+          err.code = 'ECONNREFUSED';
+          throw err;
+        }
+      }));
+      try {
+        assert.equal(auth.canUseLocalEnvPinFallback(), false);
+        const loginRes = makeRes();
+        await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'fallback-should-not-work' }, ip: '198.51.100.12' }), loginRes);
+        assert.equal(loginRes.statusCode, 503);
+        const v1Tok = auth.createStatelessToken('owner', Date.now() + 60000);
+        const v1Res = makeRes();
+        await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: `arkik_session=${encodeURIComponent(v1Tok)}` } }), v1Res);
+        assert.equal(v1Res.statusCode, 401);
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+    });
+
+    // C, D, E, F, G, H) Non-explicit-local-dev without DB MUST reject stateless fallback (503 login, 401 v1 replay)
+    const deniedNoDbCases = [
+      ['C: APP_ENV=production without DB', { APP_ENV: 'production', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, true],
+      ['D: VERCEL_ENV=preview without DB', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: 'preview' }, true],
+      ['E: VERCEL=1 without DB', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: '1', VERCEL_ENV: null }, true],
+      ['F: NODE_ENV=production without DB', { APP_ENV: 'development', NODE_ENV: 'production', VERCEL: null, VERCEL_ENV: null }, true],
+      ['G: APP_ENV=staging without DB', { APP_ENV: 'staging', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, false],
+      ['H: Implicit/empty env without DB', { APP_ENV: null, NODE_ENV: null, VERCEL: null, VERCEL_ENV: null }, false]
+    ];
+
+    for (const [label, envPatch, expectSecureCookie] of deniedNoDbCases) {
+      await withEnv(Object.assign({
+        DATABASE_URL: null,
+        ADMIN_OWNER_PIN: 'env-pin-owner-999',
+        ADMIN_IT_PIN: 'env-pin-it-999',
+        ADMIN_SESSION_SECRET: secret
+      }, envPatch), async () => {
+        assert.equal(config.isExplicitLocalDev, false, `${label}: isExplicitLocalDev must be false`);
+        assert.equal(auth.canUseLocalEnvPinFallback(), false, `${label}: canUseLocalEnvPinFallback must be false`);
+        assert.equal(/; Secure/.test(auth.sessionCookie('probe')), expectSecureCookie, `${label}: secure cookie mismatch`);
+
+        const loginRes = makeRes();
+        await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'env-pin-owner-999' }, ip: '198.51.100.50' }), loginRes);
+        assert.equal(loginRes.statusCode, 503, `${label}: login must fail closed with 503`);
+        assert.equal(loginRes.getHeader('set-cookie'), undefined);
+
+        const v1Tok = auth.createStatelessToken('owner', Date.now() + 60000);
+        const sessRes = makeRes();
+        await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie: `arkik_session=${encodeURIComponent(v1Tok)}` } }), sessRes);
+        assert.equal(sessRes.statusCode, 401, `${label}: v1 stateless token must be rejected 401`);
+      });
+    }
+
+    // I) Explicit APP_ENV=development without DB & zero cloud/prod flags -> stateless fallback works + RBAC + logout
+    await withEnv({
+      DATABASE_URL: null,
+      APP_ENV: 'development',
+      NODE_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null,
+      ADMIN_OWNER_PIN: 'local-owner-i',
+      ADMIN_IT_PIN: 'local-it-i',
+      ADMIN_SESSION_SECRET: secret
+    }, async () => {
+      assert.equal(config.isExplicitLocalDev, true);
+      assert.equal(auth.canUseLocalEnvPinFallback(), true);
+      assert.equal(/; Secure/.test(auth.sessionCookie('probe')), false);
+
+      const badRes = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'wrong-pin' }, ip: '198.51.100.60' }), badRes);
+      assert.equal(badRes.statusCode, 401);
+
+      const okRes = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'local-owner-i' }, ip: '198.51.100.61' }), okRes);
+      assert.equal(okRes.statusCode, 200);
+      const cookie = extractCookiePair(okRes.getHeader('set-cookie'));
+      assert.ok(decodeToken(cookie).startsWith('v1.'));
+
+      const sessRes = makeRes();
+      await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie } }), sessRes);
+      assert.equal(sessRes.statusCode, 200);
+      assert.equal(sessRes.body.data.role, 'owner');
+    });
+
+    // J) Missing OR dev placeholder ADMIN_SESSION_SECRET throws 503 in BOTH Production AND Cloud/Preview
+    const secretRequiredEnvs = [
+      ['APP_ENV=production', { APP_ENV: 'production', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }],
+      ['NODE_ENV=production', { APP_ENV: 'development', NODE_ENV: 'production', VERCEL: null, VERCEL_ENV: null }],
+      ['VERCEL_ENV=production', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: 'production' }],
+      ['VERCEL_ENV=preview', { APP_ENV: 'staging', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: 'preview' }],
+      ['VERCEL=1', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: '1', VERCEL_ENV: null }]
+    ];
+    for (const [label, envPatch] of secretRequiredEnvs) {
+      for (const badSecret of [null, '   ', 'dev-secret-change-me']) {
+        const ownerHash = auth.hashPin(OWNER_PIN);
+        const { fakePool } = createInMemoryDb([
+          ['owner', { role: 'owner', pin_hash: ownerHash, failed_attempts: 0, lock_level: 0, locked_until: null }]
+        ]);
+        await withEnv(Object.assign({
+          DATABASE_URL: 'postgres://mock:mock@localhost:5432/case_j',
+          ADMIN_SESSION_SECRET: badSecret
+        }, envPatch), async () => {
+          assert.throws(
+            () => config.sessionSecret,
+            (err) => err && err.status === 503 && err.code === 'service_unavailable',
+            `${label} with bad secret must throw 503`
+          );
+          db.setPoolFactoryForTests(() => fakePool);
+          try {
+            const loginRes = makeRes();
+            await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.70' }), loginRes);
+            assert.equal(loginRes.statusCode, 503, `${label}: login with DB session must return 503 when ADMIN_SESSION_SECRET missing`);
+          } finally {
+            db.setPoolFactoryForTests(null);
+          }
+        });
+      }
+    }
+  });
+
+  test('36: Frontend CloudSync eliminates idle public polling, throttles focus/visibility, refreshes on booking_open/manual, & manages admin timer lifecycle', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    const fetchCalls = [];
+    const scheduledTimers = new Map();
+    const pollSchedulesSeen = [];
+    let nextTimerId = 1;
+    const windowListeners = {};
+    const docListeners = {};
+    const openModals = new Set();
+
+    const makeFakeEl = (id) => {
+      const attrs = {};
+      return {
+        id,
+        disabled: false,
+        value: '',
+        textContent: '',
+        innerHTML: '',
+        style: {},
+        setAttribute: (k, v) => { attrs[k] = String(v); },
+        getAttribute: (k) => (k in attrs ? attrs[k] : null),
+        contains: () => false,
+        classList: {
+          add: () => {},
+          remove: () => {},
+          contains: (cls) => (cls === 'hidden' ? !openModals.has(id) : cls === 'flex' ? openModals.has(id) : false)
+        },
+        focus: () => {},
+        addEventListener: () => {},
+        querySelector: () => null,
+        querySelectorAll: () => []
+      };
+    };
+
+    const elements = new Map([
+      ['adminPortalModal', makeFakeEl('adminPortalModal')],
+      ['adminLoginModal', makeFakeEl('adminLoginModal')],
+      ['bookingModal', makeFakeEl('bookingModal')],
+      ['admin-manual-refresh', makeFakeEl('admin-manual-refresh')]
+    ]);
+
+    const fakeFetch = async (url) => {
+      fetchCalls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          success: true,
+          data: { blocked: {}, capacity: {}, bookings: [], overrides: { services: {}, extras: {} }, rates: {} }
+        })
+      };
+    };
+
+    const sandbox = {
+      console,
+      Promise,
+      JSON,
+      Date,
+      Math,
+      Object,
+      String,
+      Number,
+      Boolean,
+      Array,
+      Map,
+      Set,
+      RegExp,
+      Error,
+      TypeError,
+      encodeURIComponent,
+      decodeURIComponent,
+      AbortController,
+      setTimeout: (fn, ms) => {
+        const id = nextTimerId++;
+        const delay = Number(ms) || 0;
+        const entry = { id, delay, cleared: false };
+        scheduledTimers.set(id, entry);
+        if (delay >= 1000) {
+          pollSchedulesSeen.push(delay);
+        } else {
+          // Run sub-second boot/debounce timers smoothly without stalling
+          setImmediate(() => {
+            if (!entry.cleared) {
+              scheduledTimers.delete(id);
+              fn();
+            }
+          });
+        }
+        return id;
+      },
+      clearTimeout: (id) => {
+        const entry = scheduledTimers.get(id);
+        if (entry) entry.cleared = true;
+        scheduledTimers.delete(id);
+      },
+      setInterval: (fn, ms) => {
+        const id = nextTimerId++;
+        pollSchedulesSeen.push(Number(ms) || 0);
+        scheduledTimers.set(id, { id, delay: Number(ms) || 0, cleared: false, fn });
+        return id;
+      },
+      clearInterval: (id) => {
+        const entry = scheduledTimers.get(id);
+        if (entry) entry.cleared = true;
+        scheduledTimers.delete(id);
+      },
+      requestAnimationFrame: (fn) => setImmediate(fn),
+      fetch: fakeFetch,
+      localStorage: {
+        _m: new Map(),
+        getItem(k) { return this._m.has(k) ? this._m.get(k) : null; },
+        setItem(k, v) { this._m.set(k, String(v)); },
+        removeItem(k) { this._m.delete(k); }
+      },
+      sessionStorage: {
+        _m: new Map(),
+        getItem(k) { return this._m.has(k) ? this._m.get(k) : null; },
+        setItem(k, v) { this._m.set(k, String(v)); },
+        removeItem(k) { this._m.delete(k); }
+      },
+      location: { pathname: '/', hash: '', origin: 'http://127.0.0.1' },
+      navigator: { userAgent: 'node-test' },
+      scrollTo: () => {},
+      history: { replaceState: () => {} },
+      crypto: require('node:crypto').webcrypto,
+      addEventListener: (ev, fn) => {
+        (windowListeners[ev] = windowListeners[ev] || []).push(fn);
+      },
+      document: {
+        readyState: 'complete',
+        visibilityState: 'visible',
+        activeElement: null,
+        contains: () => false,
+        addEventListener: (ev, fn) => {
+          (docListeners[ev] = docListeners[ev] || []).push(fn);
+        },
+        getElementById: (id) => elements.get(id) || null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+      }
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+    vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+    vm.runInContext(
+      appSrc + '\nwindow.__TEST_CLOUDSYNC__ = { API_CONFIG, ADMIN_SESSION, CloudSync, AdminModule, ModalController, openBookingModal };',
+      sandbox,
+      { filename: 'js/app.js' }
+    );
+
+    const mod = sandbox.__TEST_CLOUDSYNC__;
+    // 1) Public API_CONFIG disables idle polling & sets 45s admin + 60s focus cooldown
+    assert.equal(mod.API_CONFIG.pollIntervalMs, 0);
+    assert.equal(mod.API_CONFIG.adminPollIntervalMs, 45000);
+    assert.equal(mod.API_CONFIG.focusCooldownMs, 60000);
+
+    // Prevent DOM rendering side-effects inside UI stubs during isolated VM checks
+    mod.CloudSync._refreshUI = () => {};
+    mod.AdminModule.startInactivityTimer = () => {};
+    mod.AdminModule.clearInactivityTimer = () => {};
+    mod.AdminModule.startIntegrityMonitor = () => {};
+    mod.AdminModule.clearIntegrityMonitor = () => {};
+    mod.AdminModule.renderDashboard = () => {};
+    sandbox.updateModalStep = () => {};
+    sandbox.resetBooking = () => {};
+    sandbox.showToast = () => {};
+    sandbox.trackModal = () => {};
+    const origOpen = mod.ModalController.open.bind(mod.ModalController);
+    const origClose = mod.ModalController.close.bind(mod.ModalController);
+    mod.ModalController.open = (id) => { openModals.add(id); return origOpen(id); };
+    mod.ModalController.close = (id) => { openModals.delete(id); return origClose(id); };
+    mod.ModalController.isOpen = (id) => openModals.has(id);
+
+    const isBackgroundPollDelay = (ms) => ms >= 1000 && ms !== mod.API_CONFIG.timeoutMs && ms < 3600000;
+
+    // 2) Public boot triggers single sync and schedules ZERO background polling timers
+    pollSchedulesSeen.length = 0;
+    mod.CloudSync.init();
+    await new Promise((r) => setTimeout(r, 25));
+    const bootCallCount = fetchCalls.length;
+    assert.equal(bootCallCount >= 1, true, 'boot should fetch initial availability');
+    assert.deepEqual(pollSchedulesSeen.filter(isBackgroundPollDelay), [], 'public idle view must schedule zero background polling timers');
+    assert.equal(mod.CloudSync._timer, null);
+
+    // 3) Focus + visibilitychange bursts inside 60s cooldown make ZERO extra requests
+    for (const fn of (windowListeners.focus || [])) fn();
+    for (const fn of (docListeners.visibilitychange || [])) fn();
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(fetchCalls.length, bootCallCount, 'focus/visibility within 60s cooldown must skip redundant requests');
+
+    // Backdating _lastSyncAt > 60s allows single visible refresh
+    mod.CloudSync._lastSyncAt = Date.now() - 61000;
+    for (const fn of (docListeners.visibilitychange || [])) fn();
+    await new Promise((r) => setTimeout(r, 25));
+    const afterCooldownCount = fetchCalls.length;
+    assert.equal(afterCooldownCount > bootCallCount, true, 'tab return after 60s cooldown must refresh availability');
+    assert.deepEqual(pollSchedulesSeen.filter(isBackgroundPollDelay), [], 'public focus/visibility return must still schedule zero background intervals');
+
+    // 4) Opening booking modal triggers immediate availability refresh ("booking_open")
+    mod.openBookingModal(1);
+    await new Promise((r) => setTimeout(r, 25));
+    const afterModalOpenCount = fetchCalls.length;
+    assert.equal(afterModalOpenCount > afterCooldownCount, true, 'openBookingModal must sync availability on demand');
+
+    // 5) Authenticated Admin portal opens -> runs 45000ms timer, pauses on hide, resumes on visible, supports manual refresh, & stops on close/logout
+    mod.ADMIN_SESSION.token = 'admin-session-marker';
+    mod.ADMIN_SESSION.role = 'owner';
+    mod.AdminModule.role = 'owner';
+    mod.AdminModule.openPortal();
+    await new Promise((r) => setTimeout(r, 25));
+    assert.ok(pollSchedulesSeen.includes(45000), 'admin portal open must schedule 45000ms admin timer');
+    assert.ok(mod.CloudSync._timer !== null, 'admin timer must be active while portal open and visible');
+
+    // Hiding tab stops active admin timer
+    sandbox.document.visibilityState = 'hidden';
+    for (const fn of (docListeners.visibilitychange || [])) fn();
+    assert.equal(mod.CloudSync._timer, null, 'admin timer must stop while tab is hidden');
+
+    // Returning tab restarts admin timer when portal still open & authenticated
+    sandbox.document.visibilityState = 'visible';
+    pollSchedulesSeen.length = 0;
+    for (const fn of (docListeners.visibilitychange || [])) fn();
+    await new Promise((r) => setTimeout(r, 15));
+    assert.ok(pollSchedulesSeen.includes(45000), 'admin timer restarts upon visible return while portal stays open');
+    assert.ok(mod.CloudSync._timer !== null);
+
+    // Manual refresh triggers immediate availability + admin bookings pull
+    const preManualCalls = fetchCalls.length;
+    const manualOk = await mod.AdminModule.refreshManual();
+    assert.equal(manualOk, true);
+    assert.equal(fetchCalls.length > preManualCalls, true);
+    assert.ok(fetchCalls.slice(preManualCalls).some((u) => u.includes('/api/bookings')), 'manual refresh must pull admin bookings');
+
+    // Closing portal / logging out clears admin timer permanently
+    mod.AdminModule.closePortal();
+    assert.equal(mod.CloudSync._timer, null, 'closing admin portal must stop admin timer');
+    assert.deepEqual(
+      Array.from(scheduledTimers.values()).filter((t) => !t.cleared && isBackgroundPollDelay(t.delay)),
+      [],
+      'no active background polling timers may remain after closePortal'
+    );
   });
 });

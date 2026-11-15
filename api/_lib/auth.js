@@ -88,7 +88,7 @@ function parseCookies(req) {
 }
 
 function isSecureCookieContext() {
-  return config.isProduction || process.env.VERCEL === '1' || process.env.VERCEL_ENV === 'preview';
+  return config.isProduction || config.isCloud;
 }
 
 function getSessionCookieName() {
@@ -114,16 +114,21 @@ function clearSessionCookie() {
 
 function getEnvPinForRole(role) {
   if (role === 'owner') {
-    return process.env.ADMIN_PIN_OWNER || process.env.ADMIN_OWNER_PIN || '';
+    return String(process.env.ADMIN_PIN_OWNER || process.env.ADMIN_OWNER_PIN || '').trim();
   }
   if (role === 'it') {
-    return process.env.ADMIN_PIN_IT || process.env.ADMIN_IT_PIN || '';
+    return String(process.env.ADMIN_PIN_IT || process.env.ADMIN_IT_PIN || '').trim();
   }
   return '';
 }
 
 function hasEnvPinsConfigured() {
   return Boolean(getEnvPinForRole('owner') || getEnvPinForRole('it'));
+}
+
+function canUseLocalEnvPinFallback() {
+  if (!config.isExplicitLocalDev) return false;
+  return hasEnvPinsConfigured();
 }
 
 function verifyEnvPin(role, pin) {
@@ -195,7 +200,7 @@ async function requireAdmin(req) {
   if (!token) throw appError('unauthorized', 'No autorizado.', 401);
 
   if (token.startsWith('v1.')) {
-    if (config.databaseUrl) {
+    if (!config.isExplicitLocalDev) {
       throw appError('unauthorized', 'No autorizado.', 401);
     }
     const stateless = verifyStatelessToken(token);
@@ -248,6 +253,7 @@ module.exports = {
   isValidScryptHash,
   verifyPin,
   hasEnvPinsConfigured,
+  canUseLocalEnvPinFallback,
   verifyEnvPin,
   createStatelessToken,
   verifyStatelessToken,

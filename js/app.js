@@ -2539,7 +2539,9 @@ const CloudSync = {
       pending: this._busy || this._queued,
       lastSyncAt: this._lastSyncAt ? new Date(this._lastSyncAt).toISOString() : null,
       lastError: this._lastError,
-      pollIntervalMs: Number(cfg.pollIntervalMs) || 5000
+      pollIntervalMs: Number.isFinite(Number(cfg.pollIntervalMs)) ? Number(cfg.pollIntervalMs) : 0,
+      adminPollIntervalMs: Number(cfg.adminPollIntervalMs) || 45000,
+      focusCooldownMs: Number(cfg.focusCooldownMs) || 60000
     };
   },
 
@@ -2577,7 +2579,7 @@ const CloudSync = {
     }, { passive: true });
 
     window.addEventListener("focus", function () {
-      self.refresh("focus").catch(function () { });
+      self._syncWithCooldown("focus").catch(function () { });
     }, { passive: true });
   },
 
@@ -2699,9 +2701,32 @@ const CloudSync = {
 
   _adminSessionActive() {
     if (typeof ADMIN_SESSION === "undefined" || !ADMIN_SESSION) return false;
-    if (ADMIN_SESSION.token && ADMIN_SESSION.role) return true;
-    if (typeof ModalController !== "undefined" && ModalController.isOpen && ModalController.isOpen("adminPortalModal")) return true;
+    return Boolean(ADMIN_SESSION.token && ADMIN_SESSION.role);
+  },
+
+  _adminPanelActive() {
+    if (!this._adminSessionActive()) return false;
+    if (typeof ModalController !== "undefined" && typeof ModalController.isOpen === "function") {
+      return Boolean(ModalController.isOpen("adminPortalModal"));
+    }
+    if (typeof document !== "undefined") {
+      const portal = document.getElementById("adminPortalModal");
+      return Boolean(portal && !portal.classList.contains("hidden"));
+    }
     return false;
+  },
+
+  _syncWithCooldown(reason) {
+    if (!this._enabled || this._busy) return Promise.resolve(false);
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return Promise.resolve(false);
+    }
+    const cfg = typeof API_CONFIG !== "undefined" && API_CONFIG ? API_CONFIG : {};
+    const cooldownMs = Math.max(10000, Number(cfg.focusCooldownMs) || 60000);
+    if (this._lastSyncAt && Date.now() - this._lastSyncAt < cooldownMs) {
+      return Promise.resolve(false);
+    }
+    return this.refresh(reason);
   },
 
   _windowAround(iso, days) {
@@ -2730,22 +2755,44 @@ const CloudSync = {
     const self = this;
     this._stopTimer();
 
+    if (!this._enabled) return;
+
     const getInterval = () => {
-      const adminActive = self._adminSessionActive();
-      if (adminActive) return Math.max(3000, Number(cfg.adminPollIntervalMs) || 3500);
-      return Math.max(4000, Number(cfg.pollIntervalMs) || 5000);
+      if (self._adminPanelActive()) {
+        return Math.max(30000, Math.min(60000, Number(cfg.adminPollIntervalMs) || 45000));
+      }
+      const publicPoll = Number(cfg.pollIntervalMs);
+      return Number.isFinite(publicPoll) && publicPoll > 0 ? Math.max(4000, publicPoll) : 0;
     };
 
+    if (getInterval() <= 0) return;
+
     const scheduleNext = () => {
+      const intervalMs = getInterval();
+      if (intervalMs <= 0) {
+        self._stopTimer();
+        return;
+      }
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        // Pause timer while hidden; _bindVisibility resumes on tab return.
+        self._stopTimer();
+        return;
+      }
       self._timer = setTimeout(() => {
-        if (typeof document !== "undefined" && document.visibilityState === "visible") {
-          self.sync("poll").finally(() => {
-            if (self._timer) scheduleNext();
-          });
-        } else {
-          scheduleNext();
+        const currentInterval = getInterval();
+        if (currentInterval <= 0 || !self._timer) {
+          self._stopTimer();
+          return;
         }
-      }, getInterval());
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+          self._stopTimer();
+          return;
+        }
+        self.sync("poll").finally(() => {
+          if (self._timer && getInterval() > 0) scheduleNext();
+          else self._stopTimer();
+        });
+      }, intervalMs);
     };
 
     scheduleNext();
@@ -2759,7 +2806,12 @@ const CloudSync = {
     if (typeof document === "undefined" || !document.addEventListener) return;
     const self = this;
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState === "visible") self.sync("visible").catch(function () { });
+      if (document.visibilityState === "visible") {
+        if (self._adminPanelActive()) self._startTimer();
+        self._syncWithCooldown("visible").catch(function () { });
+      } else {
+        self._stopTimer();
+      }
     }, { passive: true });
   },
 
@@ -4152,6 +4204,32 @@ const AdminModule = {
     this.startInactivityTimer();
     this.startIntegrityMonitor();
     this.renderDashboard();
+    if (typeof CloudSync !== "undefined") {
+      if (CloudSync.refresh) CloudSync.refresh("admin_open").catch(function () { });
+      if (CloudSync._startTimer) CloudSync._startTimer();
+    }
+  },
+
+  async refreshManual() {
+    const btn = document.getElementById("admin-manual-refresh");
+    if (btn) btn.disabled = true;
+    try {
+      const ok = typeof CloudSync !== "undefined" && CloudSync.refresh
+        ? await CloudSync.refresh("manual")
+        : true;
+      if (typeof this.renderDashboard === "function" && this.role) {
+        this.renderDashboard();
+      }
+      if (typeof showToast === "function") {
+        showToast(
+          ok ? "Datos actualizados desde el servidor." : "No se pudo conectar con el servidor; mostrando datos locales.",
+          ok ? "success" : "info"
+        );
+      }
+      return ok;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   },
 
   closePortal() {
@@ -4608,6 +4686,7 @@ const AdminModule = {
     // Logout en el servidor (fire-and-forget): borra la cookie HttpOnly.
     // Aunque la red falle, la sesión local ya se destruye aquí y el cookie
     // caducará por sí solo en el servidor.
+    if (typeof CloudSync !== "undefined" && CloudSync._stopTimer) CloudSync._stopTimer();
     if (apiEnabled()) ArkikApi.admin.logout().catch(function () { });
     this.clearInactivityTimer();
     this.clearIntegrityMonitor();
@@ -9745,10 +9824,8 @@ function initApp() {
   window.addEventListener("hashchange", handleHashRoute);
   handleHashRoute();
   // Remote-first boot: la primera pintura sale del caché local y, en paralelo,
-  // se revalidan precios, disponibilidad y (si hay sesión) reservas. Nada de
-  // esto bloquea el render ni tira una excepción si la API está caída.
+  // se revalidan precios y (si hay sesión) sesión/datos admin; CloudSync.init() ya ejecutó sync("boot").
   PriceManager.loadPublic().catch(function () { });
-  CloudSync.refresh("boot").catch(function () { });
   AdminModule.restoreSession().catch(function () { });
   // Motores Canvas 60 FPS aislados en viewport
   initHeroStringsEffect();
@@ -11100,6 +11177,7 @@ function generateSQLBackup(payload) {
   reader.onerror = () => showToast("Error al leer el archivo de respaldo.", "error");
   reader.readAsText(file);
 }
+*/
 
 // ============================================================
 // 14. EXECUTIVE & BRAND LIGHTBOXES
@@ -11369,6 +11447,10 @@ function openBookingModal(serviceId) {
   if (modal) {
     // Pre-mounted modal: deterministic reveal via ModalController
     ModalController.open(modal.id);
+  }
+
+  if (typeof CloudSync !== "undefined" && CloudSync.refresh) {
+    CloudSync.refresh("booking_open").catch(function () { });
   }
 
   showToast(`Formato seleccionado: ${cart.selectedService.name}`);
