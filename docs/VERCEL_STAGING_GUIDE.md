@@ -11,7 +11,7 @@ Configure separately for **Preview (Staging)** and **Production** (using distinc
 | Variable | Staging / Production Value | Notes |
 |---|---|---|
 | `DATABASE_URL` | Neon pooled Postgres connection string (`sslmode=require`) | Required for authoritative DB auth, sessions, audit log, rate limits, bookings |
-| `ADMIN_SESSION_SECRET` | `openssl rand -hex 32` (64+ hex chars) | **Mandatory in Production and Cloud/Preview** (`config.js` throws `503` if missing/placeholder when `isProduction` or `isCloud`: `APP_ENV=production`, `NODE_ENV=production`, `VERCEL=1`, or `VERCEL_ENV` set) |
+| `ADMIN_SESSION_SECRET` | `openssl rand -hex 32` (64+ hex chars) | **Mandatory in Staging, Preview, Production, Cloud, and whenever `DATABASE_URL` is configured** (`config.js` throws `503` if missing/placeholder when `!isExplicitLocalDev`; `'dev-secret-change-me'` fallback is restricted to explicit local `APP_ENV=development` without DB or cloud/staging/prod flags) |
 | `ADMIN_OWNER_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN | Used by `npm run db:migrate` to seed `admin_credentials` if missing; **never overwrites existing rows** |
 | `ADMIN_IT_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN | Distinct credential for `it` role |
 | `APP_ENV` | `staging` (Preview) / `production` (Prod) | Reflected in environment resolution; stateless fallback without `DATABASE_URL` requires explicit `APP_ENV=development` locally |

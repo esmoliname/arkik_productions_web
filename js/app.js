@@ -11166,19 +11166,6 @@ function generateSQLBackup(payload) {
   return L.join("\n");
 }
 
-/**
- * Persistencia en vivo de la suite IT: lee los inputs actuales de la matriz
- * y los guarda con recálculo global (catálogo + resumen) sin recargar.
-      showToast("Respaldo validado e importado. Base de datos restaurada.", "success");
-    } catch (err) {
-      showToast("Error: archivo de respaldo corrupto o incompatible.", "error");
-    }
-  };
-  reader.onerror = () => showToast("Error al leer el archivo de respaldo.", "error");
-  reader.readAsText(file);
-}
-*/
-
 // ============================================================
 // 14. EXECUTIVE & BRAND LIGHTBOXES
 // ============================================================

@@ -45,8 +45,8 @@ function verifyStaticInvariants() {
     throw new Error('api/admin/login.js must enforce !config.databaseUrl and explicit local dev guard');
   }
   const configSrc = fs.readFileSync(path.join(ROOT, 'api/_lib/config.js'), 'utf8');
-  if (!configSrc.includes('isExplicitLocalDev') || !configSrc.includes('isCloud')) {
-    throw new Error('api/_lib/config.js must enforce unified isExplicitLocalDev and isCloud secret guards');
+  if (!configSrc.includes('isExplicitLocalDev') || !configSrc.includes('isCloud') || !configSrc.includes('isStagingOrPreview')) {
+    throw new Error('api/_lib/config.js must enforce unified isExplicitLocalDev, isStagingOrPreview and isCloud secret guards');
   }
 
   const healthSrc = fs.readFileSync(path.join(ROOT, 'api/health.js'), 'utf8');
@@ -102,12 +102,14 @@ function main() {
   runStep('Security & RBAC static invariants', verifyStaticInvariants);
 
   const hasDb = Boolean((process.env.DATABASE_URL || '').trim());
-  const hasSecret = Boolean((process.env.ADMIN_SESSION_SECRET || '').trim());
+  const rawSecret = (process.env.ADMIN_SESSION_SECRET || '').trim();
+  const hasSecret = Boolean(rawSecret && rawSecret !== 'dev-secret-change-me');
+  const secretState = hasSecret ? 'SET' : (rawSecret === 'dev-secret-change-me' ? 'PLACEHOLDER' : 'UNSET');
   console.log(
-    `[predeploy] Environment snapshot: DATABASE_URL=${hasDb ? 'SET' : 'UNSET'}, ADMIN_SESSION_SECRET=${hasSecret ? 'SET' : 'UNSET'}`
+    `[predeploy] Environment snapshot: DATABASE_URL=${hasDb ? 'SET' : 'UNSET'}, ADMIN_SESSION_SECRET=${secretState}`
   );
   if (!hasDb || !hasSecret) {
-    console.log('[predeploy] NOTE: Configure DATABASE_URL and ADMIN_SESSION_SECRET in Vercel/local .env.local before live deployment.');
+    console.log('[predeploy] NOTE: Configure DATABASE_URL and a non-placeholder ADMIN_SESSION_SECRET in Vercel/local .env.local before live deployment.');
   }
   console.log('[predeploy] Local verification gate PASSED.');
 }

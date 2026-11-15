@@ -1,9 +1,9 @@
 # Arkik Productions — Production Readiness Report
 
-**Date:** 2026-11-13
+**Date:** 2026-11-13 *(reporte histórico P0.2; ver estado actual P0.3.2 en [P0_3_2_REMEDIATION_REPORT.md](./P0_3_2_REMEDIATION_REPORT.md))*
 **Branch:** main (working tree)
 **Node:** >=22 (engines.node)
-**Tests:** `npm test` → 6 suites, 0 failures
+**Tests (snapshot P0.2):** `npm test` → 6 suites iniciales, 0 failures *(suite ampliada luego con `test/auth-recovery.test.cjs` y `test/security.test.cjs`)*
 
 ## 1. Architecture found
 
@@ -59,7 +59,7 @@
   `GET/PUT /api/admin/pricing`, `GET /api/admin/audit`.
 - Availability: `GET /api/availability` (single date or `from`/`to` range),
   `PUT/DELETE /api/availability`.
-- System: `GET /api/health`, `GET /api/pricing`.
+- System: `GET /api/health` (liveness puro `200`), `GET /api/ready` (readiness PostgreSQL `200/503` añadido en P0.3.1), `GET /api/pricing`.
 
 ## 4. Database
 
@@ -111,7 +111,7 @@ Prerequisitos del propietario:
 4. Ejecutar `npm run db:seed:dev` solo si se desea (staging).
 
 Escenario a ejecutar (script a implementar cuando exista DB):
-- `GET /api/health` → `database: true`.
+- `GET /api/health` → `200` (`status: "ok"`, `database: "not_checked"`, liveness puro) y `GET /api/ready` → `200` (`ready: true`, `database: "connected"` vía `SELECT 1`, añadido en P0.3.1).
 - `POST /api/bookings` con payload válido + `X-Idempotency-Key` → 201 + booking.code.
 - Repetir con la misma key → 200 + mismo code (idempotencia).
 - `GET /api/bookings?...` con cookie admin → lista incluye el código.

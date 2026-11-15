@@ -98,7 +98,7 @@ Variables de entorno (nombres y propósito). **Nunca incluir valores reales.** U
 | `SEED_MODE` | `true` permite insertar datos demo (solo desarrollo local); `false` en producción. |
 | `ADMIN_OWNER_PIN` | PIN del rol Owner (solo server-side, nunca en código ni cliente). |
 | `ADMIN_IT_PIN` | PIN del rol IT (solo server-side). |
-| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en producción y cloud/preview (`503` si falta). |
+| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en `staging`, `preview`, `production`, cloud o con `DATABASE_URL` (`503` si falta). |
 | `ALLOWED_ORIGINS` | Orígenes permitidos para CORS (separados por coma). Vacío = same-origin únicamente. |
 | `PUBLIC_APP_URL` | URL pública de la app (para links/emails). |
 
@@ -155,7 +155,7 @@ Copiar `.env.example` a `.env.local` para desarrollo. Nunca commitear `.env` rea
 - **Sesiones:** Sesiones opacas persistidas en PostgreSQL (`admin_sessions`) con expiración deslizante (15 min) siempre que `DATABASE_URL` esté configurada; modo local stateless `v1.` únicamente con `APP_ENV=development` explícito, sin `DATABASE_URL` y sin flags cloud/producción. Cookies `HttpOnly`, `Secure` en Preview/Producción (`__Host-session`), `SameSite=Strict`.
 - **Roles:** `owner` e `it`, verificados en el servidor. Operaciones sensibles (precios, disponibilidad, gestión de reservas) reservadas al Owner.
 - **Protección de login:** Rate limiting por IP y por IP+rol (PostgreSQL `rate_limits`); backoff progresivo temporal; sin bloqueo global por rol para evitar DoS por terceros.
-- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en producción y en entornos cloud/preview (`VERCEL=1`, `VERCEL_ENV` o `isProduction`; responde `503` si falta o usa el valor por defecto dev). Ningún secreto en el frontend.
+- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en `staging`, `preview`, `production`, cloud (`VERCEL=1`, `VERCEL_ENV`) o cuando `DATABASE_URL` está configurada (responde `503` si falta o usa el valor por defecto dev; el fallback dev solo aplica con `APP_ENV=development` explícito sin DB). Ningún secreto en el frontend.
 - **CORS:** Same-origin por defecto; orígenes explícitos cuando se configuran. Preflight restringido.
 - **Logs:** Redacción automática de secretos, PINs, tokens, cookies y URLs de conexión.
 - **Auditoría:** Eventos de login, logout, cambios de estado, precios y disponibilidad.
@@ -172,10 +172,12 @@ npm test
 Suites existentes:
 
 - `test/api-client.test.cjs`: Cliente HTTP, idempotencia, rate limiting, manejo de errores.
-- `test/behavior.test.cjs`: Comportamiento de handlers (auth, métodos, DB caída).
+- `test/auth-recovery.test.cjs`: Recuperación de autenticación, RBAC, cookies, failover/readiness DB, matriz de entornos y `CloudSync`.
+- `test/behavior.test.cjs`: Comportamiento de handlers (auth, métodos, DB caída, probes `/api/health` y `/api/ready`).
 - `test/contract.test.cjs`: Contratos de availability range y pricing.
-- `test/load.test.cjs`: Carga de módulos y registro.
+- `test/load.test.cjs`: Carga de módulos de API y librerías (`api/_lib` y handlers).
 - `test/logic.test.cjs`: Lógica de negocio (precios, capacidad, transiciones, validación).
+- `test/security.test.cjs`: Higiene de secretos, redacción de logs y superficie cliente.
 
 No se eliminan pruebas para obtener resultados positivos.
 

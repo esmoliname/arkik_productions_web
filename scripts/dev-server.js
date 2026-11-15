@@ -246,15 +246,11 @@ if (require.main === module) {
     console.log(`[arkik dev] Full-stack local server listening on http://${host}:${port}`);
     console.log('[arkik dev] Static assets + /api/* Vercel handlers active.');
     if (!process.env.DATABASE_URL) {
-      const explicitDev = String(process.env.APP_ENV || '').trim().toLowerCase() === 'development';
-      const cloudOrProd =
-        process.env.VERCEL === '1' ||
-        Boolean(process.env.VERCEL_ENV) ||
-        String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-      if (explicitDev && !cloudOrProd) {
+      const config = require('../api/_lib/config');
+      if (config.isExplicitLocalDev) {
         console.log('[arkik dev] DATABASE_URL not set + APP_ENV=development: local stateless env-var fallback active (no DB persistence).');
       } else {
-        console.log('[arkik dev] DATABASE_URL not set and APP_ENV!=development: stateless fallback disabled (set DATABASE_URL or explicit APP_ENV=development in .env.local).');
+        console.log('[arkik dev] DATABASE_URL not set and not in explicit local dev: stateless fallback disabled (set DATABASE_URL or explicit APP_ENV=development in .env.local).');
       }
     }
   });

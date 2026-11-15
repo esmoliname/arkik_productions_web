@@ -1,6 +1,8 @@
 # Arkik Productions — Evaluación Final de Preparación para Producción (P0.2)
 
-**Estado:** CÓDIGO Y AUTOMATIZACIÓN LISTOS Y VALIDADOS EN LOCAL; **PENDIENTE DE EJECUCIÓN EN VIVO CONTRA NEON STAGING Y VERCEL PREVIEW**.
+> **Nota histórica (actualizada en P0.3.2):** Este documento refleja el cierre base P0.2. Desde P0.3.1/P0.3.2: `GET /api/health` es liveness puro (`200`, cero queries DB), la comprobación PostgreSQL `SELECT 1` (`200/503`) vive en `GET /api/ready`, `ADMIN_SESSION_SECRET` es obligatorio en `staging`/`preview`/`production`/cloud/`DATABASE_URL`, y la suite automatizada incluye escenarios P0.3.x en `test/auth-recovery.test.cjs`. Consulta [P0_3_2_REMEDIATION_REPORT.md](./P0_3_2_REMEDIATION_REPORT.md) para el estado actual.
+
+**Estado (snapshot P0.2):** CÓDIGO Y AUTOMATIZACIÓN LISTOS Y VALIDADOS EN LOCAL; **PENDIENTE DE EJECUCIÓN EN VIVO CONTRA NEON STAGING Y VERCEL PREVIEW**.
 
 ## Matriz Consolidada de Resultados (`PASS | FAIL | BLOCKED | NOT VERIFIED`)
 

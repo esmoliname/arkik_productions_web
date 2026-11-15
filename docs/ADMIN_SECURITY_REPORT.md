@@ -1,12 +1,13 @@
 # Arkik Productions — Reporte Final de Seguridad Administrativa & RBAC (P0.2)
 
-> Consolida la auditoría completa de endpoints de escritura, cookies, rate limiting, CORS, validación de entrada y logs (véase [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)).
+> Consolida la auditoría completa de endpoints de escritura, cookies, rate limiting, CORS, validación de entrada y logs (véase [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)). *(Actualizado en P0.3.2 para reflejar la separación `/api/health` liveness vs `/api/ready` readiness incorporada en P0.3.1.)*
 
 ## 1. Matriz Completa RBAC en Servidor (Task 4)
 
 | Operación / Endpoint | Método | Anónimo | Rol `it` | Rol `owner` | Mecanismo Servidor |
 |---|---|---|---|---|---|
-| Salud pública `/api/health` | `GET` | `200 / 503` | `200 / 503` | `200 / 503` | Sin secretos |
+| Liveness pública `/api/health` | `GET` | `200` | `200` | `200` | Liveness puro sin secretos ni SQL |
+| Readiness PostgreSQL `/api/ready` | `GET` | `200 / 503` | `200 / 503` | `200 / 503` | Probe único `SELECT 1` sin secretos |
 | Precios públicos `/api/pricing` | `GET` | `200` | `200` | `200` | Solo lectura |
 | Disponibilidad `/api/availability` | `GET` | `200` | `200` | `200` | Solo lectura |
 | Crear reserva `/api/bookings` | `POST` | `201 / 200` | `201 / 200` | `201 / 200` | Rate limit + idempotencia + cálculo CRC en servidor |

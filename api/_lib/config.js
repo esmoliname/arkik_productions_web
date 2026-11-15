@@ -67,8 +67,10 @@ module.exports = {
   get sessionSecret() {
     const value = String(readEnv('ADMIN_SESSION_SECRET', '')).trim();
     if (!value || value === 'dev-secret-change-me') {
-      if (this.isProduction || this.isCloud) {
-        const err = new Error('ADMIN_SESSION_SECRET no está configurado en producción o cloud.');
+      if (!this.isExplicitLocalDev) {
+        const err = new Error(
+          'ADMIN_SESSION_SECRET no está configurado (obligatorio en staging, preview, production, cloud o con DATABASE_URL).'
+        );
         err.arkikApp = true;
         err.code = 'service_unavailable';
         err.status = 503;
@@ -98,6 +100,18 @@ module.exports = {
     return /^true$/i.test(readEnv('SEED_MODE', 'false'));
   },
 
+  get isStagingOrPreview() {
+    const explicitAppEnv = normalizeEnv(readEnv('APP_ENV', ''));
+    const nodeEnv = normalizeEnv(readEnv('NODE_ENV', ''));
+    return (
+      explicitAppEnv === 'staging' ||
+      explicitAppEnv === 'preview' ||
+      this.vercelEnv === 'preview' ||
+      nodeEnv === 'staging' ||
+      nodeEnv === 'preview'
+    );
+  },
+
   get isProduction() {
     return (
       normalizeEnv(readEnv('APP_ENV', '')) === 'production' ||
@@ -108,7 +122,7 @@ module.exports = {
 
   get isExplicitLocalDev() {
     if (this.databaseUrl) return false;
-    if (this.isProduction || this.isCloud) return false;
+    if (this.isProduction || this.isCloud || this.isStagingOrPreview) return false;
     return (
       normalizeEnv(readEnv('APP_ENV', '')) === 'development' &&
       normalizeEnv(readEnv('NODE_ENV', '')) !== 'production'

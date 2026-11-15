@@ -2,6 +2,12 @@
 // Behavior harness for the Arkik API handlers (run from the repo root, no DB).
 delete process.env.DATABASE_URL;
 delete process.env.SEED_MODE;
+delete process.env.APP_ENV;
+delete process.env.ADMIN_OWNER_PIN;
+delete process.env.ADMIN_IT_PIN;
+delete process.env.ADMIN_SESSION_SECRET;
+delete process.env.VERCEL;
+delete process.env.VERCEL_ENV;
 
 const path = require('path');
 

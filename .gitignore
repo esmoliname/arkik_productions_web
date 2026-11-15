@@ -10,11 +10,15 @@ Thumbs.db
 # Dependencias
 node_modules/
 
-# Entornos — NUNCA committear secretos
+# Entornos — NUNCA committear secretos (mantener .env.example rastreado)
 .env
 .env.local
 .env.*.local
+.env.development
+.env.staging
+.env.preview
 .env.production
+!.env.example
 
 # Vercel
 .vercel

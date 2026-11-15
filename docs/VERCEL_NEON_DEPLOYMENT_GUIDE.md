@@ -7,7 +7,7 @@
 | Variable | Obligatoria | Propósito | Notas de Seguridad |
 |---|---|---|---|
 | `DATABASE_URL` | Sí | Pool TLS hacia Neon PostgreSQL | Debe usar SSL (`?sslmode=require`); jamás exponer en cliente. |
-| `ADMIN_SESSION_SECRET` | Sí (Prod y Preview/Cloud) | Firma HMAC-SHA256 de tokens y hash de sesiones | Mínimo 32 bytes aleatorios. Si falta en producción o cloud (`VERCEL=1` / `VERCEL_ENV`), la API responde `503`. |
+| `ADMIN_SESSION_SECRET` | Sí (Staging, Preview, Prod, Cloud y cualquier entorno con `DATABASE_URL`) | Firma HMAC-SHA256 de tokens y hash de sesiones | Mínimo 32 bytes aleatorios. Si falta o usa `'dev-secret-change-me'` fuera de `APP_ENV=development` explícito sin DB, la API responde `503`. |
 | `ADMIN_OWNER_PIN` | Sí (bootstrap) | PIN o hash `scrypt$` inicial del rol `owner` | Mínimo 6+ caracteres; puede almacenarse ya hasheado con `npm run admin:hash`. |
 | `ADMIN_IT_PIN` | Sí (bootstrap) | PIN o hash `scrypt$` inicial del rol `it` | Acepta caracteres alfanuméricos y símbolos sin ser mutilados. |
 | `ALLOWED_ORIGINS` | Condicional | Lista separada por comas para CORS | Vacío => estrictamente Same-Origin (recomendado). |

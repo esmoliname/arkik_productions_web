@@ -2082,6 +2082,11 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.equal(slashRes.status, 308, `${spaPath}/ must redirect 308`);
       assert.equal(slashRes.headers.location, spaPath);
 
+      const headSlashRes = await runHttp('HEAD', `${spaPath}/`);
+      assert.equal(headSlashRes.status, 308, `HEAD ${spaPath}/ must redirect 308`);
+      assert.equal(headSlashRes.headers.location, spaPath);
+      assert.equal(headSlashRes.body.length, 0);
+
       const queryRes = await runHttp('GET', `${spaPath}/?source=test&tab=1`);
       assert.equal(queryRes.status, 308);
       assert.equal(queryRes.headers.location, `${spaPath}?source=test&tab=1`);
@@ -2395,6 +2400,23 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie } }), sessRes);
       assert.equal(sessRes.statusCode, 200);
       assert.equal(sessRes.body.data.role, 'owner');
+
+      const itLoginRes = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'it', pin: 'local-it-i' }, ip: '198.51.100.62' }), itLoginRes);
+      assert.equal(itLoginRes.statusCode, 200);
+      const itCookie = extractCookiePair(itLoginRes.getHeader('set-cookie'));
+
+      const rbacRes = makeRes();
+      await pricingAdminHandler(makeReq('PUT', '/api/admin/pricing', {
+        headers: { cookie: itCookie },
+        body: { services: {}, extras: {} }
+      }), rbacRes);
+      assert.equal(rbacRes.statusCode, 403, 'IT role on stateless local fallback must still receive 403 on Owner write routes');
+
+      const logoutRes = makeRes();
+      await logoutHandler(makeReq('POST', '/api/admin/logout', { headers: { cookie: itCookie } }), logoutRes);
+      assert.equal(logoutRes.statusCode, 200);
+      assert.match(logoutRes.getHeader('set-cookie'), /Max-Age=0/);
     });
 
     // J) Missing OR dev placeholder ADMIN_SESSION_SECRET throws 503 in BOTH Production AND Cloud/Preview
@@ -2680,5 +2702,143 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       [],
       'no active background polling timers may remain after closePortal'
     );
+  });
+
+  test('37: Strict ADMIN_SESSION_SECRET enforcement for APP_ENV=staging/preview, Cloud/Prod & DATABASE_URL; dev fallback restricted strictly to explicit local dev without DB', async () => {
+    const respond = load('api/_lib/respond.js');
+    const badSecrets = [null, '   ', 'dev-secret-change-me'];
+
+    // A) Without DATABASE_URL: staging, preview, cloud, production, and implicit env must ALL reject missing/default secret with 503
+    const strictEnvsNoDb = [
+      ['APP_ENV=staging', { APP_ENV: 'staging', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, true],
+      ['APP_ENV=preview', { APP_ENV: 'preview', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, true],
+      ['NODE_ENV=staging override', { APP_ENV: 'development', NODE_ENV: 'staging', VERCEL: null, VERCEL_ENV: null }, true],
+      ['NODE_ENV=preview override', { APP_ENV: 'development', NODE_ENV: 'preview', VERCEL: null, VERCEL_ENV: null }, true],
+      ['VERCEL_ENV=preview', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: 'preview' }, true],
+      ['VERCEL=1', { APP_ENV: 'development', NODE_ENV: 'development', VERCEL: '1', VERCEL_ENV: null }, false],
+      ['APP_ENV=production', { APP_ENV: 'production', NODE_ENV: 'development', VERCEL: null, VERCEL_ENV: null }, false],
+      ['NODE_ENV=production', { APP_ENV: 'development', NODE_ENV: 'production', VERCEL: null, VERCEL_ENV: null }, false],
+      ['Implicit empty env', { APP_ENV: null, NODE_ENV: null, VERCEL: null, VERCEL_ENV: null }, false]
+    ];
+
+    for (const [label, envPatch, expectStagingOrPreview] of strictEnvsNoDb) {
+      for (const badSecret of badSecrets) {
+        await withEnv(Object.assign({
+          DATABASE_URL: null,
+          ADMIN_SESSION_SECRET: badSecret,
+          ADMIN_OWNER_PIN: 'pin-check-37',
+          ADMIN_IT_PIN: null
+        }, envPatch), async () => {
+          assert.equal(config.isExplicitLocalDev, false, `${label}: must never be isExplicitLocalDev`);
+          assert.equal(config.isStagingOrPreview, expectStagingOrPreview, `${label}: unexpected isStagingOrPreview`);
+          let captured;
+          assert.throws(
+            () => config.sessionSecret,
+            (err) => {
+              captured = err;
+              return err && err.status === 503 && err.code === 'service_unavailable';
+            },
+            `${label} with bad secret must throw 503`
+          );
+          const errRes = makeRes();
+          respond.handleError(errRes, captured);
+          assert.equal(errRes.statusCode, 503);
+          assert.equal(errRes.body.error.code, 'service_unavailable');
+
+          const loginRes = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'pin-check-37' }, ip: '198.51.100.80' }), loginRes);
+          assert.equal(loginRes.statusCode, 503, `${label}: login must fail closed with 503`);
+        });
+      }
+    }
+
+    // B) Even explicit APP_ENV=development MUST throw 503 if DATABASE_URL is configured and ADMIN_SESSION_SECRET is missing/default
+    for (const badSecret of badSecrets) {
+      const ownerHash = auth.hashPin(OWNER_PIN);
+      const { fakePool } = createInMemoryDb([
+        ['owner', { role: 'owner', pin_hash: ownerHash, failed_attempts: 0, lock_level: 0, locked_until: null }]
+      ]);
+      await withEnv({
+        DATABASE_URL: 'postgres://mock:mock@localhost:5432/m01_db_dev',
+        APP_ENV: 'development',
+        NODE_ENV: 'development',
+        VERCEL: null,
+        VERCEL_ENV: null,
+        ADMIN_SESSION_SECRET: badSecret
+      }, async () => {
+        assert.equal(config.isExplicitLocalDev, false);
+        assert.throws(
+          () => config.sessionSecret,
+          (err) => err && err.status === 503 && err.code === 'service_unavailable'
+        );
+        db.setPoolFactoryForTests(() => fakePool);
+        try {
+          const loginRes = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.81' }), loginRes);
+          assert.equal(loginRes.statusCode, 503, 'DATABASE_URL active with missing/default secret must fail closed 503');
+        } finally {
+          db.setPoolFactoryForTests(null);
+        }
+      });
+    }
+
+    // C) Exclusive dev fallback: explicit APP_ENV=development + zero DB + zero cloud/prod/staging flags still allows dev fallback
+    await withEnv({
+      DATABASE_URL: null,
+      APP_ENV: 'development',
+      NODE_ENV: 'development',
+      VERCEL: null,
+      VERCEL_ENV: null,
+      ADMIN_SESSION_SECRET: null,
+      ADMIN_OWNER_PIN: 'explicit-local-dev-pin',
+      ADMIN_IT_PIN: null
+    }, async () => {
+      assert.equal(config.isExplicitLocalDev, true);
+      assert.equal(config.isStagingOrPreview, false);
+      assert.equal(config.sessionSecret, 'dev-secret-change-me');
+
+      const loginRes = makeRes();
+      await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'explicit-local-dev-pin' }, ip: '198.51.100.82' }), loginRes);
+      assert.equal(loginRes.statusCode, 200);
+      const cookie = extractCookiePair(loginRes.getHeader('set-cookie'));
+
+      const sessRes = makeRes();
+      await sessionHandler(makeReq('GET', '/api/admin/session', { headers: { cookie } }), sessRes);
+      assert.equal(sessRes.statusCode, 200);
+      assert.equal(sessRes.body.data.role, 'owner');
+    });
+
+    // D) Staging/Preview with explicit ADMIN_SESSION_SECRET + DATABASE_URL authenticates properly against PostgreSQL
+    for (const stagingEnv of ['staging', 'preview']) {
+      const ownerHash = auth.hashPin(OWNER_PIN);
+      const { state, fakePool } = createInMemoryDb([
+        ['owner', { role: 'owner', pin_hash: ownerHash, failed_attempts: 0, lock_level: 0, locked_until: null }]
+      ]);
+      await withEnv({
+        DATABASE_URL: 'postgres://mock:mock@localhost:5432/m01_staging_ok',
+        APP_ENV: stagingEnv,
+        NODE_ENV: 'development',
+        VERCEL: null,
+        VERCEL_ENV: stagingEnv === 'preview' ? 'preview' : null,
+        ADMIN_SESSION_SECRET: 'explicit-staging-preview-secret-0123456789abcdef',
+        ADMIN_OWNER_PIN: 'ignored-when-db-active',
+        ADMIN_IT_PIN: null
+      }, async () => {
+        assert.equal(config.isStagingOrPreview, true);
+        assert.equal(config.isExplicitLocalDev, false);
+        assert.equal(config.sessionSecret, 'explicit-staging-preview-secret-0123456789abcdef');
+        db.setPoolFactoryForTests(() => fakePool);
+        try {
+          const loginRes = makeRes();
+          await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.83' }), loginRes);
+          assert.equal(loginRes.statusCode, 200);
+          const cookie = extractCookiePair(loginRes.getHeader('set-cookie'));
+          assert.equal(decodeURIComponent(cookie.split('=')[1]).startsWith('v1.'), false);
+          assert.equal(state.sessions.size, 1);
+        } finally {
+          db.setPoolFactoryForTests(null);
+        }
+      });
+    }
   });
 });

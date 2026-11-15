@@ -7,11 +7,13 @@
 
 ---
 
-## A. Estado del Proyecto
+> **Nota histórica P0.3.2:** Instantánea de cierre de P0.2 (`a6f9904`). En P0.3.1+ `/api/health` pasó a liveness puro (`200`, sin queries SQL) y el probe `SELECT 1` (`200/503`) se aisló en `/api/ready`; en P0.3.2 `ADMIN_SESSION_SECRET` se exige también en `APP_ENV=staging`, `APP_ENV=preview` y cualquier entorno con `DATABASE_URL` o fuera de desarrollo local explícito. Ver [P0_3_2_REMEDIATION_REPORT.md](./P0_3_2_REMEDIATION_REPORT.md).
 
-- **Arquitectura Actual:** SPA estática (`index.html`, `css/styles.css`, `js/{data,api,app}.js`) servida junto con API serverless Vercel (`api/**/*.js`) respaldada por PostgreSQL en Neon (`db/migrations/001`–`003`) y servidor local full-stack (`scripts/dev-server.js`).
+## A. Estado del Proyecto (P0.2)
+
+- **Arquitectura Actual (P0.2 -> P0.3.x):** SPA estática (`index.html`, `css/styles.css`, `js/{data,api,app}.js`) servida junto con API serverless Vercel (`api/**/*.js`) respaldada por PostgreSQL en Neon (`db/migrations/001`–`003`) y servidor local full-stack (`scripts/dev-server.js`).
 - **Frontend:** Endurecido en `js/app.js` e `index.html` (pin normalization sin `\D` stripping, detección explícita de `static_server_html` sin sumar intentos, retención de `#adminLoginModal` mientras `loadProtectedAdminData` valida `/api/admin/dashboard`, restauración de lockout countdown al reabrir, hidratación de `auditEvents` reales en Consola IT Tab 04, y `#login-website-trap` con atributos anti-autofill). Auditoría estática DOM: 255 IDs únicos, 0 duplicados, 6 refs locales válidas, 0 `<img>` sin `alt`.
-- **Backend:** Handlers bajo `api/` con envelope JSON consistente, timeout health check, CORS estricto same-origin por defecto (`ALLOWED_ORIGINS`) y errores mapeados limpiamente (`503 service_unavailable` también si falta `ADMIN_SESSION_SECRET` en producción en `api/_lib/config.js`).
+- **Backend:** Handlers bajo `api/` con envelope JSON consistente, liveness puro `/api/health` + readiness `/api/ready` (`SELECT 1`), CORS estricto same-origin por defecto (`ALLOWED_ORIGINS`) y errores mapeados limpiamente (`503 service_unavailable` si falta `ADMIN_SESSION_SECRET` en producción, staging, preview, cloud o con `DATABASE_URL`).
 - **Autenticación:** `scrypt` (`N=16384`), sesiones HMAC-SHA256 almacenadas como hash en `admin_sessions` (TTL deslizante 15 min), cookie `__Host-session` (`HttpOnly; Secure; SameSite=Strict; Path=/`) cuando `isProduction || VERCEL === '1' || VERCEL_ENV === 'preview'` y `arkik_session` en HTTP local; rechazo estricto de tokens `v1.` siempre que exista `DATABASE_URL`; CLI segura `db/manage-admin-pins.js` (`verify`, `rotate --confirm`, `hash`) con transacción/rollback, validación previa a DB y sin impresión ni argumentos CLI de secretos.
 - **RBAC:** `auth.requireAdmin` para lecturas administrativas (`GET`) y `auth.requireOwner` obligatorio para todas las escrituras administrativas (`PUT /api/admin/pricing`, `PUT`/`DELETE /api/availability`, `PATCH /api/bookings/[code]`, `/status`, `/reschedule`). Rol `it` recibe `403`.
 - **PostgreSQL / Neon:** Migraciones `001_initial_schema.sql`, `002_indexes.sql` y `003_config_seed.sql` revisadas; `db/migrate.js` conserva `ON CONFLICT DO NOTHING` sin sobrescribir credenciales existentes y advierte `CORRUPTED_HASH`/`MISMATCH` sin filtrar secretos. Aún no ejecutado contra Neon real en este entorno.
