@@ -22,7 +22,10 @@ function sanitizeRole(rawRole) {
 
 function sanitizePin(rawPin) {
   if (rawPin === null || rawPin === undefined) return '';
-  return String(rawPin).trim().slice(0, 64);
+  const s = String(rawPin).trim();
+  // Reject excessive input instead of silently truncating.
+  if (s.length > 64) return '';
+  return s;
 }
 
 function checkEnvLockout(bucketKey, now) {

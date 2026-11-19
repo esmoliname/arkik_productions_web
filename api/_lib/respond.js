@@ -6,6 +6,7 @@
 
 const { log } = require('./log');
 const db = require('./db');
+const { readEnv: readEnvFromContext } = require('./env-context');
 
 function ok(res, data, status) {
   return res.status(status || 200).json({ success: true, data });
@@ -39,10 +40,28 @@ function serviceUnavailable(res) {
   return fail(res, 'service_unavailable', 'Servicio no disponible, intente de nuevo.', 503);
 }
 
+function dependencyTimeout(res) {
+  return fail(res, 'dependency_timeout', 'Tiempo de espera agotado al consultar la base de datos.', 504);
+}
+
+function resourceBusy(res) {
+  return fail(res, 'resource_busy', 'Recurso temporalmente ocupado, intente de nuevo.', 409);
+}
+
 function safeMessage(err) {
   if (!err) return 'unknown error';
   const message = err.message ? String(err.message) : String(err);
-  return message.replace(/postgres(ql)?:\/\/\S+/gi, '[redacted]');
+  return message
+    .replace(/postgres(ql)?:\/\/\S+/gi, '[redacted]')
+    .replace(/scrypt\$\S+/gi, '[redacted-hash]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/(__Host-session|arkik_session)=[^;\s"']+/gi, '$1=[redacted]')
+    .replace(/\bv1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[redacted-token]')
+    .replace(/data:[^\s,"']*;base64,[^\s,"']*/gi, '[redacted-voucher]')
+    .replace(
+      /\b(admin_?(?:owner|it)?_?pin|admin_?session_?secret|new_?password|password|session_?token)\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1$2[redacted]'
+    );
 }
 
 // Single error funnel used by every handler.
@@ -68,11 +87,18 @@ function handleError(res, err, logger) {
     write('ERROR', 'invalid json body');
     return fail(res, 'invalid_json', 'Cuerpo JSON inválido.', 400);
   }
-  const unavailable = db.isDbUnavailable(err);
-  write('ERROR', `${(err && err.code) || 'unhandled'} ${safeMessage(err)}`, {
-    kind: unavailable ? 'db_unavailable' : 'internal'
-  });
-  if (unavailable) {
+  const kind =
+    typeof db.classifyDbError === 'function'
+      ? db.classifyDbError(err)
+      : (db.isDbUnavailable(err) ? 'db_unavailable' : 'internal');
+  write('ERROR', `${(err && err.code) || 'unhandled'} ${safeMessage(err)}`, { kind });
+  if (kind === 'resource_busy') {
+    return resourceBusy(res);
+  }
+  if (kind === 'dependency_timeout') {
+    return dependencyTimeout(res);
+  }
+  if (kind === 'db_unavailable') {
     return serviceUnavailable(res);
   }
   return fail(res, 'internal_error', 'Error interno del servidor.', 500);
@@ -113,13 +139,24 @@ function parseJson(raw) {
 // In any other context, fall back to the socket address so a client cannot
 // spoof its IP to evade per-IP throttling.
 function clientIp(req) {
+  // Cloudflare: cf-connecting-ip is set by the edge and is trustworthy.
+  const cfIp = req && req.headers ? req.headers['cf-connecting-ip'] : null;
+  const isCloudflare =
+    (req && req.__trustedProxy === 'cloudflare') ||
+    readEnvFromContext('CLOUDFLARE', '') === '1' ||
+    readEnvFromContext('CF_PAGES', '') === '1';
+  if (isCloudflare && typeof cfIp === 'string' && cfIp.trim()) {
+    return cfIp.trim();
+  }
+
   const isTrustedProxy =
-    process.env.VERCEL === '1' ||
-    process.env.VERCEL_ENV === 'production' ||
-    process.env.VERCEL_ENV === 'preview' ||
-    process.env.NODE_ENV === 'production';
+    readEnvFromContext('VERCEL', '') === '1' ||
+    readEnvFromContext('VERCEL_ENV', '') === 'production' ||
+    readEnvFromContext('VERCEL_ENV', '') === 'preview' ||
+    readEnvFromContext('TRUST_PROXY', '') === 'true';
   if (isTrustedProxy) {
-    const forwarded = req && req.headers ? req.headers['x-forwarded-for'] : null;
+    const vercelForwarded = req && req.headers ? req.headers['x-vercel-forwarded-for'] : null;
+    const forwarded = vercelForwarded || (req && req.headers ? req.headers['x-forwarded-for'] : null);
     if (typeof forwarded === 'string' && forwarded.trim()) {
       return forwarded.split(',')[0].trim();
     }
@@ -140,6 +177,8 @@ module.exports = {
   validationError,
   handleError,
   serviceUnavailable,
+  dependencyTimeout,
+  resourceBusy,
   readBody,
   clientIp
 };

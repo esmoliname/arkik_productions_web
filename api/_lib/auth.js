@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const registry = require('./registry');
 const config = require('./config');
+const { readEnv: readEnvFromContext } = require('./env-context');
 const { appError } = require('./respond');
 
 const COOKIE_NAME = 'arkik_session';
@@ -82,13 +83,36 @@ function parseCookies(req) {
     if (index < 0) continue;
     const name = part.slice(0, index).trim();
     if (!name) continue;
-    jar[name] = decodeURIComponent(part.slice(index + 1).trim());
+    const rawValue = part.slice(index + 1).trim();
+    try {
+      jar[name] = decodeURIComponent(rawValue);
+    } catch (_uriErr) {
+      // Malformed percent-encoding must never turn into a 500 Internal Server Error.
+      jar[name] = rawValue;
+    }
   }
   return jar;
 }
 
 function isSecureCookieContext() {
-  return config.isProduction || config.isCloud;
+  // Secure cookies are mandatory on HTTPS contexts. Vercel/cloud and production
+  // are always HTTPS. Staging/preview outside Vercel only gets Secure when the
+  // operator explicitly opts in via SECURE_COOKIES=1 (the deployment must
+  // actually terminate TLS).
+  return config.isProduction || config.isCloud || (config.isStagingOrPreview && config.forceSecureCookies);
+}
+
+// Fail-closed guard: staging/preview outside Vercel MUST NOT emit an insecure
+// session cookie when SECURE_COOKIES is absent or disabled.
+function assertSecureCookieAllowed() {
+  const stagingOutsideVercel = config.isStagingOrPreview && !config.isCloud && !config.isProduction;
+  if (stagingOutsideVercel && !config.forceSecureCookies) {
+    const err = new Error('SECURE_COOKIES must be enabled (1) for staging/preview outside Vercel to issue session cookies.');
+    err.arkikApp = true;
+    err.code = 'service_unavailable';
+    err.status = 503;
+    throw err;
+  }
 }
 
 function getSessionCookieName() {
@@ -101,6 +125,7 @@ function getSessionToken(req) {
 }
 
 function sessionCookie(token) {
+  assertSecureCookieAllowed();
   const name = getSessionCookieName();
   const secure = isSecureCookieContext() ? ' Secure;' : '';
   return `${name}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=900`;
@@ -114,10 +139,10 @@ function clearSessionCookie() {
 
 function getEnvPinForRole(role) {
   if (role === 'owner') {
-    return String(process.env.ADMIN_PIN_OWNER || process.env.ADMIN_OWNER_PIN || '').trim();
+    return String(readEnvFromContext('ADMIN_OWNER_PIN', readEnvFromContext('ADMIN_PIN_OWNER', '')) || '').trim();
   }
   if (role === 'it') {
-    return String(process.env.ADMIN_PIN_IT || process.env.ADMIN_IT_PIN || '').trim();
+    return String(readEnvFromContext('ADMIN_IT_PIN', readEnvFromContext('ADMIN_PIN_IT', '')) || '').trim();
   }
   return '';
 }
@@ -195,7 +220,7 @@ function verifyStatelessToken(token) {
  * Throws appError('unauthorized', 401) when missing/expired; otherwise returns
  * {role, expiresAt} and slides the expiry (max once per minute).
  */
-async function requireAdmin(req) {
+async function requireAdmin(req, res) {
   const token = getSessionToken(req);
   if (!token) throw appError('unauthorized', 'No autorizado.', 401);
 
@@ -212,7 +237,7 @@ async function requireAdmin(req) {
   const db = registry.get('db');
   const repo = registry.get('repo');
 
-  const session = await db.withClient(async (client) => {
+  const outcome = await db.withClient(async (client) => {
     const row = await repo.getSession(client, tokenHash);
     if (!row) return null;
 
@@ -225,21 +250,24 @@ async function requireAdmin(req) {
       const nextExpiry = new Date(now + SESSION_TTL_MS);
       const updated = await repo.touchSession(client, tokenHash, nextExpiry, new Date(now));
       const effective = updated && updated.expires_at ? new Date(updated.expires_at) : nextExpiry;
-      return { role: row.role, expiresAt: effective.toISOString() };
+      return { session: { role: row.role, expiresAt: effective.toISOString() }, refreshed: true };
     }
-    return { role: row.role, expiresAt: new Date(expires).toISOString() };
+    return { session: { role: row.role, expiresAt: new Date(expires).toISOString() }, refreshed: false };
   });
 
-  if (!session) throw appError('unauthorized', 'No autorizado.', 401);
-  return session;
+  if (!outcome) throw appError('unauthorized', 'No autorizado.', 401);
+  if (outcome.refreshed && res && typeof res.setHeader === 'function' && !res.headersSent) {
+    res.setHeader('Set-Cookie', sessionCookie(token));
+  }
+  return outcome.session;
 }
 
 /**
  * Like requireAdmin but additionally requires role === 'owner'.
  * Throws appError('forbidden', 403) for non-owner roles.
  */
-async function requireOwner(req) {
-  const session = await requireAdmin(req);
+async function requireOwner(req, res) {
+  const session = await requireAdmin(req, res);
   if (session.role !== 'owner') {
     throw appError('forbidden', 'Operaci\u00f3n reservada al propietario.', 403);
   }
@@ -263,6 +291,8 @@ module.exports = {
   getSessionToken,
   sessionCookie,
   clearSessionCookie,
+  isSecureCookieContext,
+  assertSecureCookieAllowed,
   requireAdmin,
   requireOwner
 };

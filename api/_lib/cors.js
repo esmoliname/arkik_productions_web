@@ -53,8 +53,8 @@ function withCors(handler) {
 
     try {
       return await handler(req, res);
-    } catch (err) {
-      log('ERROR', `unhandled ${(err && err.name) || 'error'} in ${req.method} ${pathOf(req)}`);
+     } catch (err) {
+       log('ERROR', `unhandled ${(err && err.name) || 'error'} in ${req.method} ${pathOf(req)}`);
       if (!res.headersSent) {
         res.status(500).json({
           success: false,

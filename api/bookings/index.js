@@ -13,9 +13,10 @@ async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const auth = registry.get('auth');
-      await auth.requireAdmin(req);
+      await auth.requireAdmin(req, res);
       const service = registry.get('service');
       const data = await service.listBookings(req.query || {});
+      res.setHeader('Cache-Control', 'private, no-store');
       return respond.ok(res, data);
     }
 

@@ -13,7 +13,7 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    await auth.requireOwner(req);
+    await auth.requireOwner(req, res);
 
     const body = await respond.readBody(req);
     const service = registry.get('service');

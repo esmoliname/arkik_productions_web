@@ -13,10 +13,11 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    await auth.requireAdmin(req);
+    await auth.requireAdmin(req, res);
 
     const service = registry.get('service');
     const data = await service.getStats();
+    res.setHeader('Cache-Control', 'private, no-store');
     return respond.ok(res, data);
   } catch (err) {
     return respond.handleError(res, err, registry.get('log'));

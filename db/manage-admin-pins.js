@@ -7,6 +7,8 @@
 //   node db/manage-admin-pins.js hash --from-env NEW_OWNER_PIN
 //
 // Security invariants:
+// - Uses DIRECT_ADMIN_DATABASE_URL strictly (least-privilege arkik_admin direct connection,
+//   never runtime DATABASE_URL and no fallback to DIRECT_DATABASE_URL).
 // - Never prints raw PINs or stored scrypt hashes.
 // - Never reads plaintext PINs from command-line arguments (prevents shell/process leaks).
 // - Rotation requires explicit --confirm and runs in a single transaction that
@@ -14,7 +16,7 @@
 //   writes an ADMIN_CREDENTIAL_ROTATED record to audit_log.
 
 const fs = require('fs');
-const { loadEnvFiles } = require('./migrate');
+const { loadEnvFiles, safeError, createDirectPool } = require('./_lib/direct-db');
 const auth = require('../api/_lib/auth');
 
 const ROLE_ENV_CANDIDATES = {
@@ -145,8 +147,8 @@ function normalizeAndValidateSecretInput(rawInput) {
     }
     return { pinHash: value, isPreHashed: true };
   }
-  if (value.length < 4 || value.length > 64) {
-    throw new Error('PIN length must be between 4 and 64 characters.');
+  if (value.length < 6 || value.length > 64) {
+    throw new Error('PIN length must be between 6 and 64 characters.');
   }
   return { pinHash: null, plaintext: value, isPreHashed: false };
 }
@@ -174,6 +176,9 @@ async function rotateAdminPin(pool, options = {}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query(
+      'SET LOCAL lock_timeout = 3000; SET LOCAL statement_timeout = 10000; SET LOCAL idle_in_transaction_session_timeout = 15000;'
+    );
     const upsertRes = await client.query(
       `INSERT INTO admin_credentials (role, pin_hash, failed_attempts, lock_level, locked_until, updated_at)
        VALUES ($1, $2, 0, 0, NULL, NOW())
@@ -251,13 +256,11 @@ function readSecretFromEnvOrStdin(flags, role, env = process.env) {
   throw new Error('No PIN provided. Pass --from-env <ENV_VAR>, set ADMIN_OWNER_PIN/ADMIN_IT_PIN, or pipe via stdin.');
 }
 
-async function createPool() {
-  const dbUrl = String(process.env.DATABASE_URL || '').trim();
-  if (!dbUrl) {
-    throw new Error('DATABASE_URL is not configured (set it in environment or .env.local).');
-  }
-  const { Pool } = require('@neondatabase/serverless');
-  return new Pool({ connectionString: dbUrl });
+async function createPool(options = {}) {
+  const { pool } = await createDirectPool(
+    Object.assign({ queryTimeoutMs: 15000 }, options, { envVarName: 'DIRECT_ADMIN_DATABASE_URL' })
+  );
+  return pool;
 }
 
 function printHelp() {
@@ -338,13 +341,11 @@ async function main() {
 }
 
 function sanitizeErrorMessage(err) {
-  const raw = err && err.message ? String(err.message) : String(err);
-  return raw
-    .replace(/postgres(ql)?:\/\/\S+/gi, '[redacted-db-url]')
-    .replace(/scrypt\$\S+/gi, '[redacted-hash]');
+  return safeError(err);
 }
 
 module.exports = {
+  createPool,
   verifyAdminPins,
   rotateAdminPin,
   generateScryptHash,

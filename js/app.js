@@ -2956,7 +2956,10 @@ const SecurityModule = {
    */
   normalizePin(pin) {
     if (pin === null || pin === undefined) return "";
-    return String(pin).trim().slice(0, 64);
+    const s = String(pin).trim();
+    // Reject excessive input instead of silently truncating.
+    if (s.length > 64) return "";
+    return s;
   },
 
   /**

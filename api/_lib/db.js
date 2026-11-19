@@ -13,15 +13,21 @@ let driverQueryClass = null;
 let driverClientClass = null;
 
 // Serverless pool & bounded timeouts (verified supported by @neondatabase/serverless@0.10.4).
+// Note: Neon -pooler discards startup statement_timeout, so withTransaction/withReadTransaction
+// enforce statement_timeout (8s), lock_timeout (3s) and idle_in_transaction_session_timeout (10s,
+// inactivity limit inside an open transaction — not total operation duration) via SET LOCAL,
+// strictly ordered: lock_timeout (3s) < statement_timeout (8s) < idle_in_tx (10s) < client query_timeout (11s) < op timeout (12s).
 const DEFAULT_POOL_OPTIONS = Object.freeze({
   max: 1,
   connectionTimeoutMillis: 8000,
-  statement_timeout: 10000,
-  query_timeout: 12000,
+  statement_timeout: 8000,
+  query_timeout: 11000,
   idleTimeoutMillis: 10000
 });
 
-const DEFAULT_OPERATION_TIMEOUT_MS = 15000;
+const DEFAULT_OPERATION_TIMEOUT_MS = 12000;
+const TRANSACTION_SET_LOCAL_SQL =
+  'SET LOCAL statement_timeout = 8000; SET LOCAL lock_timeout = 3000; SET LOCAL idle_in_transaction_session_timeout = 10000;';
 
 const stats = { connect: 0, used: 0, closed: 0, discarded: 0 };
 
@@ -51,6 +57,9 @@ function buildPoolConfig(connectionString) {
 function shouldDiscardClient(err) {
   if (!err) return false;
   const code = String(err.code || '');
+  if (code === '57014' || code === '55P03') {
+    return false;
+  }
   if (
     code === 'probe_timeout' ||
     code === 'query_timeout' ||
@@ -77,6 +86,15 @@ async function createPool() {
   const url = config.databaseUrl;
   if (!url) {
     throw unavailable('no_database', 'DATABASE_URL is not configured');
+  }
+  try {
+    const parsed = new URL(url);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    if (host.endsWith('.neon.tech') && !/(^|[.-])pooler(\.|$)/i.test(host)) {
+      log('DATABASE', 'warning: DATABASE_URL points to a non-pooler Neon host; runtime should use -pooler');
+    }
+  } catch (_parseErr) {
+    // Allow invalid/mock URLs to reach driver error handling without altering test behavior
   }
   try {
     const mod = await import('@neondatabase/serverless');
@@ -224,7 +242,9 @@ async function executeWithManagedClient(fn, options = {}) {
   const timeoutPromise = new Promise((_, reject) => {
     timer = setTimeout(() => {
       aborted = true;
-      const timeoutErr = unavailable('query_timeout', `database operation timeout after ${totalTimeoutMs}ms`);
+      const timeoutErr = new Error(`database operation timeout after ${totalTimeoutMs}ms`);
+      timeoutErr.code = 'query_timeout';
+      timeoutErr.kind = 'dependency_timeout';
       capturedErr = timeoutErr;
       forceDiscard = true;
       releaseOnce(timeoutErr);
@@ -253,13 +273,14 @@ async function withClient(fn, options) {
   return executeWithManagedClient((client, ctx) => fn(client, ctx), options);
 }
 
-// Run fn(client) inside BEGIN/COMMIT with ROLLBACK on any throw.
-async function withTransaction(fn, options) {
+// Run fn(client) inside an explicit transaction with server-side SET LOCAL timeouts.
+async function runTransactionBlock(beginSql, fn, options) {
   return executeWithManagedClient(async (client, ctx) => {
     let begun = false;
     try {
-      await client.query('BEGIN');
+      await client.query(beginSql);
       begun = true;
+      await client.query(TRANSACTION_SET_LOCAL_SQL);
       const result = await fn(client, ctx);
       await client.query('COMMIT');
       return result;
@@ -280,6 +301,16 @@ async function withTransaction(fn, options) {
   }, options);
 }
 
+// Run fn(client) inside BEGIN/COMMIT with ROLLBACK on any throw.
+async function withTransaction(fn, options) {
+  return runTransactionBlock('BEGIN', fn, options);
+}
+
+// Run read-only queries inside BEGIN READ ONLY with bounded SET LOCAL timeouts.
+async function withReadTransaction(fn, options) {
+  return runTransactionBlock('BEGIN READ ONLY', fn, options);
+}
+
 const CONNECTION_ERRNO = [
   'ECONNREFUSED',
   'ECONNRESET',
@@ -292,10 +323,24 @@ const CONNECTION_ERRNO = [
   'UND_ERR_HEADERS_TIMEOUT'
 ];
 
+function isResourceBusy(err) {
+  return Boolean(err) && String(err.code || '') === '55P03';
+}
+
+function isDependencyTimeout(err) {
+  if (!err) return false;
+  if (err.kind === 'dependency_timeout') return true;
+  const code = String(err.code || '');
+  if (code === '57014' || code === 'query_timeout') return true;
+  const message = String(err.message || '');
+  return /Query read timeout/i.test(message);
+}
+
 // True when the failure means "the database cannot be reached", which maps to
 // HTTP 503 instead of 500.
 function isDbUnavailable(err) {
   if (!err) return false;
+  if (isResourceBusy(err) || isDependencyTimeout(err)) return false;
   if (err.kind === 'db_unavailable') return true;
   const code = err.code;
   if (typeof code === 'string') {
@@ -311,6 +356,13 @@ function isDbUnavailable(err) {
   return false;
 }
 
+function classifyDbError(err) {
+  if (isResourceBusy(err)) return 'resource_busy';
+  if (isDependencyTimeout(err)) return 'dependency_timeout';
+  if (isDbUnavailable(err)) return 'db_unavailable';
+  return 'internal';
+}
+
 function isUniqueViolation(err) {
   return Boolean(err) && err.code === '23505';
 }
@@ -321,10 +373,9 @@ function getStats() {
 
 function buildProbeQuery(client, remainingMs) {
   if (driverQueryClass && driverClientClass && client instanceof driverClientClass) {
-    return new driverQueryClass({
-      text: 'SELECT 1',
-      query_timeout: Math.max(100, Number(remainingMs) || 4000)
-    });
+    const query = new driverQueryClass({ text: 'SELECT 1' });
+    query.query_timeout = Math.max(100, Number(remainingMs) || 4000);
+    return query;
   }
   return 'SELECT 1';
 }
@@ -379,9 +430,13 @@ module.exports = {
   getPoolConfig: buildPoolConfig,
   withClient,
   withTransaction,
+  withReadTransaction,
   setPoolFactoryForTests,
   probeConnection,
   isDbUnavailable,
+  isDependencyTimeout,
+  isResourceBusy,
+  classifyDbError,
   isUniqueViolation,
   getStats
 };

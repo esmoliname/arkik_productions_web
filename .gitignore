@@ -10,7 +10,7 @@ Thumbs.db
 # Dependencias
 node_modules/
 
-# Entornos — NUNCA committear secretos (mantener .env.example rastreado)
+# Entornos â€” NUNCA committear secretos (mantener .env.example rastreado)
 .env
 .env.local
 .env.*.local
@@ -23,6 +23,17 @@ node_modules/
 # Vercel
 .vercel
 
-# Salida de herramientas
+# Salida de herramientas y respaldos locales (alineado con .vercelignore)
 coverage/
+backups/
 *.tsbuildinfo
+*.dump
+*.enc
+*.sha256
+
+# Cloudflare Wrangler local state and dev secrets
+.wrangler/
+.dev.vars
+
+# Cloudflare Pages publish directory
+publish/

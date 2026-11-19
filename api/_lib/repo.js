@@ -128,7 +128,10 @@ async function codeExists(client, code) {
 
 // Serializes every writer for a given date (released on COMMIT/ROLLBACK).
 async function lockDate(client, dateISO) {
-  await client.query("SELECT pg_advisory_xact_lock(hashtext('arkik_date:' || $1::date))", [dateISO]);
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtext('arkik_date'), ($1::date - DATE '2000-01-01'))",
+    [dateISO]
+  );
 }
 
 async function insertBooking(client, p) {
@@ -403,14 +406,6 @@ async function resetCredential(client, role) {
   );
 }
 
-async function insertCredentialIfMissing(client, role, pinHash) {
-  const result = await client.query(
-    'INSERT INTO admin_credentials (role, pin_hash) VALUES ($1, $2) ON CONFLICT (role) DO NOTHING',
-    [role, pinHash]
-  );
-  return result.rowCount > 0;
-}
-
 async function listCredentialRoles(client) {
   const result = await client.query('SELECT role FROM admin_credentials ORDER BY role');
   return result.rows.map((row) => row.role);
@@ -538,7 +533,6 @@ module.exports = {
   getCredentialForUpdate,
   updateCredential,
   resetCredential,
-  insertCredentialIfMissing,
   listCredentialRoles,
   createSession,
   getSession,

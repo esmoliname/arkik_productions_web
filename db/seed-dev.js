@@ -5,20 +5,32 @@
 // Uses ON CONFLICT DO NOTHING. Never deletes, never overwrites, never rotates admin PINs.
 // Sanitized output only: DATABASE_URL and PINs are never printed.
 
-const { loadEnvFiles } = require('./migrate');
+const { loadEnvFiles, safeError, createDirectPool } = require('./_lib/direct-db');
 
-function refuseUnlessSeedEnabled() {
-  const seedMode = (process.env.SEED_MODE || '').trim().toLowerCase() === 'true';
-  const appEnv = (process.env.APP_ENV || '').trim().toLowerCase();
-  const vercelEnv = (process.env.VERCEL_ENV || '').trim().toLowerCase();
+function refuseUnlessSeedEnabled(env = process.env) {
+  const seedMode = (env.SEED_MODE || '').trim().toLowerCase() === 'true';
+  const appEnv = (env.APP_ENV || '').trim().toLowerCase();
+  const vercelEnv = (env.VERCEL_ENV || '').trim().toLowerCase();
+  const vercelFlag = String(env.VERCEL || '').trim();
+  const nodeEnv = (env.NODE_ENV || '').trim().toLowerCase();
 
   if (!seedMode) {
     console.error('[ARKIK SEED] Refused: SEED_MODE is not "true".');
-    console.error('[ARKIK SEED] Run with SEED_MODE=true (npm run db:seed:dev) to seed a local database.');
+    console.error('[ARKIK SEED] Run with SEED_MODE=true APP_ENV=development (npm run db:seed:dev) against a local database only.');
     return false;
   }
-  if (appEnv === 'production' || vercelEnv === 'production') {
-    console.error('[ARKIK SEED] Refused: production environment (APP_ENV/VERCEL_ENV).');
+  if (vercelFlag === '1' || Boolean(vercelEnv)) {
+    console.error('[ARKIK SEED] Refused: cloud/Vercel runtime environment detected (VERCEL/VERCEL_ENV).');
+    return false;
+  }
+  if (nodeEnv === 'production') {
+    console.error('[ARKIK SEED] Refused: NODE_ENV=production is forbidden.');
+    return false;
+  }
+  if (appEnv !== 'development') {
+    console.error(
+      `[ARKIK SEED] Refused: APP_ENV must be explicitly "development" (received "${appEnv || 'unset'}").`
+    );
     return false;
   }
   return true;
@@ -189,26 +201,13 @@ function bookingParams(booking) {
 async function main() {
   loadEnvFiles();
 
-  if (!refuseUnlessSeedEnabled()) process.exit(1);
+  if (!refuseUnlessSeedEnabled(process.env)) process.exit(1);
 
-  const databaseUrl = (process.env.DATABASE_URL || '').trim();
-  if (!databaseUrl) {
-    console.error('[ARKIK SEED] Refused: DATABASE_URL is not configured.');
-    process.exit(1);
-  }
-
-  let Pool;
-  try {
-    const mod = await import('@neondatabase/serverless');
-    Pool = mod.Pool || (mod.default && mod.default.Pool);
-    if (typeof Pool !== 'function') throw new Error('Pool export missing');
-  } catch (err) {
-    console.error('[ARKIK SEED] ERROR: @neondatabase/serverless is not installed or failed to load.');
-    console.error('[ARKIK SEED] Run "npm install" and retry.');
-    process.exit(1);
-  }
-
-  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  const { pool } = await createDirectPool({
+    envVarName: 'DIRECT_DATABASE_URL',
+    requireLocalhost: true,
+    queryTimeoutMs: 30000
+  });
   try {
     let bookingRows = 0;
     for (const booking of SEED_BOOKINGS) {
@@ -230,7 +229,7 @@ async function main() {
   } finally {
     try {
       await pool.end();
-    } catch (err) {
+    } catch (_err) {
       // ignore shutdown noise
     }
   }
@@ -238,8 +237,9 @@ async function main() {
 
 if (require.main === module) {
   main().catch((err) => {
-    const message = err && err.message ? String(err.message) : String(err);
-    console.error(`[ARKIK SEED] ERROR: ${message.replace(/postgres(ql)?:\/\/\S+/gi, '[redacted]')}`);
+    console.error(`[ARKIK SEED] ERROR: ${safeError(err)}`);
     process.exit(1);
   });
 }
+
+module.exports = { refuseUnlessSeedEnabled };
