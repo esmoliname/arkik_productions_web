@@ -98,13 +98,18 @@ function isSecureCookieContext() {
   // Secure cookies are mandatory on HTTPS contexts. Vercel/cloud and production
   // are always HTTPS. Staging/preview outside Vercel only gets Secure when the
   // operator explicitly opts in via SECURE_COOKIES=1 (the deployment must
-  // actually terminate TLS).
+  // actually terminate TLS). Local development servers (loopback) never use
+  // Secure cookies so that sessions work over http://localhost.
+  if (config.isLocalServer) return false;
   return config.isProduction || config.isCloud || (config.isStagingOrPreview && config.forceSecureCookies);
 }
 
 // Fail-closed guard: staging/preview outside Vercel MUST NOT emit an insecure
 // session cookie when SECURE_COOKIES is absent or disabled.
 function assertSecureCookieAllowed() {
+  // Local development servers (loopback) are allowed to issue insecure cookies
+  // without SECURE_COOKIES=1 so that login works over http://localhost.
+  if (config.isLocalServer) return;
   const stagingOutsideVercel = config.isStagingOrPreview && !config.isCloud && !config.isProduction;
   if (stagingOutsideVercel && !config.forceSecureCookies) {
     const err = new Error('SECURE_COOKIES must be enabled (1) for staging/preview outside Vercel to issue session cookies.');

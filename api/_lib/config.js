@@ -143,5 +143,17 @@ module.exports = {
       normalizeEnv(readEnv('APP_ENV', '')) === 'development' &&
       normalizeEnv(readEnv('NODE_ENV', '')) !== 'production'
     );
+  },
+
+  // True when running on a local development server (loopback), even with
+  // DATABASE_URL configured (e.g. testing against Neon STAGING locally).
+  // Vercel/Cloudflare/production always set cloud env vars, so this is safe.
+  get isLocalServer() {
+    if (this.isCloud || this.isProduction) return false;
+    const host = String(readEnv('HOST', '')).trim().toLowerCase();
+    const port = String(readEnv('PORT', '')).trim();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
+    if (!host && port) return true;
+    return false;
   }
 };
