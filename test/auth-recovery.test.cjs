@@ -68,7 +68,7 @@ function createInMemoryDb(seedCredentials) {
       return { rows: [{ '?column?': 1 }], rowCount: 1 };
     }
 
-    if (/^(BEGIN|COMMIT|ROLLBACK|SELECT pg_advisory_xact_lock)/i.test(q)) {
+    if (/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL |SELECT pg_advisory_xact_lock)/i.test(q)) {
       return { rows: [], rowCount: 0 };
     }
 
@@ -1238,23 +1238,19 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     });
   });
 
-  test('23: Dashboard endpoint hydrates server auditEvents alongside bookings/stats/pricing', async () => {
+  test('23: Dashboard endpoint hydrates sequentially on single DB client and preserves auditEvents + no-store', async () => {
     const dashboardHandler = require(path.join(__dirname, '..', 'api', 'admin', 'dashboard.js'));
     const secret = 'test-secret-0123456789abcdef';
     const service = require(path.join(__dirname, '..', 'api', '_lib', 'service.js'));
 
-    const origStats = service.getStats;
-    const origBookings = service.listBookings;
-    const origPricing = service.getPricing;
-    const origAvail = service.getAvailability;
-    const origAudit = service.listAudit;
-
-    service.getStats = async () => ({ total: 1, pendientes: 1, confirmadas: 0, ingresoProyectadoCrc: 1000 });
-    service.listBookings = async () => ({ bookings: [], total: 0 });
-    service.getPricing = async () => ({ overrides: { services: {}, extras: {} }, rates: {} });
-    service.getAvailability = async () => ({ blocked: {} });
-    service.listAudit = async () => ({
-      events: [{ action: 'ADMIN_LOGIN_SUCCESS', entityType: 'admin', entityId: 'it', actor: 'admin:it', metadata: {}, createdAt: '2026-11-13T00:00:00Z' }]
+    const origDashboard = service.getDashboardData;
+    service.getDashboardData = async () => ({
+      stats: { total: 1, pendientes: 1, confirmadas: 0, ingresoProyectadoCrc: 1000 },
+      bookings: [],
+      total: 0,
+      pricing: { overrides: { services: {}, extras: {} }, rates: {} },
+      availability: {},
+      auditEvents: [{ action: 'ADMIN_LOGIN_SUCCESS', entityType: 'admin', entityId: 'it', actor: 'admin:it', metadata: {}, createdAt: '2026-11-13T00:00:00Z' }]
     });
 
     try {
@@ -1264,16 +1260,50 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: `arkik_session=${encodeURIComponent(token)}` } }), res);
         assert.equal(res.statusCode, 200);
         assert.equal(res.body.success, true);
+        assert.equal(res.getHeader('cache-control'), 'private, no-store');
         assert.equal(Array.isArray(res.body.data.auditEvents), true);
         assert.equal(res.body.data.auditEvents[0].action, 'ADMIN_LOGIN_SUCCESS');
       });
     } finally {
-      service.getStats = origStats;
-      service.listBookings = origBookings;
-      service.getPricing = origPricing;
-      service.getAvailability = origAvail;
-      service.listAudit = origAudit;
+      service.getDashboardData = origDashboard;
     }
+
+    // Sequential single-client execution with DB active: 1 client for requireAdmin + 1 client for getDashboardData (no max:1 contention)
+    const { fakePool } = createInMemoryDb([
+      ['owner', { role: 'owner', pin_hash: auth.hashPin(OWNER_PIN), failed_attempts: 0, lock_level: 0, locked_until: null }]
+    ]);
+    let connectCount = 0;
+    const countedPool = {
+      query: fakePool.query,
+      async connect() {
+        connectCount += 1;
+        return fakePool.connect();
+      },
+      end: fakePool.end
+    };
+
+    await withEnv({
+      DATABASE_URL: 'postgres://mock:mock@localhost:5432/arkik',
+      ADMIN_SESSION_SECRET: secret,
+      NODE_ENV: 'test'
+    }, async () => {
+      db.setPoolFactoryForTests(() => countedPool);
+      try {
+        const loginRes = makeRes();
+        await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.33' }), loginRes);
+        assert.equal(loginRes.statusCode, 200);
+        const cookie = extractCookiePair(loginRes.getHeader('set-cookie'));
+
+        connectCount = 0;
+        const dashRes = makeRes();
+        await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie } }), dashRes);
+        assert.equal(dashRes.statusCode, 200);
+        assert.equal(dashRes.getHeader('cache-control'), 'private, no-store');
+        assert.equal(connectCount, 2, 'dashboard must checkout strictly 1 auth client + 1 sequential snapshot client');
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+    });
   });
 
   test('24: Full-stack dev server resolves /api/* dynamically and blocks sensitive dotfiles/directories', async () => {
@@ -1814,7 +1844,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         NODE_ENV: 'test',
         APP_ENV: 'staging',
         VERCEL: null,
-        VERCEL_ENV: null
+        VERCEL_ENV: null,
+        SECURE_COOKIES: '1'
       }, sc.env), async () => {
         db.setPoolFactoryForTests(() => fakePool);
         try {
@@ -2115,15 +2146,15 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     assert.deepEqual(db.DEFAULT_POOL_OPTIONS, {
       max: 1,
       connectionTimeoutMillis: 8000,
-      statement_timeout: 10000,
-      query_timeout: 12000,
+      statement_timeout: 8000,
+      query_timeout: 11000,
       idleTimeoutMillis: 10000
     });
     const poolCfg = db.getPoolConfig('postgres://user:pass@localhost:5432/test');
     assert.equal(poolCfg.max, 1);
     assert.equal(poolCfg.connectionTimeoutMillis, 8000);
-    assert.equal(poolCfg.statement_timeout, 10000);
-    assert.equal(poolCfg.query_timeout, 12000);
+    assert.equal(poolCfg.statement_timeout, 8000);
+    assert.equal(poolCfg.query_timeout, 11000);
     assert.equal(poolCfg.idleTimeoutMillis, 10000);
 
     // Verify @neondatabase/serverless@0.10.4 instantiates with DEFAULT_POOL_OPTIONS without network call
@@ -2132,8 +2163,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     const instantiated = new NeonPool(poolCfg);
     assert.equal(instantiated.options.max, 1);
     assert.equal(instantiated.options.connectionTimeoutMillis, 8000);
-    assert.equal(instantiated.options.statement_timeout, 10000);
-    assert.equal(instantiated.options.query_timeout, 12000);
+    assert.equal(instantiated.options.statement_timeout, 8000);
+    assert.equal(instantiated.options.query_timeout, 11000);
     assert.equal(instantiated.options.idleTimeoutMillis, 10000);
     await instantiated.end();
 
@@ -2357,7 +2388,13 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       }, envPatch), async () => {
         assert.equal(config.isExplicitLocalDev, false, `${label}: isExplicitLocalDev must be false`);
         assert.equal(auth.canUseLocalEnvPinFallback(), false, `${label}: canUseLocalEnvPinFallback must be false`);
-        assert.equal(/; Secure/.test(auth.sessionCookie('probe')), expectSecureCookie, `${label}: secure cookie mismatch`);
+        let secureCookie = false;
+        try {
+          secureCookie = /; Secure/.test(auth.sessionCookie('probe'));
+        } catch (e) {
+          secureCookie = false; // fail-closed: no insecure cookie issued
+        }
+        assert.equal(secureCookie, expectSecureCookie, `${label}: secure cookie mismatch`);
 
         const loginRes = makeRes();
         await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'env-pin-owner-999' }, ip: '198.51.100.50' }), loginRes);
@@ -2821,6 +2858,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         VERCEL: null,
         VERCEL_ENV: stagingEnv === 'preview' ? 'preview' : null,
         ADMIN_SESSION_SECRET: 'explicit-staging-preview-secret-0123456789abcdef',
+        SECURE_COOKIES: '1',
         ADMIN_OWNER_PIN: 'ignored-when-db-active',
         ADMIN_IT_PIN: null
       }, async () => {
