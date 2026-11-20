@@ -1,4 +1,4 @@
-# Excluir herramientas locales, entorno, documentación y scripts internos del bundle público de Vercel
+# Excluir herramientas locales (incluido db/_lib/), entorno, documentación y scripts internos del bundle público de Vercel
 # (Vercel conserva package.json y package-lock.json para instalar @neondatabase/serverless en api/)
 
 .git

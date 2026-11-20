@@ -1,6 +1,6 @@
 # Arkik Productions — Production Readiness Report
 
-**Date:** 2026-11-13 *(reporte histórico P0.2; ver estado actual P0.3.2 en [P0_3_2_REMEDIATION_REPORT.md](./P0_3_2_REMEDIATION_REPORT.md))*
+**Date:** 2026-11-13 *(reporte histórico P0.2; ver estado de remediación local P0.4.5-A en `P0.4.5-R1` y [P0_3_2_REMEDIATION_REPORT.md](./P0_3_2_REMEDIATION_REPORT.md))*
 **Branch:** main (working tree)
 **Node:** >=22 (engines.node)
 **Tests (snapshot P0.2):** `npm test` → 6 suites iniciales, 0 failures *(suite ampliada luego con `test/auth-recovery.test.cjs` y `test/security.test.cjs`)*
@@ -96,7 +96,7 @@
 |---|---|---|
 | A. Implementación de código | PASS | Backend remote-first + Neon; seguridad aplicada; offline UX corregida (no success sin servidor). |
 | B. Pruebas automatizadas | PASS | `npm test`: 6 suites, 0 fallos (behavior 13, contract 30, load 24, logic 30, api-client). |
-| C. Integración real con Neon | BLOCKED | No hay credenciales Neon disponibles en este entorno. Prueba preparada en `test/neon-integration.test.cjs` (pendiente de crear) — ver sección 8. |
+| C. Integración real con Neon | BLOCKED / NOT RUN | Sin ejecución contra Neon live en validación offline. La suite automática offline corre sobre mocks en `test/*.test.cjs`; la verificación real contra Neon queda definida para P0.4.5-B/C (`test/neon-integration.test.cjs` no existe aún como archivo implementado). |
 | D. Verificación multidispositivo | NOT VERIFIED (simulated) | Escenario diseñado y flujo validado por código; no ejecutado con dos navegadores reales. |
 | E. Seguridad | PASS (parcial) | Secret obligatorio en prod, cookies Secure en prod, endpoints admin protegidos (401 sin sesión). Brute-force/roles revisados en código. |
 | F. Preparación de Vercel | PASS (config) | `vercel.json` + env vars documentadas; no desplegado (sin autorización). |
@@ -151,11 +151,10 @@ Estado actual: BLOCKED (sin credenciales). No se inventan resultados.
 - docs/CATALOG_AUDIT.md
 - docs/PRODUCTION_READINESS_REPORT.md (this file)
 
-## 12. Rate limiting y revocacion de sesiones (final hardening)
+## 12. Rate limiting y revocación de sesiones (final hardening)
 
-- Rate limiter DB-backed (PostgreSQL/Neon): contadores en tabla ate_limits, actualizados con UPSERT atomico. Compartido entre instancias serverless. Ventanas temporales con expiracion automatica. Sin servicios de pago adicionales.
-- Rate limiter ENV path (fallback sin DB): contadores en memoria local, no compartidos. Aceptable como degradacion. Documentado como limitacion.
+- Rate limiter DB-backed (PostgreSQL/Neon): contadores en tabla `rate_limits`, actualizados con UPSERT atómico. Compartido entre instancias serverless. Ventanas temporales con expiración automática. Sin servicios de pago adicionales.
+- Rate limiter ENV path (fallback sin DB): contadores en memoria local, no compartidos. Aceptable como degradación. Documentado como limitación.
 - Anti-lockout: eliminado lockout por rol (evita DoS cross-admin). Throttling por IP e IP+rol con backoff progresivo temporal. Bucket global por rol eliminado.
-- Session revocation: sesiones DB-backed revocables (logout elimina fila). Sesiones stateless (v1.) firmadas con HMAC no revocables antes de expiracion (15 min). Estrategia recomendada: campo session_version en dmin_credentials. No implementada (compatibilidad conservada).
-- Credenciales: PINs se validan contra hashes scrypt en DB o contra env (texto plano o hash scrypt si empieza con scrypt$). Recomendacion: usar hashes scrypt en env. No se cambiaron credenciales reales.
-
+- Session revocation: sesiones DB-backed revocables (logout elimina fila). Sesiones stateless (`v1.`) firmadas con HMAC no revocables antes de expiración (15 min), restringidas estrictamente a desarrollo local explícito sin BD. Estrategia recomendada futura: campo `session_version` en `admin_credentials`.
+- Credenciales: PINs se validan contra hashes `scrypt$` en DB o contra env en desarrollo local explícito sin BD (texto plano o hash `scrypt$` si empieza con `scrypt$`). Recomendación: usar hashes `scrypt$` en env durante bootstrap y no mantener PINs en runtime.

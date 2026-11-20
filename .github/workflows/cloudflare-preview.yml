@@ -1,0 +1,77 @@
+name: Cloudflare Preview Deploy
+
+on:
+  push:
+    branches:
+      - preview/cloudflare
+
+concurrency:
+  group: cloudflare-preview
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Pages (Preview)
+    runs-on: ubuntu-latest
+    environment: cloudflare-preview
+    if: github.ref == 'refs/heads/preview/cloudflare'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: JS syntax check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Pre-deploy check
+        run: npm run predeploy:check
+
+      - name: Reconstruct publish directory
+        run: |
+          rm -rf publish
+          mkdir -p publish
+          cp index.html publish/
+          cp _headers publish/
+          cp _redirects publish/
+          cp -r css publish/
+          cp -r js publish/
+          cp -r img publish/
+          cp -r functions publish/
+          cp -r api publish/
+
+      - name: Verify publish contents
+        run: |
+          echo "=== Publish inventory ==="
+          find publish -type f | sort
+          echo "=== Secret scan ==="
+          if grep -rE 'scrypt\$|ADMIN_OWNER_PIN|ADMIN_IT_PIN|ADMIN_SESSION_SECRET|DATABASE_URL|DIRECT_DATABASE_URL|DIRECT_ADMIN_DATABASE_URL' publish/index.html publish/css publish/js publish/img 2>/dev/null; then
+            echo "SECRET LEAK DETECTED"
+            exit 1
+          else
+            echo "No secrets in client assets"
+          fi
+          echo "=== Route count ==="
+          grep -c "handler:" publish/functions/\[\[path\]\].js
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy publish --project-name=arkik-productions --branch=cloudflare-preview
+          wranglerVersion: '4.165.0'

@@ -2,14 +2,14 @@
 
 ## 1. Respaldo de Datos de Negocio (Neon PostgreSQL)
 
-1. **Snapshot / Point-In-Time Recovery (PITR) en Neon**: Antes de cada migración mayor o rotación masiva de configuración, crear un branch/restore point en Neon Console o exportar dump lógico con `pg_dump --format=custom --no-owner --no-acl "$DATABASE_URL" > arkik_backup_$(date +%F).dump`.
+1. **Snapshot / Point-In-Time Recovery (PITR) en Neon**: Antes de cada migración mayor o rotación masiva de configuración, crear un branch/restore point en Neon Console o exportar dump lógico mediante la conexión **Direct** (sin `-pooler`): `pg_dump --format=custom --no-owner --no-acl "$DIRECT_DATABASE_URL" > backups/arkik_backup_$(date +%F).dump`.
 2. **Respaldo Operativo desde Consola IT (Tab 04 — Database Vault)**: Permite exportar snapshot JSON y SQL del estado cargado en el portal para archivo operativo. Nota: las operaciones destructivas del navegador ("Limpiar Caché Local" / "Restablecer Estado de Fábrica") solo reinician almacenamiento local transitorio y **no alteran** PostgreSQL Neon.
 
 ## 2. Runbook de Recuperación de Acceso Admin (`PIN` inválido / `MISMATCH` / `CORRUPTED_HASH` / Lockout)
 
-> **Regla**: Nunca ejecutar `TRUNCATE`, `DELETE` masivos ni modificar manualmente `admin_credentials` sin auditoría.
+> **Regla**: Nunca ejecutar `TRUNCATE`, `DELETE` masivos ni modificar manualmente `admin_credentials` sin auditoría. Nunca incorporar `DIRECT_DATABASE_URL` ni `DIRECT_ADMIN_DATABASE_URL` al runtime de Vercel.
 
-1. **Diagnosticar sin riesgo** (apunta `.env.local` o entorno Vercel a `DATABASE_URL`):
+1. **Diagnosticar sin riesgo** (apunta `.env.local` hacia Neon mediante `DIRECT_ADMIN_DATABASE_URL` con rol `arkik_admin`, conexión Direct sin `-pooler`):
    ```bash
    npm run admin:verify
    ```
