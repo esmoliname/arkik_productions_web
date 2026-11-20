@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node scripts/dev-server.js",
     "dev:static": "serve -s .",
-    "check": "node --check js/app.js && node --check js/data.js && node --check js/api.js && node --check db/_lib/direct-db.js && node --check db/migrate.js && node --check db/manage-admin-pins.js && node --check db/seed-dev.js && node --check scripts/dev-server.js && node --check scripts/predeploy-check.js && node --check scripts/preflight-neon-staging.js",
+    "build": "node scripts/build-publish.js",
+    "check": "node --check js/app.js && node --check js/data.js && node --check js/api.js && node --check db/_lib/direct-db.js && node --check db/migrate.js && node --check db/manage-admin-pins.js && node --check db/seed-dev.js && node --check scripts/dev-server.js && node --check scripts/predeploy-check.js && node --check scripts/preflight-neon-staging.js && node --check scripts/build-publish.js",
     "test": "npm run check && node --test \"test/*.test.cjs\"",
     "predeploy:check": "node scripts/predeploy-check.js",
     "db:migrate": "node db/migrate.js",
