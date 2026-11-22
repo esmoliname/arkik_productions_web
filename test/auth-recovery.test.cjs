@@ -2879,4 +2879,244 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       });
     }
   });
+
+  test('38: Hybrid static preview fallback (GitHub Pages & static 404/405) preserves Zero-Trust fail-closed on non-preview origins', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    function mountFrontend(hostname) {
+      let nextFetch = async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '<!DOCTYPE html><html>404</html>' });
+      const lsStore = new Map();
+      const ssStore = new Map();
+      const toasts = [];
+      const activeTimeouts = new Set();
+      const activeIntervals = new Set();
+      const fakeStorage = (m) => ({
+        getItem: (k) => (m.has(k) ? m.get(k) : null),
+        setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k)
+      });
+
+      const sandbox = {
+        console,
+        setTimeout: (fn, ms, ...args) => {
+          const id = setTimeout((...a) => {
+            activeTimeouts.delete(id);
+            fn(...a);
+          }, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeTimeouts.add(id);
+          return id;
+        },
+        clearTimeout: (id) => {
+          activeTimeouts.delete(id);
+          clearTimeout(id);
+        },
+        setInterval: (fn, ms, ...args) => {
+          const id = setInterval(fn, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeIntervals.add(id);
+          return id;
+        },
+        clearInterval: (id) => {
+          activeIntervals.delete(id);
+          clearInterval(id);
+        },
+        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        Promise,
+        JSON,
+        Date,
+        Math,
+        Object,
+        String,
+        Number,
+        Boolean,
+        Array,
+        Map,
+        Set,
+        RegExp,
+        Error,
+        TypeError,
+        encodeURIComponent,
+        decodeURIComponent,
+        AbortController,
+        fetch: (...args) => nextFetch(...args),
+        localStorage: fakeStorage(lsStore),
+        sessionStorage: fakeStorage(ssStore),
+        location: { pathname: '/', hash: '', origin: `https://${hostname}`, hostname },
+        navigator: { userAgent: 'node-test', onLine: true },
+        document: {
+          readyState: 'loading',
+          visibilityState: 'visible',
+          addEventListener: () => {},
+          getElementById: () => null,
+          querySelector: () => null,
+          querySelectorAll: () => [],
+          body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+        },
+        addEventListener: () => {},
+        scrollTo: () => {},
+        history: { replaceState: () => {} },
+        crypto: require('node:crypto').webcrypto
+      };
+      sandbox.window = sandbox;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+      vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+      vm.runInContext(
+        appSrc + '\nwindow.__TEST_HYBRID__ = { SecurityModule, AdminModule, BookingStore, PriceManager, AvailabilityManager, ADMIN_SESSION, SafeStorage };',
+        sandbox,
+        { filename: 'js/app.js' }
+      );
+
+      const mod = sandbox.__TEST_HYBRID__;
+      mod.AdminModule.openPortal = () => {};
+      mod.AdminModule.startInactivityTimer = () => {};
+      mod.AdminModule.clearInactivityTimer = () => {};
+      mod.AdminModule.startIntegrityMonitor = () => {};
+      mod.AdminModule.clearIntegrityMonitor = () => {};
+      mod.AdminModule.renderDashboard = () => {};
+      sandbox.showToast = (msg, type) => toasts.push({ msg, type });
+
+      return {
+        mod,
+        lsStore,
+        ssStore,
+        toasts,
+        setFetch: (fn) => { nextFetch = fn; },
+        cleanup: () => {
+          for (const id of activeTimeouts) clearTimeout(id);
+          for (const id of activeIntervals) clearInterval(id);
+          activeTimeouts.clear();
+          activeIntervals.clear();
+        }
+      };
+    }
+
+    const gh = mountFrontend('arkik-org.github.io');
+    const prod = mountFrontend('arkik-productions.vercel.app');
+    try {
+    // A) GitHub Pages preview host: 405 HTML, 503, and network errors degrade to verifyLocal & SafeStorage
+    gh.lsStore.set('admin_login_attempts', '3');
+    gh.lsStore.set('admin_lockout_until', String(Date.now() + 60000));
+
+    gh.setFetch(async () => ({
+      status: 405,
+      ok: false,
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
+      text: async () => '<!DOCTYPE html><html>405 Not Allowed</html>'
+    }));
+    const ownerRes = await gh.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(ownerRes.ok, true);
+    assert.equal(ownerRes.role, 'owner');
+    assert.equal(ownerRes.source, 'local');
+    assert.equal(gh.lsStore.has('admin_login_attempts'), false, 'residual admin_login_attempts must be cleared on success');
+    assert.equal(gh.lsStore.has('admin_lockout_until'), false, 'residual admin_lockout_until must be cleared on success');
+
+    // GitHub Pages network failure falls back to verifyLocal for IT role ('1234')
+    gh.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+    const itRes = await gh.mod.SecurityModule.verifyPin('it', '1234');
+    assert.equal(itRes.ok, true);
+    assert.equal(itRes.role, 'it');
+    assert.equal(itRes.source, 'local');
+
+    // Wrong PIN on GitHub Pages still returns 401 and increments attempts
+    const badRes = await gh.mod.SecurityModule.verifyPin('owner', '9999');
+    assert.equal(badRes.ok, false);
+    assert.equal(badRes.status, 401);
+    assert.equal(badRes.infraError, false);
+    assert.equal(gh.mod.SecurityModule.status().attempts, 1);
+
+    // loadProtectedAdminData degrades silently to SafeStorage on 404 without error toast
+    gh.toasts.length = 0;
+    gh.setFetch(async () => ({
+      status: 404,
+      ok: false,
+      headers: { get: () => 'text/html' },
+      text: async () => '<html>404</html>'
+    }));
+    const dashRes = await gh.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+    assert.equal(dashRes.ok, true);
+    assert.equal(dashRes.role, 'owner');
+    assert.equal(dashRes.source, 'local');
+    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'static preview dashboard fallback must not emit error toasts');
+
+    // BookingStore.add degrades silently to SafeStorage on 404 without alerts
+    gh.toasts.length = 0;
+    const addRes = await gh.mod.BookingStore.add({
+      clientName: 'Cliente Preview',
+      clientPhone: '8888-1234',
+      clientEmail: 'cliente@example.com',
+      eventType: 'Boda',
+      serviceId: 1,
+      selectedDate: '2026-12-20',
+      selectedTime: '18:00',
+      province: 'San José',
+      canton: 'Escazú',
+      address: 'Centro',
+      sinpeRef: 'REF12345',
+      extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
+    }, 'idem-gh-preview-1');
+    assert.equal(addRes.ok, true);
+    assert.equal(addRes.source, 'local');
+    assert.equal(addRes.queued, true);
+    assert.equal(gh.mod.BookingStore.all().some((b) => b.code === addRes.booking.code), true);
+    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'BookingStore.add local fallback must not emit error toasts');
+
+    // B) Non-GitHub-Pages origin: static 404/405 still falls back, but 503 / network / 200 HTML fail closed
+    prod.setFetch(async () => ({
+      status: 503,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
+    }));
+    const prod503 = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prod503.ok, false);
+    assert.equal(prod503.infraError, true, '503 on production origin must fail closed even for preview PIN');
+
+    prod.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+    const prodNet = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prodNet.ok, false);
+    assert.equal(prodNet.infraError, true, 'network error on production origin must fail closed');
+
+    prod.setFetch(async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
+      text: async () => '<!DOCTYPE html><html>SPA</html>'
+    }));
+    const prodHtml = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prodHtml.ok, false);
+    assert.equal(prodHtml.infraError, true);
+    assert.equal(prodHtml.code, 'static_server_html');
+
+    // Non-GitHub-Pages static server 404 (no structured JSON error) degrades to verifyLocal
+    prod.setFetch(async () => ({
+      status: 404,
+      ok: false,
+      headers: { get: () => 'text/html' },
+      text: async () => '<html>Not Found</html>'
+    }));
+    const prod404 = await prod.mod.SecurityModule.verifyPin('it', '1234');
+    assert.equal(prod404.ok, true);
+    assert.equal(prod404.role, 'it');
+    assert.equal(prod404.source, 'local');
+
+    // Non-GitHub-Pages loadProtectedAdminData fails closed on 503
+    prod.setFetch(async () => ({
+      status: 503,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
+    }));
+    const prodDash503 = await prod.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+    assert.equal(prodDash503.ok, false);
+    assert.equal(prodDash503.status, 503);
+    } finally {
+      gh.cleanup();
+      prod.cleanup();
+    }
+  });
 });
