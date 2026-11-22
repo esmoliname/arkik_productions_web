@@ -446,6 +446,7 @@ const ADMIN_CONFIG = {
 
 // Versión del motor de operaciones (auditoría del sistema en el rol IT)
 const ENGINE_VERSION = "arkik-engine-v3.2.0";
+const STORAGE_EPOCH = "2026-11-22-clean-v1";
 
 // Claves de persistencia local (por dominio, con fallback seguro)
 // Claves canónicas v3.3: availability = arkik_blocked_dates_v1, gallery = arkik_media_v1
@@ -461,7 +462,8 @@ const STORAGE_KEYS = {
   admin: ADMIN_CONFIG.storageKey,
   session: "arkik_admin_session_v1",
   audit: "arkik_audit_v1",
-  offlineQueue: "arkik_pending_sync_v1"
+  offlineQueue: "arkik_pending_sync_v1",
+  epoch: "arkik_storage_epoch"
 };
 
 // Capacidad diaria máxima de eventos

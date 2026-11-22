@@ -3120,16 +3120,17 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     }
   });
 
-  test('39: Operational seeds and initial StorageEngine boot start completely empty while preserving catalog, pricing, logistics and gallery', async () => {
+  test('39: Operational seeds, STORAGE_EPOCH purge, CloudSync static guard, and post-epoch persistence preserve clean boot and catalog', async () => {
     const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
     const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
     const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
 
-    function mountCleanVm(initialLocalStorage = {}) {
-      const lsStore = new Map(Object.entries(initialLocalStorage));
+    function mountCleanVm(initialStorage = {}) {
+      const lsStore = initialStorage instanceof Map ? initialStorage : new Map(Object.entries(initialStorage));
       const ssStore = new Map();
       const activeTimeouts = new Set();
       const activeIntervals = new Set();
+      const fetchCalls = [];
       const fakeStorage = (m) => ({
         getItem: (k) => (m.has(k) ? m.get(k) : null),
         setItem: (k, v) => m.set(k, String(v)),
@@ -3179,7 +3180,10 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         encodeURIComponent,
         decodeURIComponent,
         AbortController,
-        fetch: async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '' }),
+        fetch: async (url) => {
+          fetchCalls.push(String(url));
+          return { status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '' };
+        },
         localStorage: fakeStorage(lsStore),
         sessionStorage: fakeStorage(ssStore),
         location: { pathname: '/', hash: '', origin: 'https://arkik-org.github.io', hostname: 'arkik-org.github.io' },
@@ -3204,13 +3208,15 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
       vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
       vm.runInContext(
-        appSrc + '\nwindow.__TEST_CLEAN_INIT__ = { SEED_MODE, SEED_BOOKINGS_V1, SEED_BLOCKED_DATES_V1, SEED_AUDIT_V1, CATALOG_SERVICES, LOGISTICS_CONFIG, mediaLibrary, StorageEngine, BookingStore, AvailabilityManager, PriceManager, AuditLog, STORAGE_KEYS };',
+        appSrc + '\nwindow.__TEST_CLEAN_INIT__ = { SEED_MODE, STORAGE_EPOCH, SEED_BOOKINGS_V1, SEED_BLOCKED_DATES_V1, SEED_AUDIT_V1, CATALOG_SERVICES, LOGISTICS_CONFIG, mediaLibrary, StorageEngine, BookingStore, AvailabilityManager, PriceManager, AuditLog, SafeStorage, CloudSync, STORAGE_KEYS };',
         sandbox,
         { filename: 'js/app.js' }
       );
 
       return {
         mod: sandbox.__TEST_CLEAN_INIT__,
+        lsStore,
+        fetchCalls,
         cleanup: () => {
           for (const id of activeTimeouts) clearTimeout(id);
           for (const id of activeIntervals) clearInterval(id);
@@ -3220,6 +3226,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       };
     }
 
+    // A) Empty localStorage boot
     const cleanVm = mountCleanVm();
     try {
       const m = cleanVm.mod;
@@ -3235,6 +3242,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.deepEqual(Object.assign({}, m.AvailabilityManager.all()), {});
       assert.deepEqual(Array.from(m.AuditLog.load().logins), []);
       assert.deepEqual(Array.from(m.AuditLog.load().events), []);
+      assert.equal(m.SafeStorage.getItem(m.STORAGE_KEYS.epoch), m.STORAGE_EPOCH);
 
       assert.equal(m.CATALOG_SERVICES.length > 0, true);
       assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
@@ -3244,6 +3252,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       cleanVm.cleanup();
     }
 
+    // B) Direct .load() filters legacy seed records when storage already holds real records
     const seededVm = mountCleanVm({
       arkik_bookings_v1: JSON.stringify([
         { code: 'ARK-SEED0001', clientName: 'Demo Seed', isSeed: true },
@@ -3269,6 +3278,82 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       );
     } finally {
       seededVm.cleanup();
+    }
+
+    // C) Automatic STORAGE_EPOCH purge wipes pre-epoch bookings, blocked dates, audit, queue & lockout, then persists new records
+    const sharedStorage = new Map(Object.entries({
+      arkik_bookings_v1: JSON.stringify([
+        { code: 'ARK-AE27BA99', clientName: 'Vieja Prueba 1' },
+        { code: 'ARK-F2EBB36D', clientName: 'Vieja Prueba 2' }
+      ]),
+      arkik_blocked_dates_v1: JSON.stringify({ '2026-12-10': { state: 'soldout', reason: 'Old block' } }),
+      arkik_availability_v1: JSON.stringify({ '2026-12-11': 'disabled' }),
+      arkik_audit_v1: JSON.stringify({ engineVersion: 'old', logins: [{ role: 'Owner', at: '2026-01-01T00:00:00Z' }], lastLogin: '2026-01-01T00:00:00Z', events: [{ type: 'login', message: 'Old' }] }),
+      arkik_pending_sync_v1: JSON.stringify([{ bookingCode: 'ARK-AE27BA99', payload: {} }]),
+      admin_login_attempts: '3',
+      admin_lockout_until: String(Date.now() + 60000)
+    }));
+
+    const epochVm = mountCleanVm(sharedStorage);
+    try {
+      const m = epochVm.mod;
+      m.StorageEngine.init();
+
+      assert.deepEqual(Array.from(m.BookingStore.all()), []);
+      assert.deepEqual(Object.assign({}, m.AvailabilityManager.all()), {});
+      assert.deepEqual(Array.from(m.AuditLog.load().logins), []);
+      assert.deepEqual(Array.from(m.AuditLog.load().events), []);
+      assert.deepEqual(JSON.parse(m.SafeStorage.getItem(m.STORAGE_KEYS.offlineQueue)), []);
+      assert.equal(m.SafeStorage.getItem('arkik_availability_v1'), null);
+      assert.equal(m.SafeStorage.getItem('admin_login_attempts'), null);
+      assert.equal(m.SafeStorage.getItem('admin_lockout_until'), null);
+      assert.equal(m.SafeStorage.getItem(m.STORAGE_KEYS.epoch), m.STORAGE_EPOCH);
+
+      const epochIntegrity = m.AuditLog.storageIntegrity().find((entry) => entry.name === 'epoch');
+      assert.equal(epochIntegrity && epochIntegrity.state, 'ok');
+      assert.equal(m.CATALOG_SERVICES.length > 0, true);
+      assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
+      assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
+
+      // Static GitHub Pages host never triggers CloudSync remote pulls
+      m.CloudSync.init();
+      const pullRes = await m.CloudSync.pull();
+      const refreshRes = await m.CloudSync.refresh('manual');
+      assert.equal(m.CloudSync._enabled, false);
+      assert.equal(pullRes, false);
+      assert.equal(refreshRes, false);
+      assert.equal(epochVm.fetchCalls.length, 0);
+
+      // Post-epoch booking & block persist across a subsequent reload
+      const created = await m.BookingStore.add({
+        code: 'ARK-NEW00001',
+        clientName: 'Cliente Nuevo',
+        clientPhone: '8888-1234',
+        clientEmail: 'nuevo@example.com',
+        eventType: 'Boda',
+        serviceId: 1,
+        selectedDate: '2026-12-22',
+        selectedTime: '18:00',
+        province: 'San José',
+        canton: 'Escazú',
+        address: 'Centro',
+        sinpeRef: 'REF99999',
+        extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
+      }, 'idem-new-1');
+      assert.equal(created.ok, true);
+      await m.AvailabilityManager.set('2026-12-24', 'disabled', 'Feriado');
+    } finally {
+      epochVm.cleanup();
+    }
+
+    const reloadVm = mountCleanVm(sharedStorage);
+    try {
+      const m = reloadVm.mod;
+      m.StorageEngine.init();
+      assert.equal(m.BookingStore.all().some((b) => b.clientName === 'Cliente Nuevo'), true);
+      assert.equal(m.AvailabilityManager.get('2026-12-24'), 'disabled');
+    } finally {
+      reloadVm.cleanup();
     }
   });
 });

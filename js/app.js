@@ -1164,7 +1164,61 @@ const StorageEngine = {
   _gallery: null,
   _config: null,
 
+  _enforceStorageEpoch() {
+    const targetEpoch = (typeof STORAGE_EPOCH === "string" && STORAGE_EPOCH) ? STORAGE_EPOCH : "";
+    const epochKey = (typeof STORAGE_KEYS !== "undefined" && STORAGE_KEYS && STORAGE_KEYS.epoch)
+      ? STORAGE_KEYS.epoch
+      : "arkik_storage_epoch";
+    if (!targetEpoch) return false;
+
+    const currentEpoch = SafeStorage.getItem(epochKey);
+    if (currentEpoch === targetEpoch) return false;
+
+    const purgeKeys = [
+      STORAGE_KEYS.bookings,
+      STORAGE_KEYS.availability,
+      STORAGE_KEYS.audit,
+      STORAGE_KEYS.offlineQueue,
+      STORAGE_KEYS.syncMeta,
+      STORAGE_KEYS.admin,
+      "arkik_availability_v1"
+    ].concat(typeof ADMIN_LEGACY_RATE_KEYS !== "undefined" ? ADMIN_LEGACY_RATE_KEYS : ["admin_login_attempts", "admin_lockout_until"]);
+
+    purgeKeys.forEach((key) => {
+      if (!key) return;
+      try { MemoryCache.delete(key); } catch (e) { /* noop */ }
+      try { SafeStorage.removeItem(key); } catch (e) { /* noop */ }
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(key);
+        }
+      } catch (e) { /* noop */ }
+    });
+
+    const emptyAudit = (typeof SEED_AUDIT_V1 === "function")
+      ? SEED_AUDIT_V1()
+      : { engineVersion: ENGINE_VERSION, logins: [], lastLogin: null, events: [] };
+
+    safeSet(STORAGE_KEYS.bookings, []);
+    safeSet(STORAGE_KEYS.availability, {});
+    safeSet(STORAGE_KEYS.audit, emptyAudit);
+    safeSet(STORAGE_KEYS.offlineQueue, []);
+
+    if (typeof BookingStore !== "undefined") BookingStore._data = [];
+    if (typeof AvailabilityManager !== "undefined") {
+      AvailabilityManager._data = {};
+      AvailabilityManager._blocked = {};
+      AvailabilityManager._capacity = {};
+      AvailabilityManager._details = {};
+    }
+    if (typeof AdminModule !== "undefined") AdminModule.serverAuditEvents = [];
+
+    SafeStorage.setItem(epochKey, targetEpoch);
+    return true;
+  },
+
   init() {
+    try { this._enforceStorageEpoch(); } catch (e) { console.warn('StorageEngine._enforceStorageEpoch failed:', e); }
     // Siempre primero: si alguna clave canónica quedó ausente o corrupta
     // (navegación privada, datos borrados, JSON truncado), se repuebla antes
     // de que cualquier gestor lea. Nunca pisa datos válidos.
@@ -1816,7 +1870,7 @@ const AvailabilityManager = {
    * polling passes force=true to revalidate.
    */
   async fetchMap(from, to, force) {
-    if (!apiEnabled()) return { ok: true, source: "local" };
+    if (!apiEnabled() || isStaticPreviewHost()) return { ok: true, source: "local" };
     this._ensure();
     const isRange = Boolean(from && to);
     const key = isRange ? from + "|" + to : "full";
@@ -1887,7 +1941,7 @@ const AvailabilityManager = {
    * server instead of the local cache.
    */
   async fetchDetail(iso) {
-    if (!apiEnabled() || !iso) return { ok: true, source: "local" };
+    if (!apiEnabled() || isStaticPreviewHost() || !iso) return { ok: true, source: "local" };
     this._ensure();
     const res = await ArkikApi.availability({ date: iso });
     if (!res.ok) return apiFailure(res);
@@ -2159,7 +2213,7 @@ const BookingStore = {
    * @param {boolean} force bypass the short dedupe window used by polling.
    */
   async hydrate(force) {
-    if (!apiEnabled()) return { ok: true, source: "local" };
+    if (!apiEnabled() || isStaticPreviewHost()) return { ok: true, source: "local" };
     if (!hasAdminSession()) return { ok: true, source: "local" }; // sin cookie: nada que listar
     const dedupeMs = 4000;
     if (!force && this._hydratedAt && Date.now() - this._hydratedAt < dedupeMs) {
@@ -2610,7 +2664,7 @@ const CloudSync = {
   },
 
   configure() {
-    this._enabled = apiEnabled();
+    this._enabled = apiEnabled() && !isStaticPreviewHost();
     this._driver = this._enabled ? "arkik-api" : "local";
   },
 
@@ -2723,7 +2777,7 @@ const CloudSync = {
    * @returns {Promise<boolean>} true si el servidor respondió a tiempo.
    */
   async refresh(reason) {
-    if (!this._enabled) return false;
+    if (!this._enabled || isStaticPreviewHost()) return false;
     if (this._busy) { this._queued = true; return false; }
     this._busy = true;
     try {
@@ -2832,12 +2886,13 @@ const CloudSync = {
 
   // API pública — pull: baja el estado remoto y refresca la UI.
   async pull() {
+    if (isStaticPreviewHost()) return false;
     return this.refresh("all");
   },
 
   // API pública — push: fuerza una revalidación completa.
   async push() {
-    if (!this._enabled) return false;
+    if (!this._enabled || isStaticPreviewHost()) return false;
     this._dirty = true;
     if (this._debounce) { clearTimeout(this._debounce); this._debounce = null; }
     return this.refresh("all");
@@ -4240,6 +4295,10 @@ const AuditLog = {
         const raw = SafeStorage.getItem(key);
         if (raw === null) {
           report.push({ name, state: "vacio" });
+          return;
+        }
+        if (key === STORAGE_KEYS.epoch) {
+          report.push({ name, state: raw ? "ok" : "vacio" });
           return;
         }
         JSON.parse(raw);
@@ -6230,6 +6289,9 @@ const AdminModule = {
     // por el siguiente pull.
     writeSyncMeta({ updatedAt: new Date().toISOString(), clearedAt: new Date().toISOString() });
     safeSet(STORAGE_KEYS.customConfig, typeof SEED_CONFIG_V1 === "function" ? SEED_CONFIG_V1() : {});
+    if (typeof STORAGE_EPOCH === "string" && STORAGE_EPOCH && STORAGE_KEYS.epoch) {
+      SafeStorage.setItem(STORAGE_KEYS.epoch, STORAGE_EPOCH);
+    }
     // Recargar todos los managers desde cero (estado de fábrica)
     PriceManager.load();
     AvailabilityManager.load();
