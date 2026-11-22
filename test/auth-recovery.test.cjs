@@ -3119,4 +3119,156 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       prod.cleanup();
     }
   });
+
+  test('39: Operational seeds and initial StorageEngine boot start completely empty while preserving catalog, pricing, logistics and gallery', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    function mountCleanVm(initialLocalStorage = {}) {
+      const lsStore = new Map(Object.entries(initialLocalStorage));
+      const ssStore = new Map();
+      const activeTimeouts = new Set();
+      const activeIntervals = new Set();
+      const fakeStorage = (m) => ({
+        getItem: (k) => (m.has(k) ? m.get(k) : null),
+        setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k)
+      });
+
+      const sandbox = {
+        console,
+        setTimeout: (fn, ms, ...args) => {
+          const id = setTimeout((...a) => {
+            activeTimeouts.delete(id);
+            fn(...a);
+          }, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeTimeouts.add(id);
+          return id;
+        },
+        clearTimeout: (id) => {
+          activeTimeouts.delete(id);
+          clearTimeout(id);
+        },
+        setInterval: (fn, ms, ...args) => {
+          const id = setInterval(fn, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeIntervals.add(id);
+          return id;
+        },
+        clearInterval: (id) => {
+          activeIntervals.delete(id);
+          clearInterval(id);
+        },
+        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        Promise,
+        JSON,
+        Date,
+        Math,
+        Object,
+        String,
+        Number,
+        Boolean,
+        Array,
+        Map,
+        Set,
+        RegExp,
+        Error,
+        TypeError,
+        encodeURIComponent,
+        decodeURIComponent,
+        AbortController,
+        fetch: async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '' }),
+        localStorage: fakeStorage(lsStore),
+        sessionStorage: fakeStorage(ssStore),
+        location: { pathname: '/', hash: '', origin: 'https://arkik-org.github.io', hostname: 'arkik-org.github.io' },
+        navigator: { userAgent: 'node-test', onLine: true },
+        document: {
+          readyState: 'loading',
+          visibilityState: 'visible',
+          addEventListener: () => {},
+          getElementById: () => null,
+          querySelector: () => null,
+          querySelectorAll: () => [],
+          body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+        },
+        addEventListener: () => {},
+        scrollTo: () => {},
+        history: { replaceState: () => {} },
+        crypto: require('node:crypto').webcrypto
+      };
+      sandbox.window = sandbox;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+      vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+      vm.runInContext(
+        appSrc + '\nwindow.__TEST_CLEAN_INIT__ = { SEED_MODE, SEED_BOOKINGS_V1, SEED_BLOCKED_DATES_V1, SEED_AUDIT_V1, CATALOG_SERVICES, LOGISTICS_CONFIG, mediaLibrary, StorageEngine, BookingStore, AvailabilityManager, PriceManager, AuditLog, STORAGE_KEYS };',
+        sandbox,
+        { filename: 'js/app.js' }
+      );
+
+      return {
+        mod: sandbox.__TEST_CLEAN_INIT__,
+        cleanup: () => {
+          for (const id of activeTimeouts) clearTimeout(id);
+          for (const id of activeIntervals) clearInterval(id);
+          activeTimeouts.clear();
+          activeIntervals.clear();
+        }
+      };
+    }
+
+    const cleanVm = mountCleanVm();
+    try {
+      const m = cleanVm.mod;
+      assert.equal(m.SEED_MODE, false);
+      assert.deepEqual(Array.from(m.SEED_BOOKINGS_V1()), []);
+      assert.deepEqual(Object.assign({}, m.SEED_BLOCKED_DATES_V1()), {});
+      assert.deepEqual(Array.from(m.SEED_AUDIT_V1().logins), []);
+      assert.deepEqual(Array.from(m.SEED_AUDIT_V1().events), []);
+
+      m.StorageEngine.init();
+
+      assert.deepEqual(Array.from(m.BookingStore.all()), []);
+      assert.deepEqual(Object.assign({}, m.AvailabilityManager.all()), {});
+      assert.deepEqual(Array.from(m.AuditLog.load().logins), []);
+      assert.deepEqual(Array.from(m.AuditLog.load().events), []);
+
+      assert.equal(m.CATALOG_SERVICES.length > 0, true);
+      assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
+      assert.equal(m.LOGISTICS_CONFIG.minNoticeHours, 72);
+      assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
+    } finally {
+      cleanVm.cleanup();
+    }
+
+    const seededVm = mountCleanVm({
+      arkik_bookings_v1: JSON.stringify([
+        { code: 'ARK-SEED0001', clientName: 'Demo Seed', isSeed: true },
+        { code: 'ARK-REAL0001', clientName: 'Cliente Real', isSeed: false }
+      ]),
+      arkik_blocked_dates_v1: JSON.stringify({
+        '2026-12-01': { state: 'disabled', reason: 'Seed', isSeed: true },
+        '2026-12-15': { state: 'soldout', reason: 'Real event' }
+      })
+    });
+    try {
+      const m = seededVm.mod;
+      m.BookingStore.load();
+      m.AvailabilityManager.load();
+
+      assert.deepEqual(
+        m.BookingStore.all().map((b) => b.code),
+        ['ARK-REAL0001']
+      );
+      assert.deepEqual(
+        Object.assign({}, m.AvailabilityManager.all()),
+        { '2026-12-15': { state: 'soldout', reason: 'Real event' } }
+      );
+    } finally {
+      seededVm.cleanup();
+    }
+  });
 });

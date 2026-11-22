@@ -1293,7 +1293,14 @@ const StorageEngine = {
       { key: STORAGE_KEYS.bookings, make: SEED_BOOKINGS_V1, expect: Array.isArray },
       { key: STORAGE_KEYS.prices, make: SEED_PRICES_V1, expect: isObject },
       { key: STORAGE_KEYS.availability, make: SEED_BLOCKED_DATES_V1, expect: isObject },
-      { key: STORAGE_KEYS.customConfig, make: SEED_CONFIG_V1, expect: isObject }
+      { key: STORAGE_KEYS.customConfig, make: SEED_CONFIG_V1, expect: isObject },
+      {
+        key: STORAGE_KEYS.audit,
+        make: (typeof SEED_AUDIT_V1 === "function"
+          ? SEED_AUDIT_V1
+          : () => ({ engineVersion: ENGINE_VERSION, logins: [], lastLogin: null, events: [] })),
+        expect: isObject
+      }
     ];
     const healed = [];
     heals.forEach(({ key, make, expect }) => {
@@ -1764,8 +1771,17 @@ const AvailabilityManager = {
           SafeStorage.removeItem("arkik_availability_v1");
         }
       } catch (e) { /* storage no disponible: continuar */ }
-      this._data = safeParse(STORAGE_KEYS.availability, {});
-      if (!this._data || typeof this._data !== "object") this._data = {};
+      const raw = safeParse(STORAGE_KEYS.availability, {});
+      this._data = (raw && typeof raw === "object" && !Array.isArray(raw)) ? raw : {};
+      let purgedSeeds = false;
+      Object.keys(this._data).forEach((iso) => {
+        const entry = this._data[iso];
+        if (entry && typeof entry === "object" && entry.isSeed === true) {
+          delete this._data[iso];
+          purgedSeeds = true;
+        }
+      });
+      if (purgedSeeds) this.persist();
     } catch (e) {
       console.warn('AvailabilityManager.load corruption recovered:', e.message || e);
       this._data = {};
@@ -2116,12 +2132,12 @@ const BookingStore = {
   load() {
     try {
       const raw = safeParse(STORAGE_KEYS.bookings, []);
-      this._data = Array.isArray(raw) ? raw : [];
-      if (purgeExpiredVouchers(this._data)) {
+      const list = Array.isArray(raw) ? raw : [];
+      this._data = list.filter((b) => b && !b.isSeed && !/^ARK-SEED/i.test(String(b.code || "")));
+      if (this._data.length !== list.length || purgeExpiredVouchers(this._data)) {
         safeSaveBookings(this._data);
       }
       scheduleVoucherTtlPurge();
-      this._data = Array.isArray(raw) ? raw : [];
     } catch (e) {
       console.warn('BookingStore.load corruption recovered:', e.message || e);
       this._data = [];
@@ -2133,7 +2149,7 @@ const BookingStore = {
   },
 
   all() {
-    return this._data;
+    return Array.isArray(this._data) ? this._data : [];
   },
 
   /**
@@ -4177,7 +4193,11 @@ function isNonGamLocation(province, canton) {
 const AuditLog = {
   load() {
     const data = safeParse(STORAGE_KEYS.audit, null);
-    if (data && typeof data === "object" && !Array.isArray(data)) return data;
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      if (!Array.isArray(data.logins)) data.logins = [];
+      if (!Array.isArray(data.events)) data.events = [];
+      return data;
+    }
     return { engineVersion: ENGINE_VERSION, logins: [], lastLogin: null, events: [] };
   },
 
