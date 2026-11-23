@@ -3356,4 +3356,44 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       reloadVm.cleanup();
     }
   });
+
+  test('40: respond.clientIp extracts first XFF or x-real-ip behind Vercel proxy while blocking spoofing outside trusted proxies', async () => {
+    const respond = load('api/_lib/respond.js');
+
+    await withEnv({ VERCEL: '1', VERCEL_ENV: 'production', TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: null }, async () => {
+      assert.equal(
+        respond.clientIp({ headers: { 'x-vercel-forwarded-for': ' 198.51.100.10 , 10.0.0.1 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.10'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-forwarded-for': ' 203.0.113.42, 70.41.3.18 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '203.0.113.42'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-real-ip': ' 192.0.2.77 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '192.0.2.77'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-forwarded-for': [' 198.51.100.20, 10.0.0.2 '] }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.20'
+      );
+    });
+
+    await withEnv({ VERCEL: null, VERCEL_ENV: null, TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: null }, async () => {
+      assert.equal(
+        respond.clientIp({
+          headers: { 'x-forwarded-for': '1.2.3.4', 'x-real-ip': '5.6.7.8' },
+          socket: { remoteAddress: '127.0.0.1' }
+        }),
+        '127.0.0.1'
+      );
+    });
+
+    await withEnv({ VERCEL: null, VERCEL_ENV: null, TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: '1' }, async () => {
+      assert.equal(
+        respond.clientIp({ headers: { 'cf-connecting-ip': ' 198.51.100.55 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.55'
+      );
+    });
+  });
 });

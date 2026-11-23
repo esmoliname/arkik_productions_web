@@ -155,8 +155,13 @@ function clientIp(req) {
     readEnvFromContext('VERCEL_ENV', '') === 'preview' ||
     readEnvFromContext('TRUST_PROXY', '') === 'true';
   if (isTrustedProxy) {
-    const vercelForwarded = req && req.headers ? req.headers['x-vercel-forwarded-for'] : null;
-    const forwarded = vercelForwarded || (req && req.headers ? req.headers['x-forwarded-for'] : null);
+    const headers = req && req.headers ? req.headers : {};
+    const rawForwarded =
+      headers['x-vercel-forwarded-for'] ||
+      headers['x-forwarded-for'] ||
+      headers['x-real-ip'] ||
+      null;
+    const forwarded = Array.isArray(rawForwarded) ? rawForwarded[0] : rawForwarded;
     if (typeof forwarded === 'string' && forwarded.trim()) {
       return forwarded.split(',')[0].trim();
     }
