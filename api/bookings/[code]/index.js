@@ -13,16 +13,17 @@ async function handler(req, res) {
 
     if (req.method === 'GET') {
       const auth = registry.get('auth');
-      await auth.requireAdmin(req);
+      await auth.requireAdmin(req, res);
       const includeVoucher = req.query && req.query.include === 'voucher';
       const service = registry.get('service');
       const data = await service.getBooking(code, includeVoucher);
+      res.setHeader('Cache-Control', 'private, no-store');
       return respond.ok(res, data);
     }
 
     if (req.method === 'PATCH') {
       const auth = registry.get('auth');
-      await auth.requireOwner(req);
+      await auth.requireOwner(req, res);
       const body = await respond.readBody(req);
       const service = registry.get('service');
       const data = await service.updateBooking(code, body);

@@ -258,7 +258,8 @@ async function listBookings(query) {
   const validated = logic.validateListFilters(query);
   if (!validated.ok) throw validationError(validated.errors);
 
-  const result = await db.withClient((client) => repo.listBookings(client, validated.value));
+  const runRead = typeof db.withReadTransaction === 'function' ? db.withReadTransaction : db.withClient;
+  const result = await runRead((client) => repo.listBookings(client, validated.value));
   return {
     bookings: result.rows.map((row) => repo.mapBooking(row, {})),
     total: result.total
@@ -466,7 +467,8 @@ async function getAvailabilityRange(query) {
   const cfg = await loadConfig();
   const maxPerDay = Number(cfg.limits.maxEventsPerDay) > 0 ? Number(cfg.limits.maxEventsPerDay) : 2;
 
-  const [times, overrides] = await db.withClient(async (client) => [
+  const runRead = typeof db.withReadTransaction === 'function' ? db.withReadTransaction : db.withClient;
+  const [times, overrides] = await runRead(async (client) => [
     await repo.listActiveTimesInRange(client, from, to),
     await repo.listAvailability(client)
   ]);
@@ -506,18 +508,20 @@ async function setAvailability(body) {
   if (!validated.ok) throw validationError(validated.errors);
 
   const value = validated.value;
-  if (value.state === 'available') {
-    await db.withClient((client) => repo.deleteAvailability(client, value.date));
-  } else {
-    await db.withClient((client) => repo.upsertAvailability(client, value.date, value.state, value.reason));
-  }
-
-  await recordAudit({
-    action: 'AVAILABILITY_CHANGED',
-    entityType: 'availability',
-    entityId: value.date,
-    actor: 'admin',
-    metadata: { date: value.date, state: value.state, reason: value.reason }
+  await db.withTransaction(async (client) => {
+    await repo.lockDate(client, value.date);
+    if (value.state === 'available') {
+      await repo.deleteAvailability(client, value.date);
+    } else {
+      await repo.upsertAvailability(client, value.date, value.state, value.reason);
+    }
+    await repo.insertAudit(client, {
+      action: 'AVAILABILITY_CHANGED',
+      entityType: 'availability',
+      entityId: value.date,
+      actor: 'admin',
+      metadata: { date: value.date, state: value.state, reason: value.reason }
+    });
   });
 
   return { date: value.date, state: value.state, reason: value.reason };
@@ -533,16 +537,19 @@ async function clearAvailability(date) {
     throw validationError([{ field: 'date', message: 'Fecha inválida.' }]);
   }
 
-  const removed = await db.withClient((client) => repo.deleteAvailability(client, normalized));
-  if (removed > 0) {
-    await recordAudit({
-      action: 'AVAILABILITY_CHANGED',
-      entityType: 'availability',
-      entityId: normalized,
-      actor: 'admin',
-      metadata: { date: normalized, state: 'available', cleared: true }
-    });
-  }
+  await db.withTransaction(async (client) => {
+    await repo.lockDate(client, normalized);
+    const removed = await repo.deleteAvailability(client, normalized);
+    if (removed > 0) {
+      await repo.insertAudit(client, {
+        action: 'AVAILABILITY_CHANGED',
+        entityType: 'availability',
+        entityId: normalized,
+        actor: 'admin',
+        metadata: { date: normalized, state: 'available', cleared: true }
+      });
+    }
+  });
   // Idempotent: absent row still answers cleared:true.
   return { date: normalized, cleared: true };
 }
@@ -684,7 +691,8 @@ async function getStats() {
   const repo = registry.get('repo');
   const logic = registry.get('logic');
   const today = logic.todayCR();
-  return db.withClient((client) =>
+  const runRead = typeof db.withReadTransaction === 'function' ? db.withReadTransaction : db.withClient;
+  return runRead((client) =>
     repo.getStats(client, { from: today, to: logic.addDaysISO(today, 60) })
   );
 }
@@ -713,7 +721,7 @@ async function putPricing(body, actor) {
   const nextOverrides = mergeOverrides(cfg.overrides, validated.value.overrides);
   const nextRates = Object.assign({}, cfg.rates, validated.value.rates || {});
 
-  await db.withClient(async (client) => {
+  await db.withTransaction(async (client) => {
     if (validated.value.overrides) {
       await repo.putConfigValue(client, 'pricing', 'overrides', nextOverrides);
     }
@@ -744,22 +752,70 @@ function mergeOverrides(current, incoming) {
   return merged;
 }
 
+function mapAuditRow(row, repo) {
+  return {
+    action: row.action,
+    entityType: row.entity_type || null,
+    entityId: row.entity_id || null,
+    actor: row.actor || null,
+    metadata: row.metadata === undefined ? null : row.metadata,
+    createdAt: repo.toIso(row.created_at)
+  };
+}
+
 async function listAudit(limitParam) {
   const db = registry.get('db');
   const repo = registry.get('repo');
   const logic = registry.get('logic');
   const limit = logic.parseLimit(limitParam, 50, 200);
+  const runRead = typeof db.withReadTransaction === 'function' ? db.withReadTransaction : db.withClient;
 
-  const rows = await db.withClient((client) => repo.listAudit(client, limit));
+  const rows = await runRead((client) => repo.listAudit(client, limit));
   return {
-    events: rows.map((row) => ({
-      action: row.action,
-      entityType: row.entity_type || null,
-      entityId: row.entity_id || null,
-      actor: row.actor || null,
-      metadata: row.metadata === undefined ? null : row.metadata,
-      createdAt: repo.toIso(row.created_at)
-    }))
+    events: rows.map((row) => mapAuditRow(row, repo))
+  };
+}
+
+// Single-client sequential snapshot for /api/admin/dashboard (avoids max:1 Promise.all queuing).
+async function getDashboardData(options = {}) {
+  const db = registry.get('db');
+  const repo = registry.get('repo');
+  const logic = registry.get('logic');
+  const bookingsLimit = Number(options.bookingsLimit) > 0 ? Math.trunc(Number(options.bookingsLimit)) : 500;
+  const auditLimit = logic.parseLimit(options.auditLimit, 50, 200);
+  const today = logic.todayCR();
+  const statsWindow = { from: today, to: logic.addDaysISO(today, 60) };
+  const runRead = typeof db.withReadTransaction === 'function' ? db.withReadTransaction : db.withClient;
+  const useCachedConfig = cachedConfig && Date.now() - cachedAt < CONFIG_TTL_MS;
+
+  const snapshot = await runRead(async (client) => {
+    const stats = await repo.getStats(client, statsWindow);
+    const listRes = await repo.listBookings(client, { limit: bookingsLimit });
+    let cfg = useCachedConfig ? cachedConfig : null;
+    if (!cfg) {
+      const configRows = await repo.getConfigRows(client);
+      cfg = normalizeConfig(configRows);
+      cachedConfig = cfg;
+      cachedAt = Date.now();
+    }
+    const availRows = await repo.listAvailability(client);
+    const auditRows = await repo.listAudit(client, auditLimit);
+    return { stats, listRes, cfg, availRows, auditRows };
+  });
+
+  const blocked = {};
+  for (const row of snapshot.availRows || []) {
+    blocked[row.date] = { state: row.state, reason: row.reason || null };
+  }
+
+  const bookingRows = Array.isArray(snapshot.listRes && snapshot.listRes.rows) ? snapshot.listRes.rows : [];
+  return {
+    stats: snapshot.stats,
+    bookings: bookingRows.map((row) => repo.mapBooking(row, {})),
+    total: Number(snapshot.listRes && snapshot.listRes.total) || bookingRows.length,
+    pricing: clone({ overrides: snapshot.cfg.overrides, rates: snapshot.cfg.rates }),
+    availability: blocked,
+    auditEvents: (snapshot.auditRows || []).map((row) => mapAuditRow(row, repo))
   };
 }
 
@@ -786,5 +842,6 @@ module.exports = {
   getPublicPricing,
   getPricing,
   putPricing,
-  listAudit
+  listAudit,
+  getDashboardData
 };

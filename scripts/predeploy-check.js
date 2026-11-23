@@ -15,6 +15,16 @@ function runStep(label, fn) {
   console.log(`PASS${result ? ` (${result})` : ''}`);
 }
 
+function listJsFiles(dir) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) results.push(...listJsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith('.js')) results.push(full);
+  }
+  return results;
+}
+
 function verifyStaticInvariants() {
   const clientFiles = ['js/app.js', 'js/data.js', 'js/api.js', 'index.html'];
   for (const rel of clientFiles) {
@@ -22,18 +32,47 @@ function verifyStaticInvariants() {
     if (content.includes('scrypt$')) {
       throw new Error(`Forbidden scrypt hash material found in client asset: ${rel}`);
     }
-    if (/\bADMIN_OWNER_PIN\b|\bADMIN_IT_PIN\b|\bADMIN_SESSION_SECRET\b|\bDATABASE_URL\b/.test(content)) {
+    if (
+      /\bADMIN_OWNER_PIN\b|\bADMIN_IT_PIN\b|\bADMIN_SESSION_SECRET\b|\bDATABASE_URL\b|\bDIRECT_DATABASE_URL\b|\bDIRECT_ADMIN_DATABASE_URL\b|\bNEON_STAGING_PREFLIGHT_[A-Z0-9_]*\b|\bNEON_STAGING_EXPECTED_ENDPOINT_ID\b/.test(
+        content
+      )
+    ) {
       throw new Error(`Forbidden server env identifier found in client asset: ${rel}`);
     }
+  }
+
+  for (const apiFile of listJsFiles(path.join(ROOT, 'api'))) {
+    const rel = path.relative(ROOT, apiFile).replace(/\\/g, '/');
+    const src = fs.readFileSync(apiFile, 'utf8');
+    if (
+      /\bDIRECT_DATABASE_URL\b|\bDIRECT_ADMIN_DATABASE_URL\b|\bNEON_STAGING_PREFLIGHT_[A-Z0-9_]*\b|\bNEON_STAGING_EXPECTED_ENDPOINT_ID\b/.test(
+        src
+      )
+    ) {
+      throw new Error(`Runtime isolation violation: restricted CLI/preflight DB env var referenced in ${rel}`);
+    }
+  }
+
+  const vercelIgnoreLines = fs
+    .readFileSync(path.join(ROOT, '.vercelignore'), 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  if (!vercelIgnoreLines.includes('db') || !vercelIgnoreLines.includes('scripts') || !vercelIgnoreLines.includes('.env.local')) {
+    throw new Error('.vercelignore must exclude "db", "scripts", and ".env.local" from Vercel bundles');
   }
 
   const bookingIndex = fs.readFileSync(path.join(ROOT, 'api/bookings/[code]/index.js'), 'utf8');
   const bookingStatus = fs.readFileSync(path.join(ROOT, 'api/bookings/[code]/status.js'), 'utf8');
   const bookingReschedule = fs.readFileSync(path.join(ROOT, 'api/bookings/[code]/reschedule.js'), 'utf8');
+  const availabilityHandler = fs.readFileSync(path.join(ROOT, 'api/availability/index.js'), 'utf8');
+  const adminPricingHandler = fs.readFileSync(path.join(ROOT, 'api/admin/pricing.js'), 'utf8');
   for (const [name, src] of [
     ['api/bookings/[code]/index.js', bookingIndex],
     ['api/bookings/[code]/status.js', bookingStatus],
-    ['api/bookings/[code]/reschedule.js', bookingReschedule]
+    ['api/bookings/[code]/reschedule.js', bookingReschedule],
+    ['api/availability/index.js', availabilityHandler],
+    ['api/admin/pricing.js', adminPricingHandler]
   ]) {
     if (!src.includes('requireOwner')) {
       throw new Error(`Owner RBAC guard missing in ${name}`);
@@ -79,11 +118,11 @@ function verifyStaticInvariants() {
   }
 
   const migrationsDir = path.join(ROOT, 'db', 'migrations');
-  const sqlFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+  const sqlFiles = fs.readdirSync(migrationsDir).filter((f) => f.toLowerCase().endsWith('.sql')).sort();
   if (sqlFiles.length < 3) {
     throw new Error(`Expected >= 3 SQL migration files, found ${sqlFiles.length}`);
   }
-  return `${sqlFiles.length} SQL migrations + RBAC, auth, probe & vercel invariants clean`;
+  return `${sqlFiles.length} SQL migrations + RBAC, runtime-isolation, probe & vercel invariants clean`;
 }
 
 function main() {
@@ -91,27 +130,38 @@ function main() {
 
   runStep('JS syntax check', () => {
     execSync('npm run check', { cwd: ROOT, stdio: 'pipe' });
-    return 'js/app.js, js/data.js, js/api.js';
+    return 'client, db, and scripts JS syntax';
   });
 
-  runStep('Unit & integration tests', () => {
-    execSync('node --test "test/*.test.cjs"', { cwd: ROOT, stdio: 'inherit' });
-    return 'all suites clean';
+  runStep('Unit & integration tests (offline mocks)', () => {
+    const testEnv = Object.assign({}, process.env, { APP_ENV: 'development', NODE_ENV: 'development' });
+    delete testEnv.SECURE_COOKIES;
+    execSync('node --test "test/*.test.cjs"', { cwd: ROOT, stdio: 'inherit', env: testEnv });
+    return 'all mock suites clean';
   });
 
   runStep('Security & RBAC static invariants', verifyStaticInvariants);
 
   const hasDb = Boolean((process.env.DATABASE_URL || '').trim());
+  const hasDirectDb = Boolean((process.env.DIRECT_DATABASE_URL || '').trim());
+  const hasDirectAdminDb = Boolean((process.env.DIRECT_ADMIN_DATABASE_URL || '').trim());
   const rawSecret = (process.env.ADMIN_SESSION_SECRET || '').trim();
   const hasSecret = Boolean(rawSecret && rawSecret !== 'dev-secret-change-me');
   const secretState = hasSecret ? 'SET' : (rawSecret === 'dev-secret-change-me' ? 'PLACEHOLDER' : 'UNSET');
   console.log(
-    `[predeploy] Environment snapshot: DATABASE_URL=${hasDb ? 'SET' : 'UNSET'}, ADMIN_SESSION_SECRET=${secretState}`
+    `[predeploy] Environment snapshot: DATABASE_URL=${hasDb ? 'SET' : 'UNSET'}, DIRECT_DATABASE_URL=${hasDirectDb ? 'SET' : 'UNSET'}, DIRECT_ADMIN_DATABASE_URL=${hasDirectAdminDb ? 'SET' : 'UNSET'}, ADMIN_SESSION_SECRET=${secretState}`
   );
   if (!hasDb || !hasSecret) {
     console.log('[predeploy] NOTE: Configure DATABASE_URL and a non-placeholder ADMIN_SESSION_SECRET in Vercel/local .env.local before live deployment.');
   }
-  console.log('[predeploy] Local verification gate PASSED.');
+  if (
+    (process.env.NEON_STAGING_PREFLIGHT_DIRECT_URL || '').trim() ||
+    (process.env.NEON_STAGING_PREFLIGHT_POOLED_URL || '').trim() ||
+    (process.env.NEON_STAGING_EXPECTED_ENDPOINT_ID || '').trim()
+  ) {
+    console.log('[predeploy] WARNING: Temporary NEON_STAGING_PREFLIGHT_* / NEON_STAGING_EXPECTED_ENDPOINT_ID detected; remove after P0.4.5-B.');
+  }
+  console.log('[predeploy] Local offline verification gate PASSED (PostgreSQL/Neon real integration not executed here).');
 }
 
 main();

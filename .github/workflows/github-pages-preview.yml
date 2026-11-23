@@ -1,0 +1,57 @@
+name: GitHub Pages Preview (preview/cloudflare)
+
+on:
+  push:
+    branches:
+      - preview/cloudflare
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare static site (allowlist)
+        run: |
+          set -euo pipefail
+          rm -rf pages-site
+          mkdir -p pages-site
+          # Explicit allowlist: only static frontend assets
+          cp index.html pages-site/
+          cp -r css pages-site/
+          cp -r js pages-site/
+          cp -r img pages-site/
+          # Safety: remove any backend/config/secret files that may have slipped in
+          rm -rf pages-site/api pages-site/db pages-site/docs pages-site/scripts pages-site/.github pages-site/.env* pages-site/node_modules
+          # Verify no forbidden directories remain
+          for forbidden in api db docs scripts node_modules .github .env .env.local; do
+            if [ -e "pages-site/$forbidden" ]; then echo "FORBIDDEN PATH FOUND: $forbidden" >&2; exit 1; fi
+          done
+          echo "Static site prepared. Contents:"
+          find pages-site -type f | sort
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

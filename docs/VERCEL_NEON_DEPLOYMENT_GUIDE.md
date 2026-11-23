@@ -6,10 +6,12 @@
 
 | Variable | Obligatoria | Propósito | Notas de Seguridad |
 |---|---|---|---|
-| `DATABASE_URL` | Sí | Pool TLS hacia Neon PostgreSQL | Debe usar SSL (`?sslmode=require`); jamás exponer en cliente. |
+| `DATABASE_URL` | Sí (Vercel runtime) | Pool TLS (`-pooler`) hacia Neon PostgreSQL (`arkik_app`) | Debe usar SSL (`?sslmode=require`); jamás exponer en cliente. **Nunca poner `DIRECT_DATABASE_URL` ni `DIRECT_ADMIN_DATABASE_URL` en Vercel.** |
 | `ADMIN_SESSION_SECRET` | Sí (Staging, Preview, Prod, Cloud y cualquier entorno con `DATABASE_URL`) | Firma HMAC-SHA256 de tokens y hash de sesiones | Mínimo 32 bytes aleatorios. Si falta o usa `'dev-secret-change-me'` fuera de `APP_ENV=development` explícito sin DB, la API responde `503`. |
-| `ADMIN_OWNER_PIN` | Sí (bootstrap) | PIN o hash `scrypt$` inicial del rol `owner` | Mínimo 6+ caracteres; puede almacenarse ya hasheado con `npm run admin:hash`. |
-| `ADMIN_IT_PIN` | Sí (bootstrap) | PIN o hash `scrypt$` inicial del rol `it` | Acepta caracteres alfanuméricos y símbolos sin ser mutilados. |
+| `APP_ENV` | Sí | Entorno lógico (`staging` en Preview / `production` en Prod) | Solo `APP_ENV=development` explícito local sin BD habilita el fallback stateless. |
+| `SEED_MODE` | Sí (`false`) | Bloqueo de semillas demo | Mantener siempre en `false` en Staging/Preview/Production (`db/seed-dev.js` además exige `localhost`). |
+| `ADMIN_OWNER_PIN` | Sí (bootstrap CLI) | PIN (`>= 6` chars) o hash `scrypt$` inicial del rol `owner` | Utilizado en local por `db:migrate` (`DIRECT_DATABASE_URL`) y `admin:verify`/`admin:rotate` (`DIRECT_ADMIN_DATABASE_URL`); no almacenar plaintext en Vercel tras bootstrap. |
+| `ADMIN_IT_PIN` | Sí (bootstrap CLI) | PIN (`>= 6` chars) o hash `scrypt$` inicial del rol `it` | Acepta caracteres alfanuméricos y símbolos sin ser mutilados. |
 | `ALLOWED_ORIGINS` | Condicional | Lista separada por comas para CORS | Vacío => estrictamente Same-Origin (recomendado). |
 
 ## 2. Secuencia de Despliegue y Smoke Tests (Preview / Staging -> Production)
@@ -20,7 +22,7 @@
    npm run predeploy:check
    npm audit --omit=dev
    ```
-2. **Aplicar migraciones y verificar credenciales contra Neon**:
+2. **Aplicar migraciones y verificar credenciales contra Neon** (en `.env.local` o CLI autorizada, sin `-pooler`: `DIRECT_DATABASE_URL` con `arkik_migrator` para `db:migrate` y `DIRECT_ADMIN_DATABASE_URL` con `arkik_admin` para `admin:verify`/`admin:rotate`):
    ```bash
    npm run db:migrate
    npm run admin:verify

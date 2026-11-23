@@ -68,7 +68,7 @@ function createInMemoryDb(seedCredentials) {
       return { rows: [{ '?column?': 1 }], rowCount: 1 };
     }
 
-    if (/^(BEGIN|COMMIT|ROLLBACK|SELECT pg_advisory_xact_lock)/i.test(q)) {
+    if (/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL |SELECT pg_advisory_xact_lock)/i.test(q)) {
       return { rows: [], rowCount: 0 };
     }
 
@@ -1238,23 +1238,19 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     });
   });
 
-  test('23: Dashboard endpoint hydrates server auditEvents alongside bookings/stats/pricing', async () => {
+  test('23: Dashboard endpoint hydrates sequentially on single DB client and preserves auditEvents + no-store', async () => {
     const dashboardHandler = require(path.join(__dirname, '..', 'api', 'admin', 'dashboard.js'));
     const secret = 'test-secret-0123456789abcdef';
     const service = require(path.join(__dirname, '..', 'api', '_lib', 'service.js'));
 
-    const origStats = service.getStats;
-    const origBookings = service.listBookings;
-    const origPricing = service.getPricing;
-    const origAvail = service.getAvailability;
-    const origAudit = service.listAudit;
-
-    service.getStats = async () => ({ total: 1, pendientes: 1, confirmadas: 0, ingresoProyectadoCrc: 1000 });
-    service.listBookings = async () => ({ bookings: [], total: 0 });
-    service.getPricing = async () => ({ overrides: { services: {}, extras: {} }, rates: {} });
-    service.getAvailability = async () => ({ blocked: {} });
-    service.listAudit = async () => ({
-      events: [{ action: 'ADMIN_LOGIN_SUCCESS', entityType: 'admin', entityId: 'it', actor: 'admin:it', metadata: {}, createdAt: '2026-11-13T00:00:00Z' }]
+    const origDashboard = service.getDashboardData;
+    service.getDashboardData = async () => ({
+      stats: { total: 1, pendientes: 1, confirmadas: 0, ingresoProyectadoCrc: 1000 },
+      bookings: [],
+      total: 0,
+      pricing: { overrides: { services: {}, extras: {} }, rates: {} },
+      availability: {},
+      auditEvents: [{ action: 'ADMIN_LOGIN_SUCCESS', entityType: 'admin', entityId: 'it', actor: 'admin:it', metadata: {}, createdAt: '2026-11-13T00:00:00Z' }]
     });
 
     try {
@@ -1264,16 +1260,50 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie: `arkik_session=${encodeURIComponent(token)}` } }), res);
         assert.equal(res.statusCode, 200);
         assert.equal(res.body.success, true);
+        assert.equal(res.getHeader('cache-control'), 'private, no-store');
         assert.equal(Array.isArray(res.body.data.auditEvents), true);
         assert.equal(res.body.data.auditEvents[0].action, 'ADMIN_LOGIN_SUCCESS');
       });
     } finally {
-      service.getStats = origStats;
-      service.listBookings = origBookings;
-      service.getPricing = origPricing;
-      service.getAvailability = origAvail;
-      service.listAudit = origAudit;
+      service.getDashboardData = origDashboard;
     }
+
+    // Sequential single-client execution with DB active: 1 client for requireAdmin + 1 client for getDashboardData (no max:1 contention)
+    const { fakePool } = createInMemoryDb([
+      ['owner', { role: 'owner', pin_hash: auth.hashPin(OWNER_PIN), failed_attempts: 0, lock_level: 0, locked_until: null }]
+    ]);
+    let connectCount = 0;
+    const countedPool = {
+      query: fakePool.query,
+      async connect() {
+        connectCount += 1;
+        return fakePool.connect();
+      },
+      end: fakePool.end
+    };
+
+    await withEnv({
+      DATABASE_URL: 'postgres://mock:mock@localhost:5432/arkik',
+      ADMIN_SESSION_SECRET: secret,
+      NODE_ENV: 'test'
+    }, async () => {
+      db.setPoolFactoryForTests(() => countedPool);
+      try {
+        const loginRes = makeRes();
+        await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: OWNER_PIN }, ip: '198.51.100.33' }), loginRes);
+        assert.equal(loginRes.statusCode, 200);
+        const cookie = extractCookiePair(loginRes.getHeader('set-cookie'));
+
+        connectCount = 0;
+        const dashRes = makeRes();
+        await dashboardHandler(makeReq('GET', '/api/admin/dashboard', { headers: { cookie } }), dashRes);
+        assert.equal(dashRes.statusCode, 200);
+        assert.equal(dashRes.getHeader('cache-control'), 'private, no-store');
+        assert.equal(connectCount, 2, 'dashboard must checkout strictly 1 auth client + 1 sequential snapshot client');
+      } finally {
+        db.setPoolFactoryForTests(null);
+      }
+    });
   });
 
   test('24: Full-stack dev server resolves /api/* dynamically and blocks sensitive dotfiles/directories', async () => {
@@ -1814,7 +1844,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         NODE_ENV: 'test',
         APP_ENV: 'staging',
         VERCEL: null,
-        VERCEL_ENV: null
+        VERCEL_ENV: null,
+        SECURE_COOKIES: '1'
       }, sc.env), async () => {
         db.setPoolFactoryForTests(() => fakePool);
         try {
@@ -2115,15 +2146,15 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     assert.deepEqual(db.DEFAULT_POOL_OPTIONS, {
       max: 1,
       connectionTimeoutMillis: 8000,
-      statement_timeout: 10000,
-      query_timeout: 12000,
+      statement_timeout: 8000,
+      query_timeout: 11000,
       idleTimeoutMillis: 10000
     });
     const poolCfg = db.getPoolConfig('postgres://user:pass@localhost:5432/test');
     assert.equal(poolCfg.max, 1);
     assert.equal(poolCfg.connectionTimeoutMillis, 8000);
-    assert.equal(poolCfg.statement_timeout, 10000);
-    assert.equal(poolCfg.query_timeout, 12000);
+    assert.equal(poolCfg.statement_timeout, 8000);
+    assert.equal(poolCfg.query_timeout, 11000);
     assert.equal(poolCfg.idleTimeoutMillis, 10000);
 
     // Verify @neondatabase/serverless@0.10.4 instantiates with DEFAULT_POOL_OPTIONS without network call
@@ -2132,8 +2163,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     const instantiated = new NeonPool(poolCfg);
     assert.equal(instantiated.options.max, 1);
     assert.equal(instantiated.options.connectionTimeoutMillis, 8000);
-    assert.equal(instantiated.options.statement_timeout, 10000);
-    assert.equal(instantiated.options.query_timeout, 12000);
+    assert.equal(instantiated.options.statement_timeout, 8000);
+    assert.equal(instantiated.options.query_timeout, 11000);
     assert.equal(instantiated.options.idleTimeoutMillis, 10000);
     await instantiated.end();
 
@@ -2357,7 +2388,13 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       }, envPatch), async () => {
         assert.equal(config.isExplicitLocalDev, false, `${label}: isExplicitLocalDev must be false`);
         assert.equal(auth.canUseLocalEnvPinFallback(), false, `${label}: canUseLocalEnvPinFallback must be false`);
-        assert.equal(/; Secure/.test(auth.sessionCookie('probe')), expectSecureCookie, `${label}: secure cookie mismatch`);
+        let secureCookie = false;
+        try {
+          secureCookie = /; Secure/.test(auth.sessionCookie('probe'));
+        } catch (e) {
+          secureCookie = false; // fail-closed: no insecure cookie issued
+        }
+        assert.equal(secureCookie, expectSecureCookie, `${label}: secure cookie mismatch`);
 
         const loginRes = makeRes();
         await loginHandler(makeReq('POST', '/api/admin/login', { body: { role: 'owner', pin: 'env-pin-owner-999' }, ip: '198.51.100.50' }), loginRes);
@@ -2821,6 +2858,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         VERCEL: null,
         VERCEL_ENV: stagingEnv === 'preview' ? 'preview' : null,
         ADMIN_SESSION_SECRET: 'explicit-staging-preview-secret-0123456789abcdef',
+        SECURE_COOKIES: '1',
         ADMIN_OWNER_PIN: 'ignored-when-db-active',
         ADMIN_IT_PIN: null
       }, async () => {
@@ -2840,5 +2878,522 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         }
       });
     }
+  });
+
+  test('38: Hybrid static preview fallback (GitHub Pages & static 404/405) preserves Zero-Trust fail-closed on non-preview origins', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    function mountFrontend(hostname) {
+      let nextFetch = async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '<!DOCTYPE html><html>404</html>' });
+      const lsStore = new Map();
+      const ssStore = new Map();
+      const toasts = [];
+      const activeTimeouts = new Set();
+      const activeIntervals = new Set();
+      const fakeStorage = (m) => ({
+        getItem: (k) => (m.has(k) ? m.get(k) : null),
+        setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k)
+      });
+
+      const sandbox = {
+        console,
+        setTimeout: (fn, ms, ...args) => {
+          const id = setTimeout((...a) => {
+            activeTimeouts.delete(id);
+            fn(...a);
+          }, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeTimeouts.add(id);
+          return id;
+        },
+        clearTimeout: (id) => {
+          activeTimeouts.delete(id);
+          clearTimeout(id);
+        },
+        setInterval: (fn, ms, ...args) => {
+          const id = setInterval(fn, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeIntervals.add(id);
+          return id;
+        },
+        clearInterval: (id) => {
+          activeIntervals.delete(id);
+          clearInterval(id);
+        },
+        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        Promise,
+        JSON,
+        Date,
+        Math,
+        Object,
+        String,
+        Number,
+        Boolean,
+        Array,
+        Map,
+        Set,
+        RegExp,
+        Error,
+        TypeError,
+        encodeURIComponent,
+        decodeURIComponent,
+        AbortController,
+        fetch: (...args) => nextFetch(...args),
+        localStorage: fakeStorage(lsStore),
+        sessionStorage: fakeStorage(ssStore),
+        location: { pathname: '/', hash: '', origin: `https://${hostname}`, hostname },
+        navigator: { userAgent: 'node-test', onLine: true },
+        document: {
+          readyState: 'loading',
+          visibilityState: 'visible',
+          addEventListener: () => {},
+          getElementById: () => null,
+          querySelector: () => null,
+          querySelectorAll: () => [],
+          body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+        },
+        addEventListener: () => {},
+        scrollTo: () => {},
+        history: { replaceState: () => {} },
+        crypto: require('node:crypto').webcrypto
+      };
+      sandbox.window = sandbox;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+      vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+      vm.runInContext(
+        appSrc + '\nwindow.__TEST_HYBRID__ = { SecurityModule, AdminModule, BookingStore, PriceManager, AvailabilityManager, ADMIN_SESSION, SafeStorage };',
+        sandbox,
+        { filename: 'js/app.js' }
+      );
+
+      const mod = sandbox.__TEST_HYBRID__;
+      mod.AdminModule.openPortal = () => {};
+      mod.AdminModule.startInactivityTimer = () => {};
+      mod.AdminModule.clearInactivityTimer = () => {};
+      mod.AdminModule.startIntegrityMonitor = () => {};
+      mod.AdminModule.clearIntegrityMonitor = () => {};
+      mod.AdminModule.renderDashboard = () => {};
+      sandbox.showToast = (msg, type) => toasts.push({ msg, type });
+
+      return {
+        mod,
+        lsStore,
+        ssStore,
+        toasts,
+        setFetch: (fn) => { nextFetch = fn; },
+        cleanup: () => {
+          for (const id of activeTimeouts) clearTimeout(id);
+          for (const id of activeIntervals) clearInterval(id);
+          activeTimeouts.clear();
+          activeIntervals.clear();
+        }
+      };
+    }
+
+    const gh = mountFrontend('arkik-org.github.io');
+    const prod = mountFrontend('arkik-productions.vercel.app');
+    try {
+    // A) GitHub Pages preview host: 405 HTML, 503, and network errors degrade to verifyLocal & SafeStorage
+    gh.lsStore.set('admin_login_attempts', '3');
+    gh.lsStore.set('admin_lockout_until', String(Date.now() + 60000));
+
+    gh.setFetch(async () => ({
+      status: 405,
+      ok: false,
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
+      text: async () => '<!DOCTYPE html><html>405 Not Allowed</html>'
+    }));
+    const ownerRes = await gh.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(ownerRes.ok, true);
+    assert.equal(ownerRes.role, 'owner');
+    assert.equal(ownerRes.source, 'local');
+    assert.equal(gh.lsStore.has('admin_login_attempts'), false, 'residual admin_login_attempts must be cleared on success');
+    assert.equal(gh.lsStore.has('admin_lockout_until'), false, 'residual admin_lockout_until must be cleared on success');
+
+    // GitHub Pages network failure falls back to verifyLocal for IT role ('1234')
+    gh.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+    const itRes = await gh.mod.SecurityModule.verifyPin('it', '1234');
+    assert.equal(itRes.ok, true);
+    assert.equal(itRes.role, 'it');
+    assert.equal(itRes.source, 'local');
+
+    // Wrong PIN on GitHub Pages still returns 401 and increments attempts
+    const badRes = await gh.mod.SecurityModule.verifyPin('owner', '9999');
+    assert.equal(badRes.ok, false);
+    assert.equal(badRes.status, 401);
+    assert.equal(badRes.infraError, false);
+    assert.equal(gh.mod.SecurityModule.status().attempts, 1);
+
+    // loadProtectedAdminData degrades silently to SafeStorage on 404 without error toast
+    gh.toasts.length = 0;
+    gh.setFetch(async () => ({
+      status: 404,
+      ok: false,
+      headers: { get: () => 'text/html' },
+      text: async () => '<html>404</html>'
+    }));
+    const dashRes = await gh.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+    assert.equal(dashRes.ok, true);
+    assert.equal(dashRes.role, 'owner');
+    assert.equal(dashRes.source, 'local');
+    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'static preview dashboard fallback must not emit error toasts');
+
+    // BookingStore.add degrades silently to SafeStorage on 404 without alerts
+    gh.toasts.length = 0;
+    const addRes = await gh.mod.BookingStore.add({
+      clientName: 'Cliente Preview',
+      clientPhone: '8888-1234',
+      clientEmail: 'cliente@example.com',
+      eventType: 'Boda',
+      serviceId: 1,
+      selectedDate: '2026-12-20',
+      selectedTime: '18:00',
+      province: 'San José',
+      canton: 'Escazú',
+      address: 'Centro',
+      sinpeRef: 'REF12345',
+      extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
+    }, 'idem-gh-preview-1');
+    assert.equal(addRes.ok, true);
+    assert.equal(addRes.source, 'local');
+    assert.equal(addRes.queued, true);
+    assert.equal(gh.mod.BookingStore.all().some((b) => b.code === addRes.booking.code), true);
+    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'BookingStore.add local fallback must not emit error toasts');
+
+    // B) Non-GitHub-Pages origin: static 404/405 still falls back, but 503 / network / 200 HTML fail closed
+    prod.setFetch(async () => ({
+      status: 503,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
+    }));
+    const prod503 = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prod503.ok, false);
+    assert.equal(prod503.infraError, true, '503 on production origin must fail closed even for preview PIN');
+
+    prod.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+    const prodNet = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prodNet.ok, false);
+    assert.equal(prodNet.infraError, true, 'network error on production origin must fail closed');
+
+    prod.setFetch(async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
+      text: async () => '<!DOCTYPE html><html>SPA</html>'
+    }));
+    const prodHtml = await prod.mod.SecurityModule.verifyPin('owner', '2580');
+    assert.equal(prodHtml.ok, false);
+    assert.equal(prodHtml.infraError, true);
+    assert.equal(prodHtml.code, 'static_server_html');
+
+    // Non-GitHub-Pages static server 404 (no structured JSON error) degrades to verifyLocal
+    prod.setFetch(async () => ({
+      status: 404,
+      ok: false,
+      headers: { get: () => 'text/html' },
+      text: async () => '<html>Not Found</html>'
+    }));
+    const prod404 = await prod.mod.SecurityModule.verifyPin('it', '1234');
+    assert.equal(prod404.ok, true);
+    assert.equal(prod404.role, 'it');
+    assert.equal(prod404.source, 'local');
+
+    // Non-GitHub-Pages loadProtectedAdminData fails closed on 503
+    prod.setFetch(async () => ({
+      status: 503,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
+    }));
+    const prodDash503 = await prod.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+    assert.equal(prodDash503.ok, false);
+    assert.equal(prodDash503.status, 503);
+    } finally {
+      gh.cleanup();
+      prod.cleanup();
+    }
+  });
+
+  test('39: Operational seeds, STORAGE_EPOCH purge, CloudSync static guard, and post-epoch persistence preserve clean boot and catalog', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    function mountCleanVm(initialStorage = {}) {
+      const lsStore = initialStorage instanceof Map ? initialStorage : new Map(Object.entries(initialStorage));
+      const ssStore = new Map();
+      const activeTimeouts = new Set();
+      const activeIntervals = new Set();
+      const fetchCalls = [];
+      const fakeStorage = (m) => ({
+        getItem: (k) => (m.has(k) ? m.get(k) : null),
+        setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k)
+      });
+
+      const sandbox = {
+        console,
+        setTimeout: (fn, ms, ...args) => {
+          const id = setTimeout((...a) => {
+            activeTimeouts.delete(id);
+            fn(...a);
+          }, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeTimeouts.add(id);
+          return id;
+        },
+        clearTimeout: (id) => {
+          activeTimeouts.delete(id);
+          clearTimeout(id);
+        },
+        setInterval: (fn, ms, ...args) => {
+          const id = setInterval(fn, ms, ...args);
+          if (typeof id.unref === 'function') id.unref();
+          activeIntervals.add(id);
+          return id;
+        },
+        clearInterval: (id) => {
+          activeIntervals.delete(id);
+          clearInterval(id);
+        },
+        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        Promise,
+        JSON,
+        Date,
+        Math,
+        Object,
+        String,
+        Number,
+        Boolean,
+        Array,
+        Map,
+        Set,
+        RegExp,
+        Error,
+        TypeError,
+        encodeURIComponent,
+        decodeURIComponent,
+        AbortController,
+        fetch: async (url) => {
+          fetchCalls.push(String(url));
+          return { status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '' };
+        },
+        localStorage: fakeStorage(lsStore),
+        sessionStorage: fakeStorage(ssStore),
+        location: { pathname: '/', hash: '', origin: 'https://arkik-org.github.io', hostname: 'arkik-org.github.io' },
+        navigator: { userAgent: 'node-test', onLine: true },
+        document: {
+          readyState: 'loading',
+          visibilityState: 'visible',
+          addEventListener: () => {},
+          getElementById: () => null,
+          querySelector: () => null,
+          querySelectorAll: () => [],
+          body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+        },
+        addEventListener: () => {},
+        scrollTo: () => {},
+        history: { replaceState: () => {} },
+        crypto: require('node:crypto').webcrypto
+      };
+      sandbox.window = sandbox;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+      vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+      vm.runInContext(
+        appSrc + '\nwindow.__TEST_CLEAN_INIT__ = { SEED_MODE, STORAGE_EPOCH, SEED_BOOKINGS_V1, SEED_BLOCKED_DATES_V1, SEED_AUDIT_V1, CATALOG_SERVICES, LOGISTICS_CONFIG, mediaLibrary, StorageEngine, BookingStore, AvailabilityManager, PriceManager, AuditLog, SafeStorage, CloudSync, STORAGE_KEYS };',
+        sandbox,
+        { filename: 'js/app.js' }
+      );
+
+      return {
+        mod: sandbox.__TEST_CLEAN_INIT__,
+        lsStore,
+        fetchCalls,
+        cleanup: () => {
+          for (const id of activeTimeouts) clearTimeout(id);
+          for (const id of activeIntervals) clearInterval(id);
+          activeTimeouts.clear();
+          activeIntervals.clear();
+        }
+      };
+    }
+
+    // A) Empty localStorage boot
+    const cleanVm = mountCleanVm();
+    try {
+      const m = cleanVm.mod;
+      assert.equal(m.SEED_MODE, false);
+      assert.deepEqual(Array.from(m.SEED_BOOKINGS_V1()), []);
+      assert.deepEqual(Object.assign({}, m.SEED_BLOCKED_DATES_V1()), {});
+      assert.deepEqual(Array.from(m.SEED_AUDIT_V1().logins), []);
+      assert.deepEqual(Array.from(m.SEED_AUDIT_V1().events), []);
+
+      m.StorageEngine.init();
+
+      assert.deepEqual(Array.from(m.BookingStore.all()), []);
+      assert.deepEqual(Object.assign({}, m.AvailabilityManager.all()), {});
+      assert.deepEqual(Array.from(m.AuditLog.load().logins), []);
+      assert.deepEqual(Array.from(m.AuditLog.load().events), []);
+      assert.equal(m.SafeStorage.getItem(m.STORAGE_KEYS.epoch), m.STORAGE_EPOCH);
+
+      assert.equal(m.CATALOG_SERVICES.length > 0, true);
+      assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
+      assert.equal(m.LOGISTICS_CONFIG.minNoticeHours, 72);
+      assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
+    } finally {
+      cleanVm.cleanup();
+    }
+
+    // B) Direct .load() filters legacy seed records when storage already holds real records
+    const seededVm = mountCleanVm({
+      arkik_bookings_v1: JSON.stringify([
+        { code: 'ARK-SEED0001', clientName: 'Demo Seed', isSeed: true },
+        { code: 'ARK-REAL0001', clientName: 'Cliente Real', isSeed: false }
+      ]),
+      arkik_blocked_dates_v1: JSON.stringify({
+        '2026-12-01': { state: 'disabled', reason: 'Seed', isSeed: true },
+        '2026-12-15': { state: 'soldout', reason: 'Real event' }
+      })
+    });
+    try {
+      const m = seededVm.mod;
+      m.BookingStore.load();
+      m.AvailabilityManager.load();
+
+      assert.deepEqual(
+        m.BookingStore.all().map((b) => b.code),
+        ['ARK-REAL0001']
+      );
+      assert.deepEqual(
+        Object.assign({}, m.AvailabilityManager.all()),
+        { '2026-12-15': { state: 'soldout', reason: 'Real event' } }
+      );
+    } finally {
+      seededVm.cleanup();
+    }
+
+    // C) Automatic STORAGE_EPOCH purge wipes pre-epoch bookings, blocked dates, audit, queue & lockout, then persists new records
+    const sharedStorage = new Map(Object.entries({
+      arkik_bookings_v1: JSON.stringify([
+        { code: 'ARK-AE27BA99', clientName: 'Vieja Prueba 1' },
+        { code: 'ARK-F2EBB36D', clientName: 'Vieja Prueba 2' }
+      ]),
+      arkik_blocked_dates_v1: JSON.stringify({ '2026-12-10': { state: 'soldout', reason: 'Old block' } }),
+      arkik_availability_v1: JSON.stringify({ '2026-12-11': 'disabled' }),
+      arkik_audit_v1: JSON.stringify({ engineVersion: 'old', logins: [{ role: 'Owner', at: '2026-01-01T00:00:00Z' }], lastLogin: '2026-01-01T00:00:00Z', events: [{ type: 'login', message: 'Old' }] }),
+      arkik_pending_sync_v1: JSON.stringify([{ bookingCode: 'ARK-AE27BA99', payload: {} }]),
+      admin_login_attempts: '3',
+      admin_lockout_until: String(Date.now() + 60000)
+    }));
+
+    const epochVm = mountCleanVm(sharedStorage);
+    try {
+      const m = epochVm.mod;
+      m.StorageEngine.init();
+
+      assert.deepEqual(Array.from(m.BookingStore.all()), []);
+      assert.deepEqual(Object.assign({}, m.AvailabilityManager.all()), {});
+      assert.deepEqual(Array.from(m.AuditLog.load().logins), []);
+      assert.deepEqual(Array.from(m.AuditLog.load().events), []);
+      assert.deepEqual(JSON.parse(m.SafeStorage.getItem(m.STORAGE_KEYS.offlineQueue)), []);
+      assert.equal(m.SafeStorage.getItem('arkik_availability_v1'), null);
+      assert.equal(m.SafeStorage.getItem('admin_login_attempts'), null);
+      assert.equal(m.SafeStorage.getItem('admin_lockout_until'), null);
+      assert.equal(m.SafeStorage.getItem(m.STORAGE_KEYS.epoch), m.STORAGE_EPOCH);
+
+      const epochIntegrity = m.AuditLog.storageIntegrity().find((entry) => entry.name === 'epoch');
+      assert.equal(epochIntegrity && epochIntegrity.state, 'ok');
+      assert.equal(m.CATALOG_SERVICES.length > 0, true);
+      assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
+      assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
+
+      // Static GitHub Pages host never triggers CloudSync remote pulls
+      m.CloudSync.init();
+      const pullRes = await m.CloudSync.pull();
+      const refreshRes = await m.CloudSync.refresh('manual');
+      assert.equal(m.CloudSync._enabled, false);
+      assert.equal(pullRes, false);
+      assert.equal(refreshRes, false);
+      assert.equal(epochVm.fetchCalls.length, 0);
+
+      // Post-epoch booking & block persist across a subsequent reload
+      const created = await m.BookingStore.add({
+        code: 'ARK-NEW00001',
+        clientName: 'Cliente Nuevo',
+        clientPhone: '8888-1234',
+        clientEmail: 'nuevo@example.com',
+        eventType: 'Boda',
+        serviceId: 1,
+        selectedDate: '2026-12-22',
+        selectedTime: '18:00',
+        province: 'San José',
+        canton: 'Escazú',
+        address: 'Centro',
+        sinpeRef: 'REF99999',
+        extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
+      }, 'idem-new-1');
+      assert.equal(created.ok, true);
+      await m.AvailabilityManager.set('2026-12-24', 'disabled', 'Feriado');
+    } finally {
+      epochVm.cleanup();
+    }
+
+    const reloadVm = mountCleanVm(sharedStorage);
+    try {
+      const m = reloadVm.mod;
+      m.StorageEngine.init();
+      assert.equal(m.BookingStore.all().some((b) => b.clientName === 'Cliente Nuevo'), true);
+      assert.equal(m.AvailabilityManager.get('2026-12-24'), 'disabled');
+    } finally {
+      reloadVm.cleanup();
+    }
+  });
+
+  test('40: respond.clientIp extracts first XFF or x-real-ip behind Vercel proxy while blocking spoofing outside trusted proxies', async () => {
+    const respond = load('api/_lib/respond.js');
+
+    await withEnv({ VERCEL: '1', VERCEL_ENV: 'production', TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: null }, async () => {
+      assert.equal(
+        respond.clientIp({ headers: { 'x-vercel-forwarded-for': ' 198.51.100.10 , 10.0.0.1 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.10'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-forwarded-for': ' 203.0.113.42, 70.41.3.18 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '203.0.113.42'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-real-ip': ' 192.0.2.77 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '192.0.2.77'
+      );
+      assert.equal(
+        respond.clientIp({ headers: { 'x-forwarded-for': [' 198.51.100.20, 10.0.0.2 '] }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.20'
+      );
+    });
+
+    await withEnv({ VERCEL: null, VERCEL_ENV: null, TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: null }, async () => {
+      assert.equal(
+        respond.clientIp({
+          headers: { 'x-forwarded-for': '1.2.3.4', 'x-real-ip': '5.6.7.8' },
+          socket: { remoteAddress: '127.0.0.1' }
+        }),
+        '127.0.0.1'
+      );
+    });
+
+    await withEnv({ VERCEL: null, VERCEL_ENV: null, TRUST_PROXY: null, CLOUDFLARE: null, CF_PAGES: '1' }, async () => {
+      assert.equal(
+        respond.clientIp({ headers: { 'cf-connecting-ip': ' 198.51.100.55 ' }, socket: { remoteAddress: '10.0.0.9' } }),
+        '198.51.100.55'
+      );
+    });
   });
 });

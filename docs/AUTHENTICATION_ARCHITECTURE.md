@@ -1,7 +1,8 @@
 # Arkik Productions — Authentication Architecture
 
 **Version:** 2.0 (Post-P0 Login Recovery)  
-**Primary Authority:** PostgreSQL (Neon) when `DATABASE_URL` is configured  
+**Primary Authority:** PostgreSQL (Neon) vía `DATABASE_URL` (endpoint Pooled `-pooler`, rol runtime mínimo `arkik_app`) cuando `DATABASE_URL` está configurada
+**Direct CLI Boundary:** `db/migrate.js` opera exclusivamente con `DIRECT_DATABASE_URL` (`arkik_migrator`) y `db/manage-admin-pins.js` con `DIRECT_ADMIN_DATABASE_URL` (`arkik_admin`) en local/CI (ninguna se configura en Vercel; sin fallback cruzado)
 **Fallback Mode:** Stateless HMAC-signed env-PIN mode *strictly* when `config.isExplicitLocalDev` holds (`!DATABASE_URL`, explicit `APP_ENV=development`, zero cloud/production flags, and `ADMIN_OWNER_PIN` / `ADMIN_IT_PIN` configured)
 
 ---
@@ -22,7 +23,7 @@ api/admin/login.js
   │                                          ├─ auth.isValidScryptHash + auth.verifyPin (scrypt + timingSafeEqual)
   │                                          ├─ repo.createSession(HMAC-SHA256(token), role, expiresAt)
   │                                          ├─ repo.insertAudit(ADMIN_LOGIN / ADMIN_LOGIN_FAILED)
-  │                                          └─ Set-Cookie (HttpOnly; SameSite=Strict; Path=/; Max-Age=900 [+ Secure in prod])
+  │                                          └─ Set-Cookie (HttpOnly; SameSite=Strict; Path=/; Max-Age=900 [+ __Host- & Secure en Prod/Cloud/Preview HTTPS])
   │
   └─► config.isExplicitLocalDev && hasEnvPinsConfigured()? ──YES──► Stateless env fallback (explicit local APP_ENV=development only)
                                                        └─ Otherwise (Cloud/Preview/Staging/Prod/Implicit without DB)? ──► 503 service_unavailable
@@ -42,10 +43,10 @@ api/admin/login.js
   - Never stored in plaintext in PostgreSQL; hashed with HMAC-SHA256 (`ADMIN_SESSION_SECRET`) before `INSERT`/`SELECT`/`DELETE`.
   - Never returned in HTTP JSON bodies (`{ role, expiresAt }` only).
   - `requireAdmin(req)` rejects `v1.` stateless tokens whenever `!config.isExplicitLocalDev` (any `DATABASE_URL`, Cloud/Preview, Staging, Production, or unset `APP_ENV`), preventing unrevocable token replay.
-  - Sliding window: `SESSION_TTL_MS = 900000` (15 minutes), refreshed via `repo.touchSession` when `now - last_seen_at > 60000`.
+  - Sliding window: `SESSION_TTL_MS = 900000` (15 minutes), refreshed via `repo.touchSession` when `now - last_seen_at > 60000` and re-emitted via `Set-Cookie` when `requireAdmin(req, res)` refreshes the window.
 - **Cookie Security**:
-  - Production or Cloud (`config.isProduction || config.isCloud`, including `VERCEL=1` and `VERCEL_ENV=preview`): `__Host-session=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`. Note: `__Host-` + `Secure` requires HTTPS, and `ADMIN_SESSION_SECRET` is mandatory (`503` if missing).
-  - Local HTTP / Non-production: `arkik_session=<token>; HttpOnly; SameSite=Strict; Path=/; Max-Age=900`.
+  - Production or Cloud/Preview (`config.isProduction || config.isCloud`, including `VERCEL=1` and `VERCEL_ENV=preview`): `__Host-session=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`. Note: `__Host-` + `Secure` requires HTTPS, and `ADMIN_SESSION_SECRET` is mandatory (`503` if missing).
+  - Local HTTP / Non-production (e.g. `APP_ENV=staging` with `NODE_ENV=development` on `http://localhost`): `arkik_session=<token>; HttpOnly; SameSite=Strict; Path=/; Max-Age=900`.
 - **Logout (`api/admin/logout.js`, `api/_lib/service.js`)**:
   - Always emits `Set-Cookie: clearSessionCookie()` (`Max-Age=0`), even if PostgreSQL is temporarily unreachable or the token is a `v1.` stateless token, and deletes the DB row + records `ADMIN_LOGOUT` when DB is active.
 
@@ -54,8 +55,8 @@ api/admin/login.js
 ## 3. Role-Based Access Control (RBAC)
 
 - **Roles**: `owner` (Propietario) and `it` (Ingeniero TI).
-- `auth.requireAdmin(req)`: Permits `owner` and `it` (`GET /api/admin/session`, `GET /api/admin/dashboard`, `GET /api/admin/stats`, `GET /api/admin/audit`, `GET /api/admin/pricing`, `GET/PATCH/DELETE /api/bookings*`).
-- `auth.requireOwner(req)`: Requires `session.role === 'owner'`; returns `403 forbidden` to `it` (`PUT /api/admin/pricing`, `PUT /api/availability`, `DELETE /api/availability`).
+- `auth.requireAdmin(req, res)`: Permits `owner` and `it` (`GET /api/admin/session`, `GET /api/admin/dashboard`, `GET /api/admin/stats`, `GET /api/admin/audit`, `GET /api/admin/pricing`, `GET /api/bookings`, `GET /api/bookings/[code]`).
+- `auth.requireOwner(req, res)`: Requires `session.role === 'owner'`; returns `403 forbidden` to `it` (`PUT /api/admin/pricing`, `PUT /api/availability`, `DELETE /api/availability`, `PATCH /api/bookings/[code]`, `PATCH /api/bookings/[code]/status`, `PATCH /api/bookings/[code]/reschedule`).
 
 ---
 

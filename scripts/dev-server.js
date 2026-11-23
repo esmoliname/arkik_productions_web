@@ -238,6 +238,8 @@ function createDevServer() {
 }
 
 if (require.main === module) {
+  process.env.HOST = process.env.HOST || '127.0.0.1';
+  process.env.PORT = process.env.PORT || '3000';
   loadEnvFiles();
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '127.0.0.1';

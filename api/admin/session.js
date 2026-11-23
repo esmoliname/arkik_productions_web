@@ -13,7 +13,8 @@ async function handler(req, res) {
     }
 
     const auth = registry.get('auth');
-    const session = await auth.requireAdmin(req);
+    const session = await auth.requireAdmin(req, res);
+    res.setHeader('Cache-Control', 'private, no-store');
     return respond.ok(res, {
       authenticated: true,
       role: session.role,

@@ -28,7 +28,7 @@ async function handler(req, res) {
 
     if (req.method === 'PUT') {
       const auth = registry.get('auth');
-      await auth.requireOwner(req);
+      await auth.requireOwner(req, res);
       const body = await respond.readBody(req);
       const service = registry.get('service');
       const data = await service.setAvailability(body);
@@ -37,7 +37,7 @@ async function handler(req, res) {
 
     if (req.method === 'DELETE') {
       const auth = registry.get('auth');
-      await auth.requireOwner(req);
+      await auth.requireOwner(req, res);
       const date = req.query ? req.query.date : '';
       const service = registry.get('service');
       const data = await service.clearAvailability(date);

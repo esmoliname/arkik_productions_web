@@ -1,0 +1,11 @@
+{
+  "name": "arkik-productions",
+  "compatibility_date": "2026-11-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": ".",
+  "vars": {
+    "DEPLOY_PLATFORM": "cloudflare-pages",
+    "APP_ENV": "preview",
+    "SECURE_COOKIES": "1"
+  }
+}

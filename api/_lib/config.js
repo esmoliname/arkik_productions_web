@@ -1,4 +1,5 @@
 'use strict';
+const { readEnv: readEnvFromContext } = require('./env-context');
 // Environment access with defaults.
 // Every value is read lazily through getters: importing this module must never
 // throw and must never require the env vars to exist (tests import freely).
@@ -40,8 +41,7 @@ const DEFAULTS = {
 };
 
 function readEnv(name, fallback) {
-  const value = process.env[name];
-  return value === undefined || value === '' ? fallback : value;
+  return readEnvFromContext(name, fallback);
 }
 
 function normalizeEnv(value) {
@@ -85,8 +85,20 @@ module.exports = {
     return normalizeEnv(readEnv('VERCEL_ENV', ''));
   },
 
-  get isCloud() {
+  get isCloudflare() {
+    const platform = normalizeEnv(readEnv('DEPLOY_PLATFORM', ''));
+    if (platform === 'cloudflare-pages' || platform === 'cloudflare') return true;
+    // Supporting hint only (not sole indicator): Pages sets this binding.
+    if (String(readEnv('CF_PAGES', '')).trim() === '1') return true;
+    return false;
+  },
+
+  get isVercel() {
     return String(readEnv('VERCEL', '')).trim() === '1' || Boolean(this.vercelEnv);
+  },
+
+  get isCloud() {
+    return this.isCloudflare || this.isVercel;
   },
 
   get appEnv() {
@@ -120,6 +132,10 @@ module.exports = {
     );
   },
 
+  get forceSecureCookies() {
+    return /^(1|true|yes|on)$/i.test(String(readEnv('SECURE_COOKIES', '')).trim());
+  },
+
   get isExplicitLocalDev() {
     if (this.databaseUrl) return false;
     if (this.isProduction || this.isCloud || this.isStagingOrPreview) return false;
@@ -127,5 +143,17 @@ module.exports = {
       normalizeEnv(readEnv('APP_ENV', '')) === 'development' &&
       normalizeEnv(readEnv('NODE_ENV', '')) !== 'production'
     );
+  },
+
+  // True when running on a local development server (loopback), even with
+  // DATABASE_URL configured (e.g. testing against Neon STAGING locally).
+  // Vercel/Cloudflare/production always set cloud env vars, so this is safe.
+  get isLocalServer() {
+    if (this.isCloud || this.isProduction) return false;
+    const host = String(readEnv('HOST', '')).trim().toLowerCase();
+    const port = String(readEnv('PORT', '')).trim();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
+    if (!host && port) return true;
+    return false;
   }
 };

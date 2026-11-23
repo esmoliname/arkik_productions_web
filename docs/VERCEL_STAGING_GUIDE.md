@@ -10,14 +10,14 @@ Configure separately for **Preview (Staging)** and **Production** (using distinc
 
 | Variable | Staging / Production Value | Notes |
 |---|---|---|
-| `DATABASE_URL` | Neon pooled Postgres connection string (`sslmode=require`) | Required for authoritative DB auth, sessions, audit log, rate limits, bookings |
+| `DATABASE_URL` | Neon **pooled** Postgres connection string (`-pooler`, `sslmode=require`, runtime role `arkik_app`) | Required for authoritative DB auth, sessions, audit log, rate limits, bookings. **Never place `DIRECT_DATABASE_URL` or `DIRECT_ADMIN_DATABASE_URL` in Vercel.** |
 | `ADMIN_SESSION_SECRET` | `openssl rand -hex 32` (64+ hex chars) | **Mandatory in Staging, Preview, Production, Cloud, and whenever `DATABASE_URL` is configured** (`config.js` throws `503` if missing/placeholder when `!isExplicitLocalDev`; `'dev-secret-change-me'` fallback is restricted to explicit local `APP_ENV=development` without DB or cloud/staging/prod flags) |
-| `ADMIN_OWNER_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN | Used by `npm run db:migrate` to seed `admin_credentials` if missing; **never overwrites existing rows** |
-| `ADMIN_IT_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN | Distinct credential for `it` role |
+| `ADMIN_OWNER_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN (`>= 6` chars) | Used locally by `npm run db:migrate` (`DIRECT_DATABASE_URL`) to seed `admin_credentials` if missing (**never overwrites existing rows**), and verified/rotated via `DIRECT_ADMIN_DATABASE_URL` |
+| `ADMIN_IT_PIN` | Pre-hashed `scrypt$...` string (recommended) or plaintext PIN (`>= 6` chars) | Distinct credential for `it` role |
 | `APP_ENV` | `staging` (Preview) / `production` (Prod) | Reflected in environment resolution; stateless fallback without `DATABASE_URL` requires explicit `APP_ENV=development` locally |
-| `SEED_MODE` | `false` | Keep `false` in staging/prod so demo fixtures are never injected |
+| `SEED_MODE` | `false` | Keep `false` in staging/prod so demo fixtures are never injected (`db/seed-dev.js` also blocks non-development/remote targets) |
 | `ALLOWED_ORIGINS` | Leave empty for same-origin, or comma-separated exact HTTPS origins | Cross-origin requests outside list get no ACAO and `403` on preflight |
-| `PUBLIC_APP_URL` | `https://<staging-or-prod-domain>` | Used in customer emails/links |
+| `PUBLIC_APP_URL` | `https://<staging-or-prod-domain>` | Optional operational metadata (not required by `api/`) |
 
 ---
 
@@ -33,9 +33,17 @@ node -e "const auth = require('./api/_lib/auth'); console.log(auth.hashPin(proce
 
 ---
 
-## 3. Running Schema Migrations & Bootstrapping Admin Credentials
+## 3. Preflight Read-Only (`P0.4.5-B`), Schema Migrations & Role Cutover (`P0.4.5-C`)
 
-With `.env.local` (never committed) pointing to your target Neon branch:
+1. **Read-only Staging preflight (temporary local vars only, removed right after):**
+   With local `APP_ENV=staging`, `SEED_MODE=false`, `NEON_STAGING_EXPECTED_ENDPOINT_ID`, `NEON_STAGING_PREFLIGHT_DIRECT_URL`, and `NEON_STAGING_PREFLIGHT_POOLED_URL` (zero Vercel usage, zero fallback):
+   ```bash
+   node scripts/preflight-neon-staging.js
+   ```
+   Confirm `verdict: "READY"`, verify `timeoutsDirect` / `timeoutsPooled` (`statement_timeout = 8s`, `lock_timeout = 3s`, `idle_in_transaction_session_timeout = 10s`, `transaction_read_only = on`), confirm zero unknown pre-existing objects, and then delete the three temporary `NEON_STAGING_PREFLIGHT_*` / `NEON_STAGING_EXPECTED_ENDPOINT_ID` vars from `.env.local`.
+
+2. **Schema migrations & least-privilege roles (`P0.4.5-C`):**
+   With `.env.local` (never committed) setting `DIRECT_DATABASE_URL` (`arkik_migrator`) and `DIRECT_ADMIN_DATABASE_URL` (`arkik_admin`) to your target Neon **direct** (non-`-pooler`) endpoints:
 
 ```bash
 npm run db:migrate
@@ -45,6 +53,7 @@ Verify output shows:
 - `001_initial_schema.sql`, `002_indexes.sql`, `003_config_seed.sql` applied or skipped cleanly.
 - `[ARKIK DB] admin credentials bootstrapped for role "owner"` and `"it"`.
 - No warning about empty `admin_credentials`.
+- Explicit least-privilege `GRANT` statements applied to `arkik_app` and `arkik_admin` (future migrations running as `arkik_migrator` must embed explicit `GRANT` statements per table/column instead of blanket `ALTER DEFAULT PRIVILEGES`), and `arkik_app` role timeouts aligned (`statement_timeout = '8000'`, `lock_timeout = '3000'`, `idle_in_transaction_session_timeout = '10000'`, where `10000` ms is the open-transaction inactivity limit vs `11000` ms `query_timeout` / `12000` ms `DEFAULT_OPERATION_TIMEOUT_MS`).
 
 ---
 

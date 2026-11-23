@@ -17,12 +17,13 @@ async function handler(req, res) {
     const service = registry.get('service');
 
     if (req.method === 'GET') {
-      await auth.requireAdmin(req);
+      await auth.requireAdmin(req, res);
       const data = await service.getPricing();
+      res.setHeader('Cache-Control', 'private, no-store');
       return respond.ok(res, data);
     }
 
-    const admin = await auth.requireOwner(req);
+    const admin = await auth.requireOwner(req, res);
     const body = await respond.readBody(req);
     const data = await service.putPricing(body, admin.role);
     return respond.ok(res, data);

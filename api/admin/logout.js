@@ -22,8 +22,14 @@ async function handler(req, res) {
     try {
       data = await service.logout(token);
     } catch (err) {
-      const isDbDown = err && (err.kind === 'db_unavailable' || err.code === 'no_database' || err.status === 503);
-      if (!isDbDown) throw err;
+      const isTransientDb =
+        err &&
+        (err.kind === 'db_unavailable' ||
+          err.kind === 'dependency_timeout' ||
+          err.kind === 'resource_busy' ||
+          err.code === 'no_database' ||
+          err.status === 503);
+      if (!isTransientDb) throw err;
     }
     return respond.ok(res, data);
   } catch (err) {

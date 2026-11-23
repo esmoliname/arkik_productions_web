@@ -22,10 +22,14 @@ Never commit `.env`.
 
 1. Connect repo to Vercel.
 2. Set env vars for Preview (Neon Staging) and Production (separate Neon Production project).
-3. Run `npm run db:migrate` against the target Neon DB.
-4. (Optional, dev only) `npm run db:seed:dev`.
+3. Run local read-only staging preflight first (`APP_ENV=staging SEED_MODE=false node scripts/preflight-neon-staging.js` with temporary `NEON_STAGING_PREFLIGHT_*` + `NEON_STAGING_EXPECTED_ENDPOINT_ID`, removed immediately afterwards). Then set local `DIRECT_DATABASE_URL` (`arkik_migrator` for `npm run db:migrate`) and `DIRECT_ADMIN_DATABASE_URL` (`arkik_admin` for `npm run admin:verify` / `admin:rotate`), both Neon Direct endpoints never added to Vercel; run `npm run db:migrate`, apply least-privilege role grants (`P0.4.5-C`), and run `npm run admin:verify`.
+4. (Local dev PostgreSQL only, never Staging/Preview/Prod) `SEED_MODE=true APP_ENV=development npm run db:seed:dev`.
 5. Deploy (Vercel auto-build). Verify `GET /api/health` (`200`, `database: "not_checked"`, pure liveness) and `GET /api/ready` (`200`, `ready: true`, `database: "connected"` via `SELECT 1`).
 6. Configure custom domain via Vercel Domains (owner approval required). `vercel.json` emits `Strict-Transport-Security: max-age=31536000` without `includeSubDomains` so future subdomains are never prematurely locked out.
+
+## PostgreSQL Runtime Timeouts (`AUD-04`)
+
+- Runtime transactions (`api/_lib/db.js`) enforce `lock_timeout = 3000` ms, `statement_timeout = 8000` ms, and `idle_in_transaction_session_timeout = 10000` ms (inactivity limit inside an open transaction, not total operation duration which is bounded by `query_timeout = 11000` ms and `DEFAULT_OPERATION_TIMEOUT_MS = 12000` ms). Match these values on `ALTER ROLE arkik_app`. Direct admin CLI (`arkik_admin`) operates independently with `statement_timeout = 10000`, `lock_timeout = 3000`, `idle_in_transaction_session_timeout = 15000`.
 
 ## Node
 

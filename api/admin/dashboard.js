@@ -32,7 +32,7 @@ async function handler(req, res) {
     const config = registry.get('config');
 
     // Enforce HttpOnly session cookie validation before touching any data
-    const session = await auth.requireAdmin(req);
+    const session = await auth.requireAdmin(req, res);
 
     let stats = DEFAULT_STATS;
     let bookings = [];
@@ -45,25 +45,19 @@ async function handler(req, res) {
     let auditEvents = [];
 
     try {
-      const [statsRes, bookingsRes, pricingRes, availabilityRes, auditRes] = await Promise.all([
-        service.getStats(),
-        service.listBookings({ limit: 500 }),
-        service.getPricing(),
-        service.getAvailability(),
-        typeof service.listAudit === 'function' ? service.listAudit(50) : Promise.resolve({ events: [] })
-      ]);
+      const snapshot = await service.getDashboardData({ bookingsLimit: 500, auditLimit: 50 });
 
-      if (statsRes && typeof statsRes === 'object') stats = statsRes;
-      if (bookingsRes && Array.isArray(bookingsRes.bookings)) {
-        bookings = bookingsRes.bookings;
-        total = Number(bookingsRes.total) || bookings.length;
+      if (snapshot && snapshot.stats && typeof snapshot.stats === 'object') stats = snapshot.stats;
+      if (snapshot && Array.isArray(snapshot.bookings)) {
+        bookings = snapshot.bookings;
+        total = Number(snapshot.total) || bookings.length;
       }
-      if (pricingRes && typeof pricingRes === 'object') pricing = pricingRes;
-      if (availabilityRes && availabilityRes.blocked && typeof availabilityRes.blocked === 'object') {
-        availability = availabilityRes.blocked;
+      if (snapshot && snapshot.pricing && typeof snapshot.pricing === 'object') pricing = snapshot.pricing;
+      if (snapshot && snapshot.availability && typeof snapshot.availability === 'object') {
+        availability = snapshot.availability;
       }
-      if (auditRes && Array.isArray(auditRes.events)) {
-        auditEvents = auditRes.events;
+      if (snapshot && Array.isArray(snapshot.auditEvents)) {
+        auditEvents = snapshot.auditEvents;
       }
     } catch (dbErr) {
       // Allow empty dashboard fallback ONLY when running in database-less env-PIN mode.
