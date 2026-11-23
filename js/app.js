@@ -1044,23 +1044,6 @@ function apiEnabled() {
     typeof ArkikApi.isEnabled === "function" && ArkikApi.isEnabled();
 }
 
-// True only on static preview hosts (GitHub Pages: *.github.io / github.io).
-// Keeps Zero-Trust fail-closed behavior intact on full-stack / production origins.
-function isStaticPreviewHost() {
-  try {
-    const host = (typeof location !== "undefined" && location && typeof location.hostname === "string")
-      ? location.hostname.toLowerCase()
-      : "";
-    return host === "github.io" || host.endsWith(".github.io");
-  } catch (err) {
-    return false;
-  }
-}
-
-function isStaticHostingStatus(status) {
-  return status === 404 || status === 405;
-}
-
 // Envoltorio de error uniforme para las mutaciones remotas. Nunca lanza.
 // Esppega el estándar {code, message} en `error` y copia campos extra
 // (details, retryAfterMs) que el servidor adjunta a algunos errores.
@@ -1762,9 +1745,6 @@ const PriceManager = {
     };
     const res = await ArkikApi.admin.putPricing(payload);
     if (!res.ok) {
-      if (isStaticPreviewHost() || isStaticHostingStatus(res.status)) {
-        return { ok: true, source: "local" };
-      }
       this.rollback(snapshot);
       if (typeof showToast === "function") showToast("No se pudieron guardar los tarifarios.", "error");
       return apiFailure(res);
@@ -1870,7 +1850,7 @@ const AvailabilityManager = {
    * polling passes force=true to revalidate.
    */
   async fetchMap(from, to, force) {
-    if (!apiEnabled() || isStaticPreviewHost()) return { ok: true, source: "local" };
+    if (!apiEnabled()) return { ok: true, source: "local" };
     this._ensure();
     const isRange = Boolean(from && to);
     const key = isRange ? from + "|" + to : "full";
@@ -1941,7 +1921,7 @@ const AvailabilityManager = {
    * server instead of the local cache.
    */
   async fetchDetail(iso) {
-    if (!apiEnabled() || isStaticPreviewHost() || !iso) return { ok: true, source: "local" };
+    if (!apiEnabled() || !iso) return { ok: true, source: "local" };
     this._ensure();
     const res = await ArkikApi.availability({ date: iso });
     if (!res.ok) return apiFailure(res);
@@ -2058,28 +2038,22 @@ const AvailabilityManager = {
 
     if (apiEnabled()) {
       const res = await ArkikApi.setAvailability({ date: iso, state: status, reason: normalizedReason });
-      if (res.ok) {
-        if (status === "available") {
-          delete this._blocked[iso];
-          delete this._data[iso];
-        } else {
-          this._blocked[iso] = { state: status, reason: normalizedReason };
-          delete this._data[iso];
-        }
-        delete this._details[iso];
-        this.persist();
-        writeSyncMeta({ updatedAt: new Date().toISOString() });
-        if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
-          StorageEngine.onDataChange("availability");
-        }
-        CloudSync.notify("availability");
-        return { ok: true };
+      if (!res.ok) return { ok: false, error: apiFailure(res) };
+      if (status === "available") {
+        delete this._blocked[iso];
+        delete this._data[iso];
+      } else {
+        this._blocked[iso] = { state: status, reason: normalizedReason };
+        delete this._data[iso];
       }
-      if (!isStaticPreviewHost() && !isStaticHostingStatus(res.status)) {
-        return { ok: false, error: apiFailure(res) };
-      }
-      delete this._blocked[iso];
       delete this._details[iso];
+      this.persist();
+      writeSyncMeta({ updatedAt: new Date().toISOString() });
+      if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+        StorageEngine.onDataChange("availability");
+      }
+      CloudSync.notify("availability");
+      return { ok: true };
     }
 
     if (status === "available") {
@@ -2110,23 +2084,17 @@ const AvailabilityManager = {
     this._ensure();
     if (apiEnabled()) {
       const res = await ArkikApi.clearAvailability(iso);
-      if (res.ok) {
-        delete this._blocked[iso];
-        delete this._data[iso];
-        delete this._details[iso];
-        this.persist();
-        writeSyncMeta({ updatedAt: new Date().toISOString() });
-        if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
-          StorageEngine.onDataChange("availability");
-        }
-        CloudSync.notify("availability");
-        return { ok: true };
-      }
-      if (!isStaticPreviewHost() && !isStaticHostingStatus(res.status)) {
-        return { ok: false, error: apiFailure(res) };
-      }
+      if (!res.ok) return { ok: false, error: apiFailure(res) };
       delete this._blocked[iso];
+      delete this._data[iso];
       delete this._details[iso];
+      this.persist();
+      writeSyncMeta({ updatedAt: new Date().toISOString() });
+      if (typeof StorageEngine !== "undefined" && StorageEngine.onDataChange) {
+        StorageEngine.onDataChange("availability");
+      }
+      CloudSync.notify("availability");
+      return { ok: true };
     }
     delete this._data[iso];
     this.persist();
@@ -2213,7 +2181,7 @@ const BookingStore = {
    * @param {boolean} force bypass the short dedupe window used by polling.
    */
   async hydrate(force) {
-    if (!apiEnabled() || isStaticPreviewHost()) return { ok: true, source: "local" };
+    if (!apiEnabled()) return { ok: true, source: "local" };
     if (!hasAdminSession()) return { ok: true, source: "local" }; // sin cookie: nada que listar
     const dedupeMs = 4000;
     if (!force && this._hydratedAt && Date.now() - this._hydratedAt < dedupeMs) {
@@ -2350,21 +2318,7 @@ const BookingStore = {
         return apiFailure(res);
       }
 
-      const shouldDegradeLocal =
-        isStaticHostingStatus(status) ||
-        code === "network" ||
-        code === "timeout" ||
-        (isStaticPreviewHost() && status !== 400 && status !== 409);
-
-      if (shouldDegradeLocal) {
-        this._persistLocalBooking(booking, {
-          idempotencyKey: idempotencyKey,
-          queuePayload: payload,
-          broadcastOnly: true
-        });
-        return { ok: true, booking: booking, source: "local", degraded: true, queued: true };
-      }
-
+      // Zero-Trust: never simulate success when the backend fails to confirm persistence.
       console.warn(`[Arkik] Backend no disponible (status: ${status}, code: ${code}). Reserva NO confirmada.`);
       return apiFailure(res);
     }
@@ -2664,7 +2618,7 @@ const CloudSync = {
   },
 
   configure() {
-    this._enabled = apiEnabled() && !isStaticPreviewHost();
+    this._enabled = apiEnabled();
     this._driver = this._enabled ? "arkik-api" : "local";
   },
 
@@ -2777,7 +2731,7 @@ const CloudSync = {
    * @returns {Promise<boolean>} true si el servidor respondió a tiempo.
    */
   async refresh(reason) {
-    if (!this._enabled || isStaticPreviewHost()) return false;
+    if (!this._enabled) return false;
     if (this._busy) { this._queued = true; return false; }
     this._busy = true;
     try {
@@ -2824,7 +2778,6 @@ const CloudSync = {
         this._refreshUI();
       } else if (
         failCode === "network" &&
-        !isStaticPreviewHost() &&
         Date.now() - this._netToastAt > 30000 &&
         typeof showToast === "function"
       ) {
@@ -2886,13 +2839,12 @@ const CloudSync = {
 
   // API pública — pull: baja el estado remoto y refresca la UI.
   async pull() {
-    if (isStaticPreviewHost()) return false;
     return this.refresh("all");
   },
 
   // API pública — push: fuerza una revalidación completa.
   async push() {
-    if (!this._enabled || isStaticPreviewHost()) return false;
+    if (!this._enabled) return false;
     this._dirty = true;
     if (this._debounce) { clearTimeout(this._debounce); this._debounce = null; }
     return this.refresh("all");
@@ -3205,48 +3157,13 @@ const SecurityModule = {
   },
 
   /**
-   * Static preview local PIN fallback (GitHub Pages / HTTP 404-405 static hosting only).
-   * Accepts:
-   *  - '2580' -> 'owner'
-   *  - '1234' -> 'it'
-   * Clears residual lockout keys on success and applies UI rate limiting on failure.
-   */
-  verifyLocal(roleId, pin) {
-    const rawPin = (pin === undefined) ? roleId : pin;
-    const pinValue = this.normalizePin(rawPin);
-    const localPinRoles = {
-      "2580": "owner",
-      "1234": "it"
-    };
-    const matchedRole = Object.prototype.hasOwnProperty.call(localPinRoles, pinValue)
-      ? localPinRoles[pinValue]
-      : null;
-
-    if (matchedRole) {
-      this.clearLockState();
-      return {
-        ok: true,
-        status: 200,
-        role: matchedRole,
-        source: "local",
-        expiresAt: new Date(Date.now() + (ADMIN_CONFIG.sessionTimeoutMs || 900000)).toISOString()
-      };
-    }
-
-    const failState = this.registerFailedAttempt(Date.now(), {
-      message: "Credenciales inválidas"
-    });
-    return Object.assign({ status: 401, infraError: false, source: "local" }, failState);
-  },
-
-  /**
-   * Hybrid admin authentication:
-   * 1. Primary path: POST /api/admin/login with `{ role, pin }`.
-   * 2. Static preview fallback (`verifyLocal`): triggered strictly on GitHub Pages
-   *    (`*.github.io`) or static-hosting HTTP 404/405 without structured API error.
-   * 3. Production / full-stack fail-closed: on non-GitHub-Pages origins, HTTP 503,
-   *    5xx, network errors, and HTML hijack responses return `infraError: true`
-   *    without incrementing failed attempts.
+   * Autenticación Zero-Trust delegada exclusivamente al servidor:
+   * 1. Sanitiza el PIN y ejecuta POST /api/admin/login con `{ role, pin }`.
+   * 2. Ante HTTP 200 válido, limpia el estado de bloqueo y devuelve el rol confirmado.
+   * 3. Ante 401/403 incrementa el contador local con mensaje "Credenciales inválidas".
+   * 4. Ante 429 sincroniza el tiempo de espera del servidor.
+   * 5. Ante 503, 5xx, 404, 405, HTML o fallo de red (status 0), falla cerrado con
+   *    `infraError: true` sin incrementar intentos fallidos ni degradar a PIN local.
    */
   async verifyPin(roleId, pin) {
     this.purgeExpiredLockout();
@@ -3276,13 +3193,7 @@ const SecurityModule = {
       };
     }
 
-    const selectedRole = (roleId === "it" || roleId === "tech") ? "it" : "owner";
-    const staticPreviewHost = isStaticPreviewHost();
-
     if (typeof API_CONFIG !== "undefined" && API_CONFIG && API_CONFIG.enabled === false) {
-      if (staticPreviewHost) {
-        return this.verifyLocal(selectedRole, pinValue);
-      }
       return {
         ok: false,
         status: 0,
@@ -3293,6 +3204,7 @@ const SecurityModule = {
       };
     }
 
+    const selectedRole = (roleId === "it" || roleId === "tech") ? "it" : "owner";
     const base = (typeof API_CONFIG !== "undefined" && API_CONFIG && typeof API_CONFIG.baseUrl === "string")
       ? API_CONFIG.baseUrl.replace(/\/+$/, "")
       : "";
@@ -3324,28 +3236,7 @@ const SecurityModule = {
         try { payload = JSON.parse(text); } catch (parseErr) { payload = null; }
       }
 
-      const isHtmlResponse = payload === null && (
-        contentType.includes("text/html") || /^\s*<!doctype|^\s*<html/i.test(text || "")
-      );
-      const hasStructuredApiError = Boolean(
-        payload && typeof payload === "object" && payload.error && typeof payload.error === "object"
-      );
-      const isStaticHttpFallback = isStaticHostingStatus(response.status) && !hasStructuredApiError;
-
-      if (
-        isStaticHttpFallback ||
-        (staticPreviewHost && (
-          isStaticHostingStatus(response.status) ||
-          isHtmlResponse ||
-          response.status === 503 ||
-          response.status >= 500 ||
-          (response.status === 200 && (!payload || typeof payload !== "object"))
-        ))
-      ) {
-        return this.verifyLocal(selectedRole, pinValue);
-      }
-
-      if (isHtmlResponse) {
+      if (payload === null && (contentType.includes("text/html") || /^\s*<!doctype|^\s*<html/i.test(text || ""))) {
         return {
           ok: false,
           status: response.status || 502,
@@ -3418,11 +3309,11 @@ const SecurityModule = {
         };
       }
 
-      // 503 (DB no configurada / migración pendiente), 404 (API no montada), 5xx -> NUNCA contar como fallo de PIN
+      // 503 (DB no configurada / migración pendiente), 404/405 (API no montada), 5xx -> NUNCA contar como fallo de PIN
       let infraMsg = errObj.message;
       if (!infraMsg) {
-        if (response.status === 404) {
-          infraMsg = "Endpoint de autenticación (/api/admin/login) no disponible (404). Verificá el servidor.";
+        if (response.status === 404 || response.status === 405) {
+          infraMsg = `Endpoint de autenticación (/api/admin/login) no disponible (${response.status}). Verificá el servidor.`;
         } else if (response.status === 503) {
           infraMsg = "Servicio de autenticación o base de datos no disponible (503).";
         } else {
@@ -3438,9 +3329,6 @@ const SecurityModule = {
         message: infraMsg
       };
     } catch (networkErr) {
-      if (staticPreviewHost) {
-        return this.verifyLocal(selectedRole, pinValue);
-      }
       return {
         ok: false,
         status: 0,
@@ -4625,10 +4513,7 @@ const AdminModule = {
       //    y se cierra automáticamente en openPortal() solo cuando el dashboard respondió 200.
       if (pin) pin.value = "";
       this.clearAuthError();
-      const hydrated = await this.loadProtectedAdminData(grantedRole, {
-        keepLoginOpenOnError: true,
-        localFallback: result.source === "local"
-      });
+      const hydrated = await this.loadProtectedAdminData(grantedRole, { keepLoginOpenOnError: true });
       this.enablePinUI(true);
       if (!hydrated || !hydrated.ok) {
         if (pin) pin.focus();
@@ -4715,44 +4600,6 @@ const AdminModule = {
 
     if (!validPayload) {
       const status = response ? response.status : 0;
-      const staticPreviewHost = isStaticPreviewHost();
-      const hasStructuredApiError = Boolean(
-        payload && typeof payload === "object" && payload.error && typeof payload.error === "object"
-      );
-      const isStaticHttp = isStaticHostingStatus(status) && !hasStructuredApiError;
-      const canDegradeLocally =
-        Boolean(options && options.localFallback) ||
-        isStaticHttp ||
-        (staticPreviewHost && status !== 401 && status !== 403);
-
-      if (canDegradeLocally) {
-        if (typeof BookingStore !== "undefined" && typeof BookingStore.load === "function") {
-          BookingStore.load();
-        }
-        if (typeof PriceManager !== "undefined" && typeof PriceManager.load === "function") {
-          PriceManager.load();
-        }
-        if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.load === "function") {
-          AvailabilityManager.load();
-        }
-
-        const grantedRole = requestedRole;
-        if (this.role !== grantedRole) this.setRole(grantedRole);
-        this.role = grantedRole;
-        ADMIN_SESSION.role = grantedRole;
-        ADMIN_SESSION.token = generateBookingCode();
-        ADMIN_SESSION.createdAt = Date.now();
-        ADMIN_SESSION.lastActivity = Date.now();
-        this.persistSession();
-        AuditLog.recordLogin(grantedRole);
-        this.serverStats = null;
-        this.serverAuditEvents = [];
-
-        this.openPortal();
-        showToast(`Sesión iniciada correctamente · ${ADMIN_CONFIG.roles[grantedRole].label}.`, "success");
-        return { ok: true, role: grantedRole, source: "local" };
-      }
-
       const errMsg = (payload && payload.error && payload.error.message) ? payload.error.message : "";
       if (keepLoginOpenOnError) {
         this.clearSession();
@@ -13197,7 +13044,7 @@ async function submitStaticBooking() {
 
     // Si falló por 404, 405, 5xx, timeout, network failure, etc:
     // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
-    if (!saved || !saved.ok || (saved.degraded && !saved.queued)) {
+    if (!saved || !saved.ok || saved.degraded) {
       console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
       record.syncStatus = "offline_unverified";
       record.isOfflineDegraded = true;

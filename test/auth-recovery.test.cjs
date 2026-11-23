@@ -2880,10 +2880,16 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     }
   });
 
-  test('38: Hybrid static preview fallback (GitHub Pages & static 404/405) preserves Zero-Trust fail-closed on non-preview origins', async () => {
+  test('38: Strict Zero-Trust production frontend removes local PIN fallbacks and fails closed on 404/405/503/HTML/network', async () => {
     const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
     const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
     const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    assert.equal(appSrc.includes('verifyLocal'), false, 'main js/app.js must not ship verifyLocal');
+    assert.equal(appSrc.includes('isStaticPreviewHost'), false, 'main js/app.js must not ship isStaticPreviewHost');
+    assert.equal(appSrc.includes('isStaticHostingStatus'), false, 'main js/app.js must not ship isStaticHostingStatus');
+    assert.equal(appSrc.includes('"2580"') || appSrc.includes("'2580'"), false, 'main js/app.js must not contain hardcoded PIN 2580');
+    assert.equal(appSrc.includes('"1234"') || appSrc.includes("'1234'"), false, 'main js/app.js must not contain hardcoded PIN 1234');
 
     function mountFrontend(hostname) {
       let nextFetch = async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '<!DOCTYPE html><html>404</html>' });
@@ -2966,13 +2972,14 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
       vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
       vm.runInContext(
-        appSrc + '\nwindow.__TEST_HYBRID__ = { SecurityModule, AdminModule, BookingStore, PriceManager, AvailabilityManager, ADMIN_SESSION, SafeStorage };',
+        appSrc + '\nwindow.__TEST_ZEROTRUST__ = { SecurityModule, AdminModule, BookingStore, PriceManager, AvailabilityManager, ADMIN_SESSION, SafeStorage };',
         sandbox,
         { filename: 'js/app.js' }
       );
 
-      const mod = sandbox.__TEST_HYBRID__;
-      mod.AdminModule.openPortal = () => {};
+      const mod = sandbox.__TEST_ZEROTRUST__;
+      let portalOpened = false;
+      mod.AdminModule.openPortal = () => { portalOpened = true; };
       mod.AdminModule.startInactivityTimer = () => {};
       mod.AdminModule.clearInactivityTimer = () => {};
       mod.AdminModule.startIntegrityMonitor = () => {};
@@ -2985,6 +2992,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         lsStore,
         ssStore,
         toasts,
+        wasPortalOpened: () => portalOpened,
         setFetch: (fn) => { nextFetch = fn; },
         cleanup: () => {
           for (const id of activeTimeouts) clearTimeout(id);
@@ -2995,137 +3003,112 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       };
     }
 
-    const gh = mountFrontend('arkik-org.github.io');
     const prod = mountFrontend('arkik-productions.vercel.app');
+    const ghOrigin = mountFrontend('arkik-org.github.io');
     try {
-    // A) GitHub Pages preview host: 405 HTML, 503, and network errors degrade to verifyLocal & SafeStorage
-    gh.lsStore.set('admin_login_attempts', '3');
-    gh.lsStore.set('admin_lockout_until', String(Date.now() + 60000));
+      assert.equal(typeof prod.mod.SecurityModule.verifyLocal, 'undefined');
 
-    gh.setFetch(async () => ({
-      status: 405,
-      ok: false,
-      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
-      text: async () => '<!DOCTYPE html><html>405 Not Allowed</html>'
-    }));
-    const ownerRes = await gh.mod.SecurityModule.verifyPin('owner', '2580');
-    assert.equal(ownerRes.ok, true);
-    assert.equal(ownerRes.role, 'owner');
-    assert.equal(ownerRes.source, 'local');
-    assert.equal(gh.lsStore.has('admin_login_attempts'), false, 'residual admin_login_attempts must be cleared on success');
-    assert.equal(gh.lsStore.has('admin_lockout_until'), false, 'residual admin_lockout_until must be cleared on success');
+      for (const env of [prod, ghOrigin]) {
+        env.setFetch(async () => ({
+          status: 404,
+          ok: false,
+          headers: { get: () => 'text/html' },
+          text: async () => '<!DOCTYPE html><html>404</html>'
+        }));
+        const r404 = await env.mod.SecurityModule.verifyPin('owner', '2580');
+        assert.equal(r404.ok, false);
+        assert.equal(r404.infraError, true);
+        assert.equal(env.mod.SecurityModule.status().attempts, 0);
 
-    // GitHub Pages network failure falls back to verifyLocal for IT role ('1234')
-    gh.setFetch(async () => { throw new TypeError('Failed to fetch'); });
-    const itRes = await gh.mod.SecurityModule.verifyPin('it', '1234');
-    assert.equal(itRes.ok, true);
-    assert.equal(itRes.role, 'it');
-    assert.equal(itRes.source, 'local');
+        env.setFetch(async () => ({
+          status: 405,
+          ok: false,
+          headers: { get: () => 'text/html' },
+          text: async () => '<html>405 Not Allowed</html>'
+        }));
+        const r405 = await env.mod.SecurityModule.verifyPin('it', '1234');
+        assert.equal(r405.ok, false);
+        assert.equal(r405.infraError, true);
 
-    // Wrong PIN on GitHub Pages still returns 401 and increments attempts
-    const badRes = await gh.mod.SecurityModule.verifyPin('owner', '9999');
-    assert.equal(badRes.ok, false);
-    assert.equal(badRes.status, 401);
-    assert.equal(badRes.infraError, false);
-    assert.equal(gh.mod.SecurityModule.status().attempts, 1);
+        env.setFetch(async () => ({
+          status: 503,
+          ok: false,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
+        }));
+        const r503 = await env.mod.SecurityModule.verifyPin('owner', '2580');
+        assert.equal(r503.ok, false);
+        assert.equal(r503.infraError, true);
 
-    // loadProtectedAdminData degrades silently to SafeStorage on 404 without error toast
-    gh.toasts.length = 0;
-    gh.setFetch(async () => ({
-      status: 404,
-      ok: false,
-      headers: { get: () => 'text/html' },
-      text: async () => '<html>404</html>'
-    }));
-    const dashRes = await gh.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
-    assert.equal(dashRes.ok, true);
-    assert.equal(dashRes.role, 'owner');
-    assert.equal(dashRes.source, 'local');
-    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'static preview dashboard fallback must not emit error toasts');
+        env.setFetch(async () => ({
+          status: 200,
+          ok: true,
+          headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
+          text: async () => '<!DOCTYPE html><html>SPA</html>'
+        }));
+        const rHtml = await env.mod.SecurityModule.verifyPin('owner', '2580');
+        assert.equal(rHtml.ok, false);
+        assert.equal(rHtml.infraError, true);
+        assert.equal(rHtml.code, 'static_server_html');
 
-    // BookingStore.add degrades silently to SafeStorage on 404 without alerts
-    gh.toasts.length = 0;
-    const addRes = await gh.mod.BookingStore.add({
-      clientName: 'Cliente Preview',
-      clientPhone: '8888-1234',
-      clientEmail: 'cliente@example.com',
-      eventType: 'Boda',
-      serviceId: 1,
-      selectedDate: '2026-12-20',
-      selectedTime: '18:00',
-      province: 'San José',
-      canton: 'Escazú',
-      address: 'Centro',
-      sinpeRef: 'REF12345',
-      extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
-    }, 'idem-gh-preview-1');
-    assert.equal(addRes.ok, true);
-    assert.equal(addRes.source, 'local');
-    assert.equal(addRes.queued, true);
-    assert.equal(gh.mod.BookingStore.all().some((b) => b.code === addRes.booking.code), true);
-    assert.equal(gh.toasts.some((t) => t.type === 'error'), false, 'BookingStore.add local fallback must not emit error toasts');
+        env.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+        const rNet = await env.mod.SecurityModule.verifyPin('owner', '2580');
+        assert.equal(rNet.ok, false);
+        assert.equal(rNet.infraError, true);
 
-    // B) Non-GitHub-Pages origin: static 404/405 still falls back, but 503 / network / 200 HTML fail closed
-    prod.setFetch(async () => ({
-      status: 503,
-      ok: false,
-      headers: { get: () => 'application/json' },
-      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
-    }));
-    const prod503 = await prod.mod.SecurityModule.verifyPin('owner', '2580');
-    assert.equal(prod503.ok, false);
-    assert.equal(prod503.infraError, true, '503 on production origin must fail closed even for preview PIN');
+        for (const status of [404, 405, 503]) {
+          env.setFetch(async () => ({
+            status,
+            ok: false,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({ success: false, error: { code: 'err', message: 'Denied' } })
+          }));
+          const dashFail = await env.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+          assert.equal(dashFail.ok, false);
+          assert.equal(dashFail.status, status);
+          assert.equal(env.wasPortalOpened(), false);
+        }
 
-    prod.setFetch(async () => { throw new TypeError('Failed to fetch'); });
-    const prodNet = await prod.mod.SecurityModule.verifyPin('owner', '2580');
-    assert.equal(prodNet.ok, false);
-    assert.equal(prodNet.infraError, true, 'network error on production origin must fail closed');
+        env.setFetch(async () => { throw new TypeError('Failed to fetch'); });
+        const dashNet = await env.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
+        assert.equal(dashNet.ok, false);
+        assert.equal(dashNet.status, 0);
+        assert.equal(env.wasPortalOpened(), false);
+      }
 
-    prod.setFetch(async () => ({
-      status: 200,
-      ok: true,
-      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'text/html' : null) },
-      text: async () => '<!DOCTYPE html><html>SPA</html>'
-    }));
-    const prodHtml = await prod.mod.SecurityModule.verifyPin('owner', '2580');
-    assert.equal(prodHtml.ok, false);
-    assert.equal(prodHtml.infraError, true);
-    assert.equal(prodHtml.code, 'static_server_html');
-
-    // Non-GitHub-Pages static server 404 (no structured JSON error) degrades to verifyLocal
-    prod.setFetch(async () => ({
-      status: 404,
-      ok: false,
-      headers: { get: () => 'text/html' },
-      text: async () => '<html>Not Found</html>'
-    }));
-    const prod404 = await prod.mod.SecurityModule.verifyPin('it', '1234');
-    assert.equal(prod404.ok, true);
-    assert.equal(prod404.role, 'it');
-    assert.equal(prod404.source, 'local');
-
-    // Non-GitHub-Pages loadProtectedAdminData fails closed on 503
-    prod.setFetch(async () => ({
-      status: 503,
-      ok: false,
-      headers: { get: () => 'application/json' },
-      text: async () => JSON.stringify({ success: false, error: { code: 'no_database', message: 'DB down' } })
-    }));
-    const prodDash503 = await prod.mod.AdminModule.loadProtectedAdminData('owner', { keepLoginOpenOnError: true });
-    assert.equal(prodDash503.ok, false);
-    assert.equal(prodDash503.status, 503);
+      // Valid server 200 response clears residual legacy lockout keys
+      prod.lsStore.set('admin_login_attempts', '3');
+      prod.lsStore.set('admin_lockout_until', String(Date.now() + 60000));
+      prod.setFetch(async () => ({
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ success: true, data: { role: 'owner', expiresAt: new Date(Date.now() + 900000).toISOString() } })
+      }));
+      const ok200 = await prod.mod.SecurityModule.verifyPin('owner', 'server-pin-ok');
+      assert.equal(ok200.ok, true);
+      assert.equal(ok200.role, 'owner');
+      assert.equal(ok200.source, 'remote');
+      assert.equal(prod.lsStore.has('admin_login_attempts'), false);
+      assert.equal(prod.lsStore.has('admin_lockout_until'), false);
     } finally {
-      gh.cleanup();
       prod.cleanup();
+      ghOrigin.cleanup();
     }
   });
 
-  test('39: Operational seeds, STORAGE_EPOCH purge, CloudSync static guard, and post-epoch persistence preserve clean boot and catalog', async () => {
+  test('39: Operational seeds, STORAGE_EPOCH purge, CloudSync production config, and post-epoch persistence preserve clean boot and catalog', async () => {
     const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
     const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
     const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
 
     function mountCleanVm(initialStorage = {}) {
+      let fetchHandler = async () => ({
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ success: true, data: { blocked: {}, capacity: {} } })
+      });
       const lsStore = initialStorage instanceof Map ? initialStorage : new Map(Object.entries(initialStorage));
       const ssStore = new Map();
       const activeTimeouts = new Set();
@@ -3180,13 +3163,13 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         encodeURIComponent,
         decodeURIComponent,
         AbortController,
-        fetch: async (url) => {
-          fetchCalls.push(String(url));
-          return { status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '' };
+        fetch: async (url, opts) => {
+          fetchCalls.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+          return fetchHandler(String(url), opts || {});
         },
         localStorage: fakeStorage(lsStore),
         sessionStorage: fakeStorage(ssStore),
-        location: { pathname: '/', hash: '', origin: 'https://arkik-org.github.io', hostname: 'arkik-org.github.io' },
+        location: { pathname: '/', hash: '', origin: 'https://arkik-productions.vercel.app', hostname: 'arkik-productions.vercel.app' },
         navigator: { userAgent: 'node-test', onLine: true },
         document: {
           readyState: 'loading',
@@ -3217,6 +3200,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         mod: sandbox.__TEST_CLEAN_INIT__,
         lsStore,
         fetchCalls,
+        setFetch: (fn) => { fetchHandler = fn; },
         cleanup: () => {
           for (const id of activeTimeouts) clearTimeout(id);
           for (const id of activeIntervals) clearInterval(id);
@@ -3280,7 +3264,7 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       seededVm.cleanup();
     }
 
-    // C) Automatic STORAGE_EPOCH purge wipes pre-epoch bookings, blocked dates, audit, queue & lockout, then persists new records
+    // C) Automatic STORAGE_EPOCH purge wipes pre-epoch artifacts, then remote-confirmed records persist across reload
     const sharedStorage = new Map(Object.entries({
       arkik_bookings_v1: JSON.stringify([
         { code: 'ARK-AE27BA99', clientName: 'Vieja Prueba 1' },
@@ -3315,18 +3299,55 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
       assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
 
-      // Static GitHub Pages host never triggers CloudSync remote pulls
-      m.CloudSync.init();
-      const pullRes = await m.CloudSync.pull();
-      const refreshRes = await m.CloudSync.refresh('manual');
-      assert.equal(m.CloudSync._enabled, false);
-      assert.equal(pullRes, false);
-      assert.equal(refreshRes, false);
-      assert.equal(epochVm.fetchCalls.length, 0);
+      m.CloudSync.configure();
+      assert.equal(m.CloudSync._enabled, true);
 
-      // Post-epoch booking & block persist across a subsequent reload
+      epochVm.setFetch(async (url, opts) => {
+        if (url.includes('/api/bookings') && (opts.method || 'GET').toUpperCase() === 'POST') {
+          return {
+            status: 201,
+            ok: true,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({
+              success: true,
+              data: {
+                booking: {
+                  code: 'ARK-NEW00001',
+                  clientName: 'Cliente Nuevo',
+                  clientPhone: '8888-1234',
+                  clientEmail: 'nuevo@example.com',
+                  eventType: 'Boda',
+                  serviceId: 1,
+                  selectedDate: '2026-12-22',
+                  selectedTime: '18:00',
+                  province: 'San José',
+                  canton: 'Escazú',
+                  status: 'pendiente'
+                }
+              }
+            })
+          };
+        }
+        if (url.includes('/api/availability') && (opts.method || 'GET').toUpperCase() === 'PUT') {
+          return {
+            status: 200,
+            ok: true,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({
+              success: true,
+              data: { date: '2026-12-24', state: 'disabled', reason: 'Feriado' }
+            })
+          };
+        }
+        return {
+          status: 200,
+          ok: true,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ success: true, data: { blocked: {}, capacity: {} } })
+        };
+      });
+
       const created = await m.BookingStore.add({
-        code: 'ARK-NEW00001',
         clientName: 'Cliente Nuevo',
         clientPhone: '8888-1234',
         clientEmail: 'nuevo@example.com',
@@ -3341,7 +3362,11 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
         extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
       }, 'idem-new-1');
       assert.equal(created.ok, true);
-      await m.AvailabilityManager.set('2026-12-24', 'disabled', 'Feriado');
+      assert.equal(created.source, 'remote');
+
+      const availRes = await m.AvailabilityManager.set('2026-12-24', 'disabled', 'Feriado');
+      assert.equal(availRes.ok, true);
+      assert.equal(m.AvailabilityManager.get('2026-12-24'), 'disabled');
     } finally {
       epochVm.cleanup();
     }
@@ -3349,7 +3374,17 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     const reloadVm = mountCleanVm(sharedStorage);
     try {
       const m = reloadVm.mod;
+      reloadVm.setFetch(async () => ({
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({
+          success: true,
+          data: { blocked: { '2026-12-24': { state: 'disabled', reason: 'Feriado' } } }
+        })
+      }));
       m.StorageEngine.init();
+      await m.AvailabilityManager.fetchMap();
       assert.equal(m.BookingStore.all().some((b) => b.clientName === 'Cliente Nuevo'), true);
       assert.equal(m.AvailabilityManager.get('2026-12-24'), 'disabled');
     } finally {
