@@ -1377,19 +1377,82 @@ const StorageEngine = {
     return healed;
   },
 
+  _syncGalleryThumbnails(items) {
+    if (!Array.isArray(items) || !items.length) return false;
+    const seedById = new Map();
+    if (typeof mediaLibrary !== "undefined" && Array.isArray(mediaLibrary)) {
+      mediaLibrary.forEach(seed => {
+        if (seed && seed.id && seed.thumbnail) seedById.set(String(seed.id), seed.thumbnail);
+      });
+    }
+    const legacySeedById = {
+      "ig-1": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop",
+      "ig-2": "https://images.unsplash.com/photo-1511192336575-5a79af67a629?q=80&w=1200&auto=format&fit=crop",
+      "ig-3": "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=1200&auto=format&fit=crop",
+      "band-1": "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1200&auto=format&fit=crop",
+      "band-2": "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=1200&auto=format&fit=crop",
+      "acust-1": "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?q=80&w=1200&auto=format&fit=crop",
+      "tech-1": "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1200&auto=format&fit=crop",
+      "tech-2": "https://images.unsplash.com/photo-1506157786151-b8491531f063?q=80&w=1200&auto=format&fit=crop"
+    };
+    const legacyByTitle = {
+      "noches de mareas": legacySeedById["ig-1"],
+      "live sax & beats session": legacySeedById["ig-2"],
+      "sesion acustica intima": legacySeedById["acust-1"],
+      "show en vivo banda rt": legacySeedById["band-1"],
+      "montaje tecnico / audio & iluminacion": legacySeedById["tech-1"],
+      "montaje de audio 24-bit": legacySeedById["tech-1"]
+    };
+    let mutated = false;
+    items.forEach(entry => {
+      if (!entry || typeof entry !== "object") return;
+      const id = String(entry.id || "");
+      const thumb = String(entry.thumbnail || "").trim();
+      const normTitle = String(entry.title || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const isLegacyPlaceholder = !thumb || /foto\s*kike|foto%20kike|placeholder/i.test(thumb);
+      const isCustomItem = id.startsWith("media-") && !isLegacyPlaceholder;
+      if (isCustomItem) return;
+
+      let nextThumb = null;
+      if (seedById.has(id)) {
+        nextThumb = seedById.get(id);
+      } else if (Object.prototype.hasOwnProperty.call(legacySeedById, id)) {
+        nextThumb = legacySeedById[id];
+      } else if (Object.prototype.hasOwnProperty.call(legacyByTitle, normTitle)) {
+        nextThumb = legacyByTitle[normTitle];
+      } else if (isLegacyPlaceholder) {
+        nextThumb = resolveDefaultGalleryThumbnail(entry);
+      }
+      if (nextThumb && entry.thumbnail !== nextThumb) {
+        entry.thumbnail = nextThumb;
+        mutated = true;
+      }
+    });
+    return mutated;
+  },
+
   loadGallery() {
     // Migración v3.2 → v3.3: la clave canónica ahora es arkik_media_v1
     try {
       const legacy = SafeStorage.getItem("arkik_gallery_v1");
       const current = SafeStorage.getItem(STORAGE_KEYS.gallery);
-      if (current === null && legacy !== null) {
-        SafeStorage.setItem(STORAGE_KEYS.gallery, legacy);
+      if (legacy !== null) {
+        if (current === null) {
+          SafeStorage.setItem(STORAGE_KEYS.gallery, legacy);
+        }
         SafeStorage.removeItem("arkik_gallery_v1");
       }
     } catch (e) { /* storage no disponible: continuar */ }
     const stored = safeParse(STORAGE_KEYS.gallery, null);
     if (Array.isArray(stored) && stored.length > 0) {
       this._gallery = stored;
+      if (this._syncGalleryThumbnails(this._gallery)) {
+        this.persistGallery();
+      }
     } else {
       this._gallery = JSON.parse(JSON.stringify(mediaLibrary));
       this.persistGallery();
@@ -1420,7 +1483,7 @@ const StorageEngine = {
       embedUrl: sanitizeUrl(item.embedUrl || ""),
       directUrl: sanitizeUrl(item.directUrl || "https://www.instagram.com/kikeramirezcr"),
       url: sanitizeUrl(item.directUrl || item.url || "https://www.instagram.com/kikeramirezcr"),
-      thumbnail: sanitizeUrl(item.thumbnail || "img/Foto Kike .jpg"),
+      thumbnail: sanitizeUrl(item.thumbnail || resolveDefaultGalleryThumbnail(item)),
       caption: sanitizeInput(cleanText(item.caption || "", 300)),
       subtitle: sanitizeInput(cleanText(item.caption || item.subtitle || "", 300)),
       date: sanitizeInput(cleanText(item.date || "2026", 30)),
@@ -10227,6 +10290,50 @@ function renderGalleryFilters(activeKey = "todos") {
   }).join("");
 }
 
+const GALLERY_CATEGORY_THUMBNAILS = {
+  instagram: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop",
+  banda: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1200&auto=format&fit=crop",
+  acustico: "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?q=80&w=1200&auto=format&fit=crop",
+  tecnico: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1200&auto=format&fit=crop"
+};
+
+const GALLERY_STAGE_FALLBACK_SVG =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">' +
+      '<defs>' +
+        '<radialGradient id="g1" cx="25%" cy="15%" r="70%"><stop offset="0%" stop-color="#6d28d9" stop-opacity="0.48"/><stop offset="100%" stop-color="#07040e" stop-opacity="0"/></radialGradient>' +
+        '<radialGradient id="g2" cx="80%" cy="25%" r="65%"><stop offset="0%" stop-color="#db2777" stop-opacity="0.38"/><stop offset="100%" stop-color="#07040e" stop-opacity="0"/></radialGradient>' +
+        '<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#130924"/><stop offset="100%" stop-color="#07040e"/></linearGradient>' +
+      '</defs>' +
+      '<rect width="1200" height="900" fill="url(#bg)"/>' +
+      '<rect width="1200" height="900" fill="url(#g1)"/>' +
+      '<rect width="1200" height="900" fill="url(#g2)"/>' +
+      '<path d="M0 640 Q300 570 600 635 T1200 610 L1200 900 L0 900 Z" fill="#07040e" fill-opacity="0.72"/>' +
+    '</svg>'
+  );
+
+function resolveDefaultGalleryThumbnail(item) {
+  const cat = item && item.category ? String(item.category).toLowerCase() : "";
+  return GALLERY_CATEGORY_THUMBNAILS[cat] || GALLERY_CATEGORY_THUMBNAILS.instagram;
+}
+
+function attachGalleryImgFallback(img) {
+  if (!img || img.__arkikFallbackBound) return;
+  img.__arkikFallbackBound = true;
+  const applyFallback = function () {
+    if (img.dataset && img.dataset.fallbackApplied === "1") return;
+    if (img.dataset) img.dataset.fallbackApplied = "1";
+    img.src = GALLERY_STAGE_FALLBACK_SVG;
+  };
+  if (typeof img.addEventListener === "function") {
+    img.addEventListener("error", applyFallback, { once: true });
+  }
+  if (img.complete && img.naturalWidth === 0 && img.getAttribute && img.getAttribute("src")) {
+    applyFallback();
+  }
+}
+
 function renderMediaGallery(items, filterKey = "todos") {
   const container = document.getElementById("gallery-grid");
   if (!container) return;
@@ -10248,6 +10355,10 @@ function renderMediaGallery(items, filterKey = "todos") {
       return galleryImageCard(item);
     }
   }).join("");
+
+  if (typeof container.querySelectorAll === "function") {
+    container.querySelectorAll("img").forEach(attachGalleryImgFallback);
+  }
 
   container.classList.add("gallery-fade-in");
 }
@@ -10316,7 +10427,7 @@ function renderGalleryBottomBlock(title, subtitle, mobileHintHtml) {
 function galleryInstagramCard(item) {
   const title = sanitizeInput(item.title);
   const caption = sanitizeInput(item.caption || item.subtitle || "");
-  const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1400&q=85");
+  const thumbnail = sanitizeUrl(item.thumbnail || resolveDefaultGalleryThumbnail(item));
   const featuredClass = item.featured
     ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
     : "border-white/10";
@@ -10355,7 +10466,7 @@ function galleryInstagramCard(item) {
 function galleryVideoCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
-  const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=1400&q=85");
+  const thumbnail = sanitizeUrl(item.thumbnail || resolveDefaultGalleryThumbnail(item));
   const featuredClass = item.featured
     ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
     : "border-white/10";
@@ -10390,7 +10501,7 @@ function galleryVideoCard(item) {
 function galleryImageCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
-  const url = sanitizeUrl(item.thumbnail || item.directUrl || "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=900&q=85");
+  const url = sanitizeUrl(item.thumbnail || item.directUrl || resolveDefaultGalleryThumbnail(item));
   const featuredClass = item.featured
     ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
     : "border-white/10";
@@ -10493,7 +10604,7 @@ function renderLightboxItem(item) {
   } else if (item.type === "video" && item.embedUrl && NOT_EMBEDDABLE.test(item.embedUrl)) {
     // Dominio no embebible (Instagram/Drive/Facebook/…): NO crear iframe.
     // Mostrar placeholder visual + botón para abrir el original en pestaña nueva.
-    const src = item.thumbnail || "img/Foto Kike .jpg";
+    const src = item.thumbnail || resolveDefaultGalleryThumbnail(item);
     const openUrl = sanitizeUrl(item.directUrl || item.embedUrl);
     const hostLabel = embeddableHostLabel(openUrl);
     const wrap = document.createElement("div");
@@ -10506,6 +10617,7 @@ function renderLightboxItem(item) {
     img.alt = item.title;
     img.className = "w-full h-full object-cover";
     img.style.cssText = "filter:saturate(1.05);";
+    attachGalleryImgFallback(img);
     imgWrap.appendChild(img);
     const overlay = document.createElement("div");
     overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center";
@@ -10533,9 +10645,10 @@ function renderLightboxItem(item) {
     slot.appendChild(wrap);
   } else {
     const img = document.createElement("img");
-    img.src = item.thumbnail || item.directUrl || "img/Foto Kike .jpg";
+    img.src = item.thumbnail || item.directUrl || resolveDefaultGalleryThumbnail(item);
     img.alt = item.title;
     img.className = "w-full h-full object-contain max-h-[70vh] rounded-2xl shadow-2xl";
+    attachGalleryImgFallback(img);
     slot.appendChild(img);
   }
 }

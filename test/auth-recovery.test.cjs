@@ -3248,8 +3248,34 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.equal(m.PriceManager.getServicePrice(m.CATALOG_SERVICES[0]), m.CATALOG_SERVICES[0].price_crc);
       assert.equal(m.LOGISTICS_CONFIG.minNoticeHours, 72);
       assert.equal(m.StorageEngine.getGalleryItems().length, m.mediaLibrary.length);
+      const uniqueThumbs = new Set(m.mediaLibrary.map((it) => it.thumbnail));
+      assert.equal(uniqueThumbs.size, m.mediaLibrary.length, 'every mediaLibrary item must have a distinct thumbnail');
+      for (const it of m.mediaLibrary) {
+        assert.match(it.thumbnail, /\?q=80&w=1200&auto=format&fit=crop$/);
+      }
     } finally {
       cleanVm.cleanup();
+    }
+
+    // B0) Gallery cache migration syncs stale seed & legacy placeholder thumbnails while preserving IT custom items
+    const galleryMigVm = mountCleanVm({
+      arkik_gallery_v1: JSON.stringify([
+        { id: 'ig-1', title: 'Noches de Mareas', category: 'instagram', type: 'instagram', thumbnail: 'img/Foto Kike .jpg' },
+        { id: 'live-climax-1', title: 'Clímax en Escenario Principal', category: 'banda', type: 'video', thumbnail: 'https://images.unsplash.com/old' },
+        { id: 'media-it-custom', title: 'Evento Privado IT', category: 'banda', type: 'image', thumbnail: 'https://cdn.example.com/custom-stage.jpg' }
+      ])
+    });
+    try {
+      const m = galleryMigVm.mod;
+      m.StorageEngine.loadGallery();
+      const synced = m.StorageEngine.getGalleryItems();
+      assert.equal(synced.length, 3);
+      assert.equal(synced[0].thumbnail, 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop');
+      assert.equal(synced[1].thumbnail, 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1200&auto=format&fit=crop');
+      assert.equal(synced[2].thumbnail, 'https://cdn.example.com/custom-stage.jpg', 'custom IT gallery item must be preserved');
+      assert.equal(m.SafeStorage.getItem('arkik_gallery_v1'), null, 'legacy arkik_gallery_v1 key must be cleaned up');
+    } finally {
+      galleryMigVm.cleanup();
     }
 
     // B) Direct .load() filters legacy seed records when storage already holds real records
