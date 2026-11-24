@@ -3431,4 +3431,365 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       );
     });
   });
+
+  test('41: submitStaticBooking enforces strict Zero-Trust fail-closed without OFFLINE_RESILIENT or offline_unverified bookings', async () => {
+    const dataSrc = fs.readFileSync(path.join(REPO, 'js', 'data.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(REPO, 'js', 'api.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(REPO, 'js', 'app.js'), 'utf8');
+
+    assert.equal(appSrc.includes('OFFLINE_RESILIENT'), false, 'main js/app.js must not ship OFFLINE_RESILIENT');
+    const fnStart = appSrc.indexOf('async function submitStaticBooking()');
+    const fnEnd = appSrc.indexOf('function renderConfirmedVoucherScreen', fnStart);
+    assert.ok(fnStart >= 0 && fnEnd > fnStart, 'submitStaticBooking must exist in js/app.js');
+    const submitFnSrc = appSrc.slice(fnStart, fnEnd);
+    assert.equal(submitFnSrc.includes('offline_unverified'), false, 'submitStaticBooking must not emit offline_unverified');
+    assert.equal(submitFnSrc.includes('_enqueueOfflineBooking'), false, 'submitStaticBooking must not enqueue offline bookings');
+    assert.equal(submitFnSrc.includes('isOfflineDegraded = true'), false, 'submitStaticBooking must not mark bookings degraded');
+
+    let nextFetch = async () => ({
+      status: 500,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ success: false, error: { code: 'internal_error', message: 'Boom' } })
+    });
+    const lsStore = new Map();
+    const ssStore = new Map();
+    const activeTimeouts = new Set();
+    const activeIntervals = new Set();
+    const elements = new Map();
+    const getEl = (id) => {
+      if (!elements.has(id)) {
+        const classes = new Set();
+        elements.set(id, {
+          id,
+          value: '',
+          textContent: '',
+          innerHTML: '',
+          disabled: false,
+          href: '',
+          style: {},
+          classList: {
+            add: (...cls) => cls.forEach((c) => classes.add(c)),
+            remove: (...cls) => cls.forEach((c) => classes.delete(c)),
+            contains: (c) => classes.has(c)
+          }
+        });
+      }
+      return elements.get(id);
+    };
+    const fakeStorage = (m) => ({
+      getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)),
+      removeItem: (k) => m.delete(k)
+    });
+
+    const sandbox = {
+      console,
+      setTimeout: (fn, ms, ...args) => {
+        const id = setTimeout((...a) => {
+          activeTimeouts.delete(id);
+          fn(...a);
+        }, ms, ...args);
+        if (typeof id.unref === 'function') id.unref();
+        activeTimeouts.add(id);
+        return id;
+      },
+      clearTimeout: (id) => {
+        activeTimeouts.delete(id);
+        clearTimeout(id);
+      },
+      setInterval: (fn, ms, ...args) => {
+        const id = setInterval(fn, ms, ...args);
+        if (typeof id.unref === 'function') id.unref();
+        activeIntervals.add(id);
+        return id;
+      },
+      clearInterval: (id) => {
+        activeIntervals.delete(id);
+        clearInterval(id);
+      },
+      requestAnimationFrame: (fn) => setTimeout(fn, 0),
+      Promise,
+      JSON,
+      Date,
+      Math,
+      Object,
+      String,
+      Number,
+      Boolean,
+      Array,
+      Map,
+      Set,
+      RegExp,
+      Error,
+      TypeError,
+      encodeURIComponent,
+      decodeURIComponent,
+      AbortController,
+      fetch: (...args) => nextFetch(...args),
+      localStorage: fakeStorage(lsStore),
+      sessionStorage: fakeStorage(ssStore),
+      location: { pathname: '/', hash: '', origin: 'https://arkik-productions.vercel.app', hostname: 'arkik-productions.vercel.app' },
+      navigator: { userAgent: 'node-test', onLine: true },
+      document: {
+        readyState: 'loading',
+        visibilityState: 'visible',
+        addEventListener: () => {},
+        getElementById: (id) => getEl(id),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        body: { style: {}, classList: { add() {}, remove() {}, toggle() {} } }
+      },
+      addEventListener: () => {},
+      scrollTo: () => {},
+      history: { replaceState: () => {} },
+      crypto: require('node:crypto').webcrypto
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+    vm.runInContext(apiSrc, sandbox, { filename: 'js/api.js' });
+    vm.runInContext(
+      appSrc + `
+      CLIENT_GUARD_CONFIG.submitLockMs = 10;
+      CLIENT_GUARD_CONFIG.maxSubmitAttempts = 20;
+      const __testCalls = { failures: [], steps: [], vouchers: [], toasts: [], conflicts: [] };
+      const __origHandleFailure = handleBookingCreateFailure;
+      handleBookingCreateFailure = function (res) {
+        __testCalls.failures.push(res);
+        return __origHandleFailure(res);
+      };
+      goToStep = function (step) {
+        __testCalls.steps.push(step);
+      };
+      renderConfirmedVoucherScreen = function (booking, waUrl) {
+        __testCalls.vouchers.push({ booking, waUrl });
+      };
+      showToast = function (msg, type) {
+        __testCalls.toasts.push({ msg, type });
+      };
+      showSlotConflictAlert = function (msg) {
+        __testCalls.conflicts.push(msg);
+      };
+      updateGenerateButtonState = function () {};
+      window.__TEST_CHECKOUT__ = {
+        cart,
+        BookingStore,
+        StorageEngine,
+        CloudSync,
+        STORAGE_KEYS,
+        CATALOG_SERVICES,
+        submitStaticBooking,
+        calls: __testCalls
+      };
+      `,
+      sandbox,
+      { filename: 'js/app.js' }
+    );
+
+    const t = sandbox.__TEST_CHECKOUT__;
+    const futureDate = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+
+    function resetCheckoutState() {
+      t.BookingStore._data = [];
+      t.BookingStore.persist();
+      lsStore.delete(t.STORAGE_KEYS.offlineQueue);
+      t.calls.failures.length = 0;
+      t.calls.steps.length = 0;
+      t.calls.vouchers.length = 0;
+      t.calls.toasts.length = 0;
+      t.calls.conflicts.length = 0;
+      const btn = getEl('btn-submit-booking');
+      btn.disabled = false;
+      btn.innerHTML = 'Confirmar Reserva';
+      btn.classList.remove('btn-loading', 'opacity-50', 'cursor-not-allowed');
+      getEl('sinpe-reference').value = '123456';
+      getEl('confirm-offline-badge').classList.remove('hidden');
+
+      t.cart.isSubmitting = false;
+      t.cart.createdBooking = null;
+      t.cart.selectedService = t.CATALOG_SERVICES[0];
+      t.cart.clientName = 'Cliente Zero Trust';
+      t.cart.clientPhone = '8888-1234';
+      t.cart.clientEmail = 'cliente@example.com';
+      t.cart.eventType = 'Boda';
+      t.cart.selectedDate = futureDate;
+      t.cart.selectedTime = '18:00';
+      t.cart.province = 'San José';
+      t.cart.canton = 'Central (San José)';
+      t.cart.address = 'Avenida Central 123';
+      t.cart.voucherImage = 'data:image/png;base64,iVBORw0KGgo=';
+      t.cart.sinpeRef = '123456';
+    }
+
+    try {
+      t.StorageEngine.init();
+      t.CloudSync._enabled = false; // isolate POST /api/bookings path in unit test
+
+      const failCases = [
+        {
+          name: '404',
+          fetchFn: async () => ({ status: 404, ok: false, headers: { get: () => 'text/html' }, text: async () => '<html>404</html>' }),
+          expectedStatus: 404
+        },
+        {
+          name: '405',
+          fetchFn: async () => ({ status: 405, ok: false, headers: { get: () => 'text/html' }, text: async () => '<html>405</html>' }),
+          expectedStatus: 405
+        },
+        {
+          name: '500',
+          fetchFn: async () => ({
+            status: 500,
+            ok: false,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({ success: false, error: { code: 'internal_error', message: 'DB error' } })
+          }),
+          expectedStatus: 500
+        },
+        {
+          name: '503',
+          fetchFn: async () => ({
+            status: 503,
+            ok: false,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({ success: false, error: { code: 'service_unavailable', message: 'No DB' } })
+          }),
+          expectedStatus: 503
+        },
+        {
+          name: '200 HTML',
+          fetchFn: async () => ({
+            status: 200,
+            ok: true,
+            headers: { get: () => 'text/html' },
+            text: async () => '<!DOCTYPE html><html>SPA</html>'
+          }),
+          expectedCode: 'invalid_response'
+        },
+        {
+          name: 'network error',
+          fetchFn: async () => { throw new TypeError('Failed to fetch'); },
+          expectedCode: 'network'
+        },
+        {
+          name: '409 slot_taken',
+          fetchFn: async () => ({
+            status: 409,
+            ok: false,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({ success: false, error: { code: 'slot_taken', message: 'Turno ocupado' } })
+          }),
+          expectedStatus: 409,
+          expectedCode: 'slot_taken'
+        }
+      ];
+
+      for (const fc of failCases) {
+        resetCheckoutState();
+        nextFetch = fc.fetchFn;
+        await t.submitStaticBooking();
+        await new Promise((r) => setTimeout(r, 25));
+
+        assert.equal(t.calls.failures.length, 1, `${fc.name}: handleBookingCreateFailure must be called`);
+        if (fc.expectedStatus !== undefined) {
+          assert.equal(t.calls.failures[0].status, fc.expectedStatus, `${fc.name}: expected status`);
+        }
+        if (fc.expectedCode !== undefined) {
+          assert.equal(t.calls.failures[0].code, fc.expectedCode, `${fc.name}: expected code`);
+        }
+        assert.equal(t.calls.steps.includes(4), false, `${fc.name}: must NOT advance to step 4`);
+        assert.equal(t.calls.vouchers.length, 0, `${fc.name}: must NOT emit voucher screen`);
+        assert.equal(t.cart.createdBooking, null, `${fc.name}: cart.createdBooking must remain null`);
+        assert.equal(t.BookingStore.all().length, 0, `${fc.name}: must NOT persist local booking`);
+        assert.equal(lsStore.get(t.STORAGE_KEYS.offlineQueue) || '[]', '[]', `${fc.name}: offline queue must remain empty`);
+        assert.equal(t.cart.isSubmitting, false, `${fc.name}: releaseLock() must unlock isSubmitting`);
+        assert.equal(getEl('btn-submit-booking').classList.contains('btn-loading'), false, `${fc.name}: button loading class must clear`);
+
+        if (fc.expectedCode === 'slot_taken') {
+          assert.equal(t.calls.conflicts.length, 1, '409 slot_taken must show slot conflict alert');
+          assert.equal(t.calls.steps.includes(2), true, '409 slot_taken must return to step 2');
+        }
+      }
+
+      // Timeout path from BookingStore.add() must also fail closed via handleBookingCreateFailure
+      resetCheckoutState();
+      const origAdd = t.BookingStore.add;
+      t.BookingStore.add = async () => ({ ok: false, code: 'timeout', status: 0, message: 'Timeout' });
+      try {
+        await t.submitStaticBooking();
+        await new Promise((r) => setTimeout(r, 25));
+      } finally {
+        t.BookingStore.add = origAdd;
+      }
+      assert.equal(t.calls.failures.length, 1);
+      assert.equal(t.calls.failures[0].code, 'timeout');
+      assert.equal(t.calls.steps.includes(4), false);
+      assert.equal(t.calls.vouchers.length, 0);
+      assert.equal(t.cart.createdBooking, null);
+      assert.equal(t.BookingStore.all().length, 0);
+      assert.equal(t.cart.isSubmitting, false);
+
+      // Positive 201 Created from POST /api/bookings emits confirmed synced voucher
+      resetCheckoutState();
+      nextFetch = async (url, opts) => {
+        if (String(url).includes('/api/bookings') && String((opts && opts.method) || '').toUpperCase() === 'POST') {
+          return {
+            status: 201,
+            ok: true,
+            headers: { get: () => 'application/json' },
+            text: async () => JSON.stringify({
+              success: true,
+              data: {
+                booking: {
+                  code: 'ARK-REMOTE01',
+                  clientName: 'Cliente Zero Trust',
+                  clientPhone: '8888-1234',
+                  clientEmail: 'cliente@example.com',
+                  eventType: 'Boda',
+                  serviceId: t.CATALOG_SERVICES[0].id,
+                  serviceName: t.CATALOG_SERVICES[0].name,
+                  selectedDate: futureDate,
+                  selectedTime: '18:00',
+                  province: 'San José',
+                  canton: 'Central (San José)',
+                  address: 'Avenida Central 123',
+                  subtotal: t.CATALOG_SERVICES[0].price_crc,
+                  travelSurcharge: 0,
+                  granTotal: t.CATALOG_SERVICES[0].price_crc,
+                  deposit50Amount: Math.round(t.CATALOG_SERVICES[0].price_crc / 2),
+                  remainingBalance: t.CATALOG_SERVICES[0].price_crc - Math.round(t.CATALOG_SERVICES[0].price_crc / 2),
+                  status: 'pendiente'
+                }
+              }
+            })
+          };
+        }
+        return {
+          status: 200,
+          ok: true,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ success: true, data: { blocked: {}, capacity: {} } })
+        };
+      };
+      await t.submitStaticBooking();
+      await new Promise((r) => setTimeout(r, 25));
+
+      assert.equal(t.calls.failures.length, 0);
+      assert.ok(t.cart.createdBooking, 'remote 201 must populate cart.createdBooking');
+      assert.equal(t.cart.createdBooking.code, 'ARK-REMOTE01');
+      assert.equal(t.cart.createdBooking.syncStatus, 'synced');
+      assert.equal(t.cart.createdBooking.isOfflineDegraded, false);
+      assert.equal(t.calls.steps.includes(4), true, 'remote 201 must advance to step 4');
+      assert.equal(t.calls.vouchers.length, 1, 'remote 201 must render voucher screen');
+      assert.equal(getEl('confirm-offline-badge').classList.contains('hidden'), true);
+      assert.equal(t.cart.isSubmitting, false);
+    } finally {
+      for (const id of activeTimeouts) clearTimeout(id);
+      for (const id of activeIntervals) clearInterval(id);
+      activeTimeouts.clear();
+      activeIntervals.clear();
+    }
+  });
 });

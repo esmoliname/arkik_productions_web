@@ -12768,7 +12768,7 @@ function handleBookingCreateFailure(res) {
     "No se pudo registrar la reserva. Intente nuevamente.";
   const details = (res && res.details) || (error && error.details) || null;
 
-  if (code === "network" || code === "service_unavailable") {
+  if (code === "network" || code === "timeout" || code === "service_unavailable") {
     showToast("No fue posible registrar la reserva. Comprueba tu conexión e inténtalo nuevamente.", "error");
     return;
   }
@@ -12910,10 +12910,11 @@ async function submitStaticBooking() {
   // polling antes de comprometer el turno. Si la nube respondió a tiempo,
   // se vuelve a validar con el estado ya refrescado.
   // Non-Blocking Cloud Verification: strict 2500ms timeout
+  let cloudTimer = null;
   try {
     const cloudCheckPromise = preSubmitCloudRefresh(2000);
     const cloudTimeoutPromise = new Promise(function (resolve) {
-      setTimeout(function () { resolve(false); }, 2000);
+      cloudTimer = setTimeout(function () { resolve(false); }, 2000);
     });
     await Promise.race([cloudCheckPromise, cloudTimeoutPromise]);
     const lateSlotCheck = validateSlotAvailability(cart.selectedDate, cart.selectedTime);
@@ -12931,6 +12932,8 @@ async function submitStaticBooking() {
     }
   } catch (cloudErr) {
     console.warn("[Arkik] Pre-submit cloud refresh bypass/error:", cloudErr);
+  } finally {
+    if (cloudTimer) clearTimeout(cloudTimer);
   }
 
   // (9) El intento consumido queda registrado ANTES de generar el voucher.
@@ -12943,7 +12946,8 @@ async function submitStaticBooking() {
   let bookingCode = "";
 
   try {
-    cart.sinpeRef = cleanSinpeRef(document.getElementById("sinpe-reference").value);
+    const sinpeInput = document.getElementById("sinpe-reference");
+    cart.sinpeRef = cleanSinpeRef(sinpeInput ? sinpeInput.value : (cart.sinpeRef || ""));
 
     // Código provisorio (ARK-XXXXXXXX): solo lo consume el modo local.
     // Con la API activa el código definitivo lo genera el servidor.
@@ -13020,102 +13024,44 @@ async function submitStaticBooking() {
     const idemKey = idempotencyKeyFor();
     let saved = null;
 
-    // Non-Blocking Cloud Push: Promise.race with strict 2500ms timeout
+    // Zero-Trust estricto: la reserva SOLO existe tras confirmación real de POST /api/bookings.
     try {
-      const pushTimeout = new Promise(function (resolve) {
-        setTimeout(function () {
-          resolve({ ok: false, code: "timeout", status: 0, degraded: true });
-        }, 2000);
-      });
-      saved = await Promise.race([
-        BookingStore.add(record, idemKey),
-        pushTimeout
-      ]);
+      saved = await BookingStore.add(record, idemKey);
     } catch (pushErr) {
-      console.warn("[Arkik] Cloud push falló o dio timeout, degradando a offline:", pushErr);
-      saved = { ok: false, code: "network", status: 0, degraded: true };
+      console.warn("[Arkik] Error al enviar reserva a /api/bookings:", pushErr);
+      saved = {
+        ok: false,
+        code: "network",
+        status: 0,
+        message: (pushErr && pushErr.message) || "No fue posible conectar con el servidor."
+      };
     }
 
-    // Si hubo conflicto real de fecha/cupo (409) confirmado por servidor:
-    if (saved && !saved.ok && (saved.code === "day_full" || saved.code === "slot_taken" || saved.code === "blackout" || saved.code === "soldout" || saved.status === 409)) {
-      handleBookingCreateFailure(saved);
+    // Fail-closed: cualquier rechazo o fallo (409, 400, 404, 405, 5xx, timeout, HTML o red)
+    // delega obligatoriamente a handleBookingCreateFailure() y aborta la emisión del voucher/PDF.
+    if (!saved || !saved.ok || saved.source !== "remote" || !saved.booking) {
+      handleBookingCreateFailure(saved || { ok: false, code: "network", status: 0 });
       return;
-    }
-
-    // Si falló por 404, 405, 5xx, timeout, network failure, etc:
-    // CATCH the exception and degrade seamlessly to OFFLINE_RESILIENT mode. NEVER throw an error toast to the user.
-    if (!saved || !saved.ok || saved.degraded) {
-      console.warn("[Arkik] Persistencia en modo OFFLINE_RESILIENT.");
-      record.syncStatus = "offline_unverified";
-      record.isOfflineDegraded = true;
-      enforceVerifiedTotalsOnBooking(record, cart);
-      validateBookingSchema(record);
-
-      BookingStore._enqueueOfflineBooking(record, idemKey, {
-        clientName: record.clientName,
-        clientPhone: record.clientPhone,
-        clientEmail: record.clientEmail,
-        eventType: record.eventType,
-        serviceId: record.serviceId,
-        selectedDate: record.selectedDate,
-        selectedTime: record.selectedTime,
-        province: record.province,
-        canton: record.canton,
-        address: record.address,
-        sinpeRef: record.sinpeRef,
-        extras: record.extras,
-        voucherImage: record.voucherImage
-      });
-
-      if (!BookingStore._data) BookingStore.load();
-      const existingIdx = BookingStore._data.findIndex(function (b) { return b && b.code === record.code; });
-      if (existingIdx >= 0) {
-        BookingStore._data[existingIdx] = record;
-      } else {
-        BookingStore._data.unshift(record);
-      }
-      BookingStore.persist();
-
-      if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[record.selectedDate]) {
-        delete AvailabilityManager._details[record.selectedDate];
-      }
-      if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-        try { CalendarModule.render(); } catch (e) { }
-      }
-
-      // No se declara como confirmada: la reserva queda pendiente de sincronización.
-      saved = { ok: false, queued: true, booking: record, source: "local", degraded: true };
     }
 
     const created = saved.booking;
     bookingCode = created.code || bookingCode;
 
-    if (saved.source === "remote") {
-      // Lo que se imprime en el voucher es lo que calculó la base de datos.
-      if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
-      if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
-      if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
-      if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
-      if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
-    }
-    if (saved.source !== "remote" || saved.degraded) {
-      created.syncStatus = "offline_unverified";
-      created.isOfflineDegraded = true;
-      enforceVerifiedTotalsOnBooking(created, cart);
-      updateOfflineModeBanner(true);
-    } else {
-      created.syncStatus = "synced";
-      updateOfflineModeBanner(false);
-    }
+    // Lo que se imprime en el voucher es lo que calculó la base de datos.
+    if (Number.isFinite(Number(created.subtotal))) cart.subtotal = Number(created.subtotal);
+    if (Number.isFinite(Number(created.travelSurcharge))) cart.travelSurcharge = Number(created.travelSurcharge);
+    if (Number.isFinite(Number(created.granTotal))) cart.granTotal = Number(created.granTotal);
+    if (Number.isFinite(Number(created.deposit50Amount))) cart.deposit50Amount = Number(created.deposit50Amount);
+    if (Number.isFinite(Number(created.remainingBalance))) cart.remainingBalance = Number(created.remainingBalance);
+
+    created.syncStatus = "synced";
+    created.isOfflineDegraded = false;
+    updateOfflineModeBanner(false);
     cart.createdBooking = created;
 
     const offlineBadge = document.getElementById("confirm-offline-badge");
     if (offlineBadge) {
-      if (saved.degraded || saved.source === "local" || created.syncStatus === "offline_unverified") {
-        offlineBadge.classList.remove("hidden");
-      } else {
-        offlineBadge.classList.add("hidden");
-      }
+      offlineBadge.classList.add("hidden");
     }
 
     const rawMsg =
