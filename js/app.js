@@ -10009,7 +10009,7 @@ function renderGalleryFilters(activeKey = "todos") {
     }
 
     const active = filter.key === activeKey;
-    const base = "gallery-filter-btn gallery-filter-pill min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold border flex items-center justify-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer whitespace-nowrap shrink-0";
+    const base = "gallery-filter-btn gallery-filter-pill snap-start min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold border flex items-center justify-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-pink-500/50 cursor-pointer whitespace-nowrap shrink-0";
     const state = active
       ? " gallery-filter-pill--active text-white border-transparent"
       : " text-gray-300 border-white/10 hover:text-white";
@@ -10042,20 +10042,61 @@ function renderMediaGallery(items, filterKey = "todos") {
   container.classList.add("gallery-fade-in");
 }
 
-// Badge dinámico según el contenido: Destacado / Audio En Vivo / Instagram Reel.
-function galleryDynamicBadge(item) {
-  if (item.featured) return '<span class="gallery-badge gallery-badge--featured">🔥 Evento Destacado</span>';
-  if (item.type === "video") return '<span class="gallery-badge gallery-badge--video">🎵 Audio En Vivo</span>';
-  if (item.type === "instagram") return '<span class="gallery-badge gallery-badge--instagram">🎬 Instagram Reel</span>';
-  return "";
+function formatGalleryCompactDate(rawDate) {
+  const clean = String(rawDate || "").trim();
+  if (!clean) return "";
+  const monthMap = {
+    enero: "Ene", febrero: "Feb", marzo: "Mar", abril: "Abr",
+    mayo: "May", junio: "Jun", julio: "Jul", agosto: "Ago",
+    septiembre: "Sep", setiembre: "Sep", octubre: "Oct",
+    noviembre: "Nov", diciembre: "Dic"
+  };
+  const m = clean.match(/^([A-Za-záéíóúÁÉÍÓÚ]+)\s+(\d{4})$/);
+  if (m) {
+    const key = m[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (monthMap[key]) return `${monthMap[key]} ${m[2]}`;
+  }
+  const iso = clean.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/);
+  if (iso) {
+    const shortMonths = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const idx = parseInt(iso[2], 10) - 1;
+    if (idx >= 0 && idx < 12) return `${shortMonths[idx]} ${iso[1]}`;
+  }
+  return clean;
 }
 
 function galleryCategoryBadge(item) {
   const label = GALLERY_CATEGORY_LABELS[item.category] || item.category;
+  const featuredBorder = item.featured ? "border-amber-400/45" : "border-white/15";
+  const featuredDot = item.featured
+    ? '<span class="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-fuchsia-500 shadow-[0_0_8px_rgba(251,191,36,0.9)] shrink-0" aria-hidden="true"></span>'
+    : "";
+  return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide whitespace-nowrap bg-black/60 backdrop-blur-md border ${featuredBorder} text-white shadow-sm">${featuredDot}<span>${sanitizeInput(label)}</span></span>`;
+}
+
+function renderGalleryTopBar(item) {
+  const compactDate = sanitizeInput(formatGalleryCompactDate(item.date));
   return `
-    <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-[#0a0712]/80 border border-purple-500/30 text-purple-300 backdrop-blur-md shadow-sm">
-      ${sanitizeInput(label)}
-    </span>
+    <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between gap-2 whitespace-nowrap pointer-events-none z-10">
+      ${galleryCategoryBadge(item)}
+      ${compactDate ? `<span class="text-xs font-medium text-slate-200 bg-black/50 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-full whitespace-nowrap shrink-0">${compactDate}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderGalleryBottomBlock(title, subtitle, mobileHintHtml) {
+  return `
+    <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 z-10 pointer-events-none flex flex-col justify-end text-left">
+      <h3 class="text-white font-bold text-sm sm:text-base leading-snug drop-shadow-md group-hover:text-pink-200 transition-colors">
+        ${title}
+      </h3>
+      ${subtitle ? `<p class="line-clamp-2 text-xs sm:text-sm text-slate-300 leading-relaxed mt-1">${subtitle}</p>` : ""}
+      <div class="mt-2 flex items-center justify-end md:hidden">
+        <span class="gallery-mobile-cta inline-flex items-center gap-1 text-[11px] font-semibold text-slate-100 bg-black/55 backdrop-blur-md border border-white/15 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+          ${mobileHintHtml}
+        </span>
+      </div>
+    </div>
   `;
 }
 
@@ -10065,59 +10106,34 @@ function galleryCategoryBadge(item) {
 function galleryInstagramCard(item) {
   const title = sanitizeInput(item.title);
   const caption = sanitizeInput(item.caption || item.subtitle || "");
-  const date = sanitizeInput(item.date || "");
   const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1400&q=85");
-  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
+  const featuredClass = item.featured
+    ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
+    : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} h-full group rounded-3xl overflow-hidden relative block cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
-      
-      <!-- Media Container -->
-      <div class="relative w-full h-full overflow-hidden bg-black/50">
-        <!-- Background Image with Cinematic Zoom -->
+      <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
              class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
 
-        <!-- Smooth Dark Gradient Overlay -->
-        <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none"></div>
+        <!-- Dual Scrim: Subtle Top Readability + Deep Bottom Contrast -->
+        <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-[#07040e] via-[#07040e]/75 to-transparent pointer-events-none"></div>
 
-        <!-- Top Badges Bar -->
-        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between pointer-events-none z-10">
-          <div class="flex items-center gap-1.5">
-            ${galleryCategoryBadge(item)}
-            ${galleryDynamicBadge(item)}
-          </div>
-          ${date ? `
-            <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">
-              ${date}
-            </span>
-          ` : ""}
-        </div>
+        ${renderGalleryTopBar(item)}
 
-        <!-- Center Badge: Authentic Instagram Gradient Pill -->
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-[#f09433] via-[#e6683c] via-[#dc2743] via-[#cc2366] to-[#bc1888] flex items-center justify-center shadow-lg shadow-pink-900/50 group-hover:scale-110 transition-transform duration-300 border border-white/25">
-            <svg class="w-6 h-6 text-white drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24">
+        <!-- Center Capsule: Refined Obsidian Glass -->
+        <div class="absolute inset-0 pb-8 sm:pb-10 flex items-center justify-center pointer-events-none z-10">
+          <div class="w-11 h-11 rounded-full bg-black/55 backdrop-blur-xl border border-white/25 text-white shadow-lg flex items-center justify-center group-hover:scale-110 group-hover:border-pink-400/60 transition-all duration-300">
+            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
             </svg>
           </div>
         </div>
 
-        <!-- Bottom Typography: Title & Location / Caption -->
-        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10">
-          <h3 class="text-white font-bold text-base sm:text-lg text-center drop-shadow-md leading-tight group-hover:text-pink-200 transition-colors">
-            ${title}
-          </h3>
-          ${caption ? `
-            <p class="text-xs text-pink-300 font-medium text-center mt-1.5 flex items-center justify-center gap-1 drop-shadow">
-              <svg class="w-3.5 h-3.5 text-pink-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-              </svg>
-              <span class="truncate max-w-[280px] sm:max-w-xs">${caption}</span>
-            </p>
-          ` : ""}
-        </div>
+        ${renderGalleryBottomBlock(title, caption, "Ver publicación ↗")}
       </div>
     </article>
   `;
@@ -10130,32 +10146,29 @@ function galleryVideoCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
   const thumbnail = sanitizeUrl(item.thumbnail || "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=1400&q=85");
-  const date = sanitizeInput(item.date || "");
-  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
+  const featuredClass = item.featured
+    ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
+    : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} h-full group relative rounded-3xl overflow-hidden cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
-      <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-black/50">
+      <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
           class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
-        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
-        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10 pointer-events-none">
-          <div class="flex items-center gap-1.5">
-            ${galleryCategoryBadge(item)}
-            ${galleryDynamicBadge(item)}
+        <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-[#07040e] via-[#07040e]/75 to-transparent pointer-events-none"></div>
+        ${renderGalleryTopBar(item)}
+        <div class="absolute inset-0 pb-8 sm:pb-10 flex items-center justify-center pointer-events-none z-10">
+          <div class="w-11 h-11 rounded-full bg-black/55 backdrop-blur-xl border border-white/25 text-white shadow-lg flex items-center justify-center group-hover:scale-110 group-hover:border-pink-400/60 transition-all duration-300">
+            <svg class="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
           </div>
-          ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
-        <div class="absolute inset-0 m-auto z-10 w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-900/60 border border-white/25 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110 pointer-events-none">
-          <span class="absolute -inset-1.5 rounded-full bg-purple-500/35 animate-pulse"></span>
-          <span class="absolute inset-0 rounded-full bg-pink-500/35 animate-ping opacity-0 group-hover:opacity-100 [animation-duration:1.6s]"></span>
-          <svg class="relative w-6 h-6 text-white ml-0.5 drop-shadow" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-        </div>
-        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10 pointer-events-none">
-          <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
-          ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
-        </div>
+        ${renderGalleryBottomBlock(
+          title,
+          subtitle,
+          '<svg class="w-3 h-3 text-pink-300 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg><span>Reproducir</span>'
+        )}
       </div>
     </article>
   `;
@@ -10168,27 +10181,27 @@ function galleryImageCard(item) {
   const title = sanitizeInput(item.title);
   const subtitle = sanitizeInput(item.caption || item.subtitle || "");
   const url = sanitizeUrl(item.thumbnail || item.directUrl || "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=900&q=85");
-  const date = sanitizeInput(item.date || "");
-  const featuredClass = item.featured ? "md:col-span-2 md:row-span-2 bento-card-featured" : "";
+  const featuredClass = item.featured
+    ? "md:col-span-2 md:row-span-2 bento-card-featured border-pink-400/30"
+    : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} h-full group relative rounded-3xl overflow-hidden cursor-pointer border border-transparent hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
-      <div class="relative w-full h-full overflow-hidden bg-black/50">
+      <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${url}" alt="${title}" loading="lazy"
           class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
-        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
-        <div class="absolute top-3.5 inset-x-3.5 flex items-center justify-between z-10 pointer-events-none">
-          <div class="flex items-center gap-1.5">
-            ${galleryCategoryBadge(item)}
-            ${galleryDynamicBadge(item)}
+        <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-[#07040e] via-[#07040e]/75 to-transparent pointer-events-none"></div>
+        ${renderGalleryTopBar(item)}
+        <div class="absolute inset-0 pb-8 sm:pb-10 flex items-center justify-center pointer-events-none z-10 opacity-85 group-hover:opacity-100 transition-opacity">
+          <div class="w-11 h-11 rounded-full bg-black/55 backdrop-blur-xl border border-white/25 text-white shadow-lg flex items-center justify-center group-hover:scale-110 group-hover:border-pink-400/60 transition-all duration-300">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
           </div>
-          ${date ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-black/60 border border-white/10 text-gray-300 backdrop-blur-md">${date}</span>` : ""}
         </div>
-        <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 text-center z-10 pointer-events-none">
-          <h4 class="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors leading-snug drop-shadow">${title}</h4>
-          ${subtitle ? `<p class="text-xs text-gray-300 mt-1 truncate max-w-[280px] mx-auto">${subtitle}</p>` : ""}
-        </div>
+        ${renderGalleryBottomBlock(title, subtitle, "Ver publicación ↗")}
       </div>
     </article>
   `;
