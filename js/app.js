@@ -2261,8 +2261,7 @@ const BookingStore = {
     booking.voucherExpiresAt = Date.now() + ARKIK_VOUCHER_TTL_MS;
     scheduleVoucherTtlPurge();
     if (!apiEnabled()) {
-      this._persistLocalBooking(booking);
-      return { ok: true, booking: booking, source: "local" };
+      return apiError("api_disabled", "El servicio remoto de reservas está deshabilitado.");
     }
 
     const payload = {
@@ -2351,80 +2350,19 @@ const BookingStore = {
     return { ok: true, booking: created, source: "remote" };
   },
 
-  _enqueueOfflineBooking(booking, idempotencyKey, payload) {
-    // 4. VALIDACIÓN DE ESQUEMA Y ANTI-STORED XSS EN COLA (previa a insertar)
-    const candidateRecord = Object.assign({}, payload || {}, booking || {}, {
-      code: booking && booking.code,
-      referenceSinpe: (booking && (booking.referenceSinpe || booking.sinpeRef)) || (payload && payload.sinpeRef) || "SN000000"
-    });
-    if (!validateBookingSchema(candidateRecord)) {
-      console.warn("[Arkik Security] Inserción bloqueada en offlineQueue por violación de esquema:", candidateRecord);
-      return false;
-    }
-    if (payload && typeof payload === "object") {
-      payload.clientName = candidateRecord.clientName;
-      payload.sinpeRef = candidateRecord.sinpeRef;
-      payload.referenceSinpe = candidateRecord.referenceSinpe;
-    }
-    try {
-      const q = safeParse(STORAGE_KEYS.offlineQueue, []);
-      const queue = Array.isArray(q) ? q : [];
-      queue.push({
-        idempotencyKey: idempotencyKey,
-        bookingCode: booking.code,
-        payload: payload,
-        queuedAt: Date.now()
-      });
-      safeSet(STORAGE_KEYS.offlineQueue, queue);
-    } catch (e) {
-      console.warn("[Arkik] _enqueueOfflineBooking error:", e);
-    }
+  _enqueueOfflineBooking() {
+    // Zero-Trust estricto: no se encolan reservas locales sin confirmación del servidor.
+    return false;
   },
 
   async syncOfflineQueue() {
-    if (!apiEnabled() || !ArkikApi.isOnline()) return { synced: 0 };
-    let queue = safeParse(STORAGE_KEYS.offlineQueue, []);
-    if (!Array.isArray(queue) || queue.length === 0) return { synced: 0 };
-    let synced = 0;
-    const remaining = [];
-    for (const item of queue) {
-      // 4. VALIDACIÓN DE ESQUEMA Y ANTI-STORED XSS EN COLA (previa a leer/sincronizar)
-      const queueRecordCheck = Object.assign({}, (item && item.payload) || {}, {
-        code: item && (item.bookingCode || (item.payload && item.payload.code))
-      });
-      if (!item || !item.payload || !validateBookingSchema(queueRecordCheck)) {
-        console.warn("[Arkik Security] Registro corrupto o malicioso descartado de offlineQueue:", item);
-        continue;
+    try {
+      const existing = safeParse(STORAGE_KEYS.offlineQueue, []);
+      if (Array.isArray(existing) && existing.length > 0) {
+        safeSet(STORAGE_KEYS.offlineQueue, []);
       }
-      item.payload.clientName = queueRecordCheck.clientName;
-      item.payload.sinpeRef = queueRecordCheck.sinpeRef;
-      item.payload.referenceSinpe = queueRecordCheck.referenceSinpe;
-      try {
-        const res = await ArkikApi.createBooking(item.payload, item.idempotencyKey);
-        if (res && res.ok && res.data && res.data.booking) {
-          synced++;
-          const serverBooking = res.data.booking;
-          const local = this.get(item.bookingCode);
-          if (local) {
-            Object.assign(local, serverBooking, { isOfflineDegraded: false, syncStatus: "synced" });
-          } else {
-            this._data.unshift(serverBooking);
-          }
-        } else if (res && (res.code === "day_full" || res.code === "slot_taken" || res.status === 409)) {
-          console.warn("[Arkik] Conflicto al sincronizar reserva offline diferida:", res.message);
-        } else {
-          remaining.push(item);
-        }
-      } catch (err) {
-        remaining.push(item);
-      }
-    }
-    safeSet(STORAGE_KEYS.offlineQueue, remaining);
-    if (synced > 0) {
-      this.persist();
-      CloudSync.notify("bookings");
-    }
-    return { synced: synced, remaining: remaining.length };
+    } catch (_err) { /* noop */ }
+    return { synced: 0, remaining: 0 };
   },
 
   get(code) {
@@ -5012,18 +4950,18 @@ const AdminModule = {
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-0">
               <p class="text-[11px] font-semibold tracking-wider text-purple-300/80 uppercase mb-1">Balance Total &amp; Proyección</p>
-              <p class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-sans mb-2">${formatCRC(projected)}</p>
+              <p class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-mono tabular-nums mb-2">${formatCRC(projected)}</p>
             </div>
             <span class="px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] font-semibold whitespace-nowrap">${periodLabel}</span>
           </div>
           <div class="grid grid-cols-2 gap-3 mt-4">
             <div class="px-3.5 py-2.5 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/20">
               <p class="text-[10px] font-semibold tracking-wider text-emerald-300/80 uppercase">Cobrado vía SINPE</p>
-              <p class="text-base sm:text-lg font-extrabold text-emerald-300 tracking-tight font-sans tabular-nums">${formatCRC(validatedDeposits)}</p>
+              <p class="text-base sm:text-lg font-extrabold text-emerald-400 tracking-tight font-mono tabular-nums">${formatCRC(validatedDeposits)}</p>
             </div>
             <div class="px-3.5 py-2.5 rounded-xl bg-amber-500/[0.07] border border-amber-500/20">
               <p class="text-[10px] font-semibold tracking-wider text-amber-300/80 uppercase">Pendiente por Cobrar</p>
-              <p class="text-base sm:text-lg font-extrabold text-amber-300 tracking-tight font-sans tabular-nums">${formatCRC(receivable)}</p>
+              <p class="text-base sm:text-lg font-extrabold text-amber-300 tracking-tight font-mono tabular-nums">${formatCRC(receivable)}</p>
             </div>
           </div>
         </div>`;
@@ -5079,11 +5017,11 @@ const AdminModule = {
           <div class="mt-4 space-y-1.5 text-[11px]">
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-2 text-slate-400"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span> Cobrado vía SINPE</span>
-              <span class="font-bold text-emerald-300 tabular-nums">${formatCRC(validatedDeposits)}</span>
+              <span class="font-mono font-bold text-emerald-400 tabular-nums">${formatCRC(validatedDeposits)}</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-2 text-slate-400"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span> Pendiente por Cobrar</span>
-              <span class="font-bold text-amber-300 tabular-nums">${formatCRC(receivable)}</span>
+              <span class="font-mono font-bold text-amber-300 tabular-nums">${formatCRC(receivable)}</span>
             </div>
           </div>
         </div>`;
@@ -5102,7 +5040,7 @@ const AdminModule = {
               <span class="text-[11px] font-bold tracking-widest text-white/70">ARKIK</span>
             </div>
             <p class="text-[10px] font-semibold tracking-wider text-purple-300/80 uppercase mb-0.5">Balance Activo</p>
-            <p class="text-xl sm:text-2xl font-extrabold text-white tracking-tight font-sans mb-4">${formatCRC(activeBalance)}</p>
+            <p class="text-xl sm:text-2xl font-extrabold text-white tracking-tight font-mono tabular-nums mb-4">${formatCRC(activeBalance)}</p>
             <div class="flex items-end justify-between">
               <div>
                 <p class="text-[10px] text-white/50 uppercase tracking-wider">Propietario</p>
@@ -5145,7 +5083,7 @@ const AdminModule = {
                 <p class="text-[10px] text-slate-500 truncate">${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</p>
               </div>
               <div class="text-right shrink-0">
-                <p class="text-xs font-semibold text-white tabular-nums">${formatCRC(b.granTotal)}</p>
+                <p class="text-xs font-mono font-semibold text-white tabular-nums">${formatCRC(b.granTotal)}</p>
                 <p class="text-[10px] flex items-center justify-end gap-1 text-slate-400"><span class="w-1.5 h-1.5 rounded-full ${statusDot} inline-block"></span>${statusLabel}</p>
               </div>
             </div>`;
@@ -5205,7 +5143,7 @@ const AdminModule = {
           <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Saldos Por Cobrar en Escena</span>
           <span class="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">Día del Evento</span>
         </div>
-        <p class="font-mono text-emerald-400 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${formatCRC(pendingBalances)}</p>
+        <p class="font-mono text-cyan-300 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${formatCRC(pendingBalances)}</p>
         <p class="text-[10px] text-slate-400 mt-1">${balanceEventsCount} evento(s) por liquidar 50% restante</p>
       </div>
 
@@ -5222,7 +5160,7 @@ const AdminModule = {
             ${pendingApprovalCount > 0 ? "Por Validar" : "Al Día"}
           </span>
         </div>
-        <p class="font-mono text-emerald-400 font-bold text-lg sm:text-xl tabular-nums tracking-tight">${pendingApprovalCount} <span class="text-xs font-normal text-slate-400">${pendingApprovalCount === 1 ? "reserva" : "reservas"}</span></p>
+        <p class="font-mono ${pendingApprovalCount > 0 ? "text-amber-300" : "text-emerald-400"} font-bold text-lg sm:text-xl tabular-nums tracking-tight">${pendingApprovalCount} <span class="text-xs font-normal text-slate-400">${pendingApprovalCount === 1 ? "reserva" : "reservas"}</span></p>
         <p class="text-[10px] text-slate-400 mt-1">${pendingApprovalCount > 0 ? "Click para revisar depósitos SINPE" : "Sin aprobaciones pendientes"}</p>
       </div>
     `;
@@ -6235,7 +6173,7 @@ function bookingCard(b) {
 
   const voucherThumbBadge = b.voucherImage
     ? `<img src="${b.voucherImage}" alt="Miniatura SINPE" class="w-4 h-4 rounded object-cover border border-purple-400/50 shrink-0">`
-    : `<span>🖼️</span>`;
+    : `<svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
   const voucherMissingWarn = hasVoucherAttached
     ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono">Adjunto</span>`
     : `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold">⚠️ Sin adjunto</span>`;
@@ -6252,9 +6190,9 @@ function bookingCard(b) {
         <span>${formatDisplayDate(b.selectedDate)}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</span>
       </span>
       <button type="button" data-action="preview-invoice" onclick="openInvoicePreview('${sanitizeInput(b.id || b.code)}')"
-        class="ml-auto rack-preview-btn bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+        class="ml-auto rack-preview-btn min-h-[44px] bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 hover:border-purple-400/50 text-slate-100 transition-all active:scale-95 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2"
         aria-label="Visualizar Pre-Factura de la reserva ${sanitizeInput(b.code)}">
-        <span aria-hidden="true">👁️</span>
+        <svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
         <span>Visualizar Pre-Factura</span>
       </button>
     </div>
@@ -6332,28 +6270,28 @@ function bookingCard(b) {
     <div class="owner-action-toolbar flex flex-wrap items-center gap-2 mt-3.5 pt-3 border-t border-white/10" role="toolbar" aria-label="Acciones de reserva ${sanitizeInput(b.code)}">
       <!-- 1. Validar Depósito SINPE (50%) -->
       <button type="button" data-action="confirm" ${isConfirmedOrDone ? "disabled" : ""}
-        class="glass-3d-btn glass-3d-success bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 hover:border-purple-500/50 active:scale-95 transition-all rounded-xl px-5 py-2.5 font-semibold text-sm flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] ${isConfirmedOrDone ? "opacity-60 cursor-default" : ""}">
+        class="glass-3d-btn glass-3d-success min-h-[44px] bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 hover:border-emerald-400/50 active:scale-95 transition-all rounded-xl px-4 py-2.5 font-semibold text-xs sm:text-sm inline-flex items-center gap-2 shadow-[0_4px_15px_rgba(0,0,0,0.2)] ${isConfirmedOrDone ? "opacity-60 cursor-default" : ""}">
         <span>✅</span>
         <span>${isConfirmedOrDone ? "Depósito SINPE Validado (50%)" : "Validar Depósito SINPE (50%)"}</span>
       </button>
 
       <!-- 2. Rechazar / Cancelar -->
       <button type="button" data-action="cancel" ${isCancelled ? "disabled" : ""}
-        class="glass-3d-btn glass-3d-danger px-4 py-2.5 text-xs sm:text-sm flex items-center gap-2 ${isCancelled ? "opacity-50 cursor-default" : ""}">
+        class="glass-3d-btn glass-3d-danger min-h-[44px] px-4 py-2.5 text-xs sm:text-sm inline-flex items-center gap-2 ${isCancelled ? "opacity-50 cursor-default" : ""}">
         <span>❌</span>
         <span>Rechazar / Cancelar</span>
       </button>
 
       <!-- 3. Reprogramar -->
       <button type="button" data-action="reschedule"
-        class="glass-3d-btn glass-3d-info px-4 py-2.5 text-xs sm:text-sm flex items-center gap-2">
+        class="glass-3d-btn glass-3d-info min-h-[44px] px-4 py-2.5 text-xs sm:text-sm inline-flex items-center gap-2">
         <span>📅</span>
         <span>Reprogramar</span>
       </button>
 
       <!-- 4. Comprobante SINPE -->
       <button type="button" data-action="view"
-        class="glass-3d-btn glass-3d-purple px-4 py-2.5 text-xs sm:text-sm flex items-center gap-2">
+        class="min-h-[44px] bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 hover:border-purple-400/45 text-slate-100 active:scale-95 transition-all rounded-xl px-4 py-2.5 text-xs sm:text-sm font-semibold inline-flex items-center gap-2">
         ${voucherThumbBadge}
         <span>Comprobante SINPE</span>
         ${voucherMissingWarn}
@@ -6361,7 +6299,7 @@ function bookingCard(b) {
 
       <!-- 5. WhatsApp Compact Button -->
       <button type="button" data-action="whatsapp"
-        class="glass-3d-btn glass-3d-success px-4 py-2.5 text-xs sm:text-sm flex items-center gap-2 ml-auto">
+        class="glass-3d-btn glass-3d-success min-h-[44px] px-4 py-2.5 text-xs sm:text-sm inline-flex items-center gap-2 ml-auto">
         <span>💬</span>
         <span>WhatsApp</span>
       </button>
@@ -9486,11 +9424,13 @@ function initHeroStringsEffect() {
   let scrollTicking = false;
   function onScroll() {
     if (!heroInView) return;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
     if (scrollTicking) return;
     scrollTicking = true;
     requestAnimationFrame(() => {
       scrollTicking = false;
       if (!heroInView) return;
+      if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
       const now = performance.now();
       const sy = window.scrollY || 0;
       const dt = Math.max(1, now - lastScrollAt);
@@ -9709,6 +9649,8 @@ function initFooterParticlesEffect() {
   }
 
   function pointerBurst(e) {
+    if (!footerInView || document.hidden) return;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
     const now = performance.now();
     if (now - lastBurstAt < 70) return;
     lastBurstAt = now;
@@ -9720,7 +9662,8 @@ function initFooterParticlesEffect() {
   }
 
   function scrollBurst() {
-    if (!footerInView) return;
+    if (!footerInView || document.hidden) return;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
     const now = performance.now();
     if (now - lastScrollAt < 260) return;
     lastScrollAt = now;
@@ -11429,12 +11372,13 @@ function adminLogout() {
 // explicit user interaction. Wipes any leftover visible state on
 // app boot so a rogue backdrop can never black the page out.
 const ModalController = {
-  _ids: ['bookingModal', 'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
+  _ids: ['bookingModal', 'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal', 'adminRescheduleModal', 'adminVoucherModal', 'bank-validation-modal', 'rackPreviewModal', 'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal', 'execReportPreviewModal'],
 
   // Inventario completo de overlays: los modales pre-montados más vistas a pantalla completa.
   // Si ALGUNO está abierto, las animaciones canvas de fondo deben estar en pausa estricta.
   _overlayIds: [
     'bookingModal', 'booking-modal', 'slotConflictModal', 'adminLoginModal', 'adminPortalModal',
+    'adminRescheduleModal', 'adminVoucherModal', 'bank-validation-modal', 'rackPreviewModal',
     'mediaLightboxModal', 'invoicePreviewModal', 'preInvoicePreviewModal',
     'execReportPreviewModal', 'adminMediaModal', 'executive-modal', 'brand-modal',
     'modal-politicas', 'profile-lightbox', 'ragStudioView'
@@ -11482,8 +11426,7 @@ const ModalController = {
       }
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#bookingModal.flex, #booking-modal.flex, #slotConflictModal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
-    if (anyOpen.length === 0) {
+    if (!this.isAnyOpen()) {
       document.body.style.overflow = '';
     }
     syncModalAnimationState();
@@ -13618,27 +13561,9 @@ function copyBookingCode() {
 // ============================================================
 
 // ============================================================
-// 20. ARKIK RAG ENGINE (Índice Operational + Parser de Consultas)
-// ------------------------------------------------------------
-// NATURALEZA DE ESTE MÓDULO — LÉASE ANTES DE EXTENDERLO:
-//
-// NO es un sistema RAG (Retrieval-Augmented Generation) clásico.
-// No hay embeddings, ni base vectorial, ni modelo de lenguaje ni
-// llamada de red. El proyecto es un sitio estático (HTML + Tailwind
-// CDN + VanillaJS) sin backend y sin paso de build, de modo que un
-// pipeline RAG verdadero (embed → recuperar → generar) es imposible
-// aquí sin incorporar un servicio externo.
-//
-// Lo que SÍ hace es un motor determinista de tres piezas:
-//   1. ÍNDICE   : snapshot normalizado de BookingStore en memoria.
-//   2. PARSER   : lenguaje de consulta → predicados (texto + tags).
-//   3. INSIGHTS : reglas agregadas sobre el índice → texto derivado.
-//
-// Consecuencia de diseño que importa: los "insights sintéticos" son
-// CÁLCULOS, nodziones de un modelo. Cada texto de este módulo es
-// trazable a una agregación concreta sobre datos persistidos. Si un
-// número no se puede derivar de los datos, este módulo no lo inventa:
-// lo reporta como no disponible (ver aggregate()).
+// 20. ARKIK ANALYTICS ENGINE (Índice Operacional & Auditoría)
+// Motor local de indexación, filtrado por etiquetas y agregación
+// financiera trazable directamente sobre los registros de BookingStore.
 // ============================================================
 
 const ArkikRAGEngine = {
@@ -14164,7 +14089,7 @@ const ArkikRAGEngine = {
 
     if (agg.totals.indexed === 0) {
       return {
-        lines: [{ tone: "muted", text: "Sin registros en el índice. No hay datos suficientes para emitir diagnóstico." }],
+        lines: [{ tone: "muted", text: "Sin reservas registradas para auditar en este filtro." }],
         aggregate: agg
       };
     }
@@ -14314,8 +14239,7 @@ const ArkikRAGEngine = {
 };
 
 // ============================================================
-// 21. RAG CONSOLE (Capa de Presentación del Índice)
-// ------------------------------------------------------------
+// 21. CONSOLA ANALÍTICA (Capa de Presentación del Índice)
 // Contrato con el núcleo: la consola NO recalcula nada. Pide
 // agregados a ArkikRAGEngine y los pinta. Toda regla de negocio
 // vive en el núcleo, que es la parte testeable en Node.
@@ -14396,12 +14320,12 @@ const RAGConsole = {
     const s = ArkikRAGEngine.stats();
     const studio = document.getElementById("rag-studio-badge");
     if (studio) {
-      studio.textContent = `🟢 Sincronizado en Tiempo Real · ${s.count} ${s.count === 1 ? "registro" : "registros"}`;
+      studio.textContent = `Sincronizado en Tiempo Real · ${s.count} ${s.count === 1 ? "reserva" : "reservas"}`;
     }
     // El panel embebido solo muestra el pulso bioluminiscente; no sobreescribir si ya tiene la estructura ejecutiva
     const pulse = document.getElementById("rag-index-badge");
     if (pulse && !pulse.querySelector(".animate-pulse")) {
-      pulse.textContent = "🟢 Sincronizado en Tiempo Real";
+      pulse.textContent = "Sincronizado en Tiempo Real";
     }
     const launch = document.getElementById("rag-launch-count");
     if (launch) launch.textContent = String(s.count);
@@ -14459,6 +14383,7 @@ const RAGConsole = {
         {
           tone: "emerald",
           accent: "#10b981",
+          metricCls: "text-emerald-400",
           icon: "💰",
           title: "Total Recaudado",
           metric: formatCRC(agg.balance.collected),
@@ -14468,6 +14393,7 @@ const RAGConsole = {
         {
           tone: "fuchsia",
           accent: "#d946ef",
+          metricCls: "text-amber-300",
           icon: "⏳",
           title: "Saldos Pendientes en Escena",
           metric: formatCRC(agg.balance.pendingBalance),
@@ -14477,6 +14403,7 @@ const RAGConsole = {
         {
           tone: "cyan",
           accent: "#06b6d4",
+          metricCls: "text-cyan-300",
           icon: "🎯",
           title: "Tasa de Conversión",
           metric: pct(agg.conversion.rate),
@@ -14486,6 +14413,7 @@ const RAGConsole = {
         {
           tone: "amber",
           accent: "#f59e0b",
+          metricCls: "text-white",
           icon: "✅",
           title: "Confirmadas vs. Cotizaciones",
           metric: `${agg.conversion.confirmed}/${agg.conversion.emitted}`,
@@ -14500,7 +14428,7 @@ const RAGConsole = {
           <span class="rag-kpi-icon" aria-hidden="true">${k.icon}</span>
           <h3>${sanitizeInput(k.title)}</h3>
         </header>
-        <p class="rag-kpi-metric">${sanitizeInput(k.metric)}</p>
+        <p class="rag-kpi-metric font-mono tabular-nums ${k.metricCls}">${sanitizeInput(k.metric)}</p>
         <p class="rag-kpi-caption">${sanitizeInput(k.caption)}</p>
         <p class="rag-kpi-detail">${sanitizeInput(k.detail)}</p>
       </article>`
@@ -14508,23 +14436,23 @@ const RAGConsole = {
         .join("");
     }
 
-    // SECTION C: insights deterministas del núcleo.
+    // SECTION C: resumen de auditoría financiera y operativa.
     box.innerHTML = insights.lines
       .map(
         l => `<li class="rag-insight rag-insight--${sanitizeInput(l.tone)}">${sanitizeInput(l.text)}</li>`
       )
       .join("");
 
-    // Centro de acción: 1 clic con diseño premium y micro-interacciones
+    // Centro de acción: 1 clic con diseño ejecutivo y micro-interacciones
     const pending = agg.totals.pendingSinpe;
     const latestBookingId = (scoped && scoped.length && (scoped[0].id || scoped[0].code)) || "";
     const actions = [
       {
         id: "preview-invoice",
-        icon: `👁️`,
+        icon: `<svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>`,
         label: "Visualizar Pre-Factura",
         action: `openInvoicePreview('${sanitizeInput(latestBookingId)}')`,
-        cls: "bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2",
+        cls: "min-h-[44px] bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 hover:border-purple-400/50 text-slate-100 transition-all active:scale-95 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2",
         disabled: agg.totals.active === 0,
         directStyle: true
       },
@@ -14593,8 +14521,8 @@ const RAGConsole = {
     const head = document.getElementById("rag-studio-results-head");
     if (head) {
       head.textContent = q
-        ? `${records.length} de ${ArkikRAGEngine.records().length} registros · consulta: "${q}"`
-        : `${records.length} registro(s) en el índice`;
+        ? `${records.length} de ${ArkikRAGEngine.records().length} reservas · filtro: "${q}"`
+        : `${records.length} reserva(s) auditadas`;
     }
 
     if (!records.length) {
@@ -14661,9 +14589,9 @@ const RAGConsole = {
       </div>
       <div class="rag-row-actions">
         <button type="button" onclick="openInvoicePreview('${sanitizeInput(r.id || r.code)}')" data-rag-preview="${sanitizeInput(r.id || r.code)}"
-          class="bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 text-slate-200 transition-all active:scale-95 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+          class="min-h-[44px] bg-white/[0.04] hover:bg-white/[0.09] border border-white/15 hover:border-purple-400/50 text-slate-100 transition-all active:scale-95 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2"
           title="Visualizar Pre-Factura Formal">
-          <span aria-hidden="true">👁️</span>
+          <svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
           <span>Visualizar Pre-Factura</span>
         </button>
         <a class="rag-pill-btn rag-pill-btn--wa" href="${sanitizeInput(waHref)}" data-rag-wa="1" target="_blank" rel="noopener noreferrer" title="Notificar vía WhatsApp">
@@ -14680,7 +14608,7 @@ const RAGConsole = {
 };
 
 /**
- * RAG INTELLIGENCE STUDIO — navegación de pantalla completa.
+ * CENTRO ANALÍTICO — navegación de pantalla completa.
  * El Studio es un HERMANO de #adminPortalModal, no un hijo: al abrirlo
  * se oculta el panel para que nada más compita por la atención. Ocultar
  * el panel (en vez de mantenerlo montado detrás) también garantiza que

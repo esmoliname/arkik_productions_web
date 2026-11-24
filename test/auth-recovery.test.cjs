@@ -3446,6 +3446,12 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
     assert.equal(submitFnSrc.includes('_enqueueOfflineBooking'), false, 'submitStaticBooking must not enqueue offline bookings');
     assert.equal(submitFnSrc.includes('isOfflineDegraded = true'), false, 'submitStaticBooking must not mark bookings degraded');
 
+    const htmlSrc = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
+    assert.equal(htmlSrc.includes('embeddings'), false, 'index.html must not expose embeddings jargon');
+    assert.equal(htmlSrc.includes('modelo de lenguaje'), false, 'index.html must not expose LLM jargon');
+    assert.equal(htmlSrc.includes('Diagnóstico sintético'), false, 'index.html must not expose synthetic diagnostic jargon');
+    assert.equal(htmlSrc.includes('Modo Offline Resiliente'), false, 'index.html must not expose Modo Offline Resiliente');
+
     let nextFetch = async () => ({
       status: 500,
       ok: false,
@@ -3575,6 +3581,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       updateGenerateButtonState = function () {};
       window.__TEST_CHECKOUT__ = {
         cart,
+        API_CONFIG,
+        ModalController,
         BookingStore,
         StorageEngine,
         CloudSync,
@@ -3785,6 +3793,32 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.equal(t.calls.vouchers.length, 1, 'remote 201 must render voucher screen');
       assert.equal(getEl('confirm-offline-badge').classList.contains('hidden'), true);
       assert.equal(t.cart.isSubmitting, false);
+
+      // Zero-Trust offline queue & API-disabled fail-closed invariants + ModalController overlay coverage
+      assert.equal(t.BookingStore._enqueueOfflineBooking(), false);
+      assert.equal(lsStore.get(t.STORAGE_KEYS.offlineQueue) || '[]', '[]');
+      t.API_CONFIG.enabled = false;
+      try {
+        const disabledAdd = await t.BookingStore.add({
+          clientName: 'Cliente Zero Trust',
+          clientPhone: '8888-1234',
+          clientEmail: 'cliente@example.com',
+          eventType: 'Boda',
+          serviceId: t.CATALOG_SERVICES[0].id,
+          selectedDate: futureDate,
+          selectedTime: '18:00',
+          province: 'San José',
+          canton: 'Central (San José)',
+          extras: { extraHoursCount: 0, djHoursCount: 0, subwoofersCount: 0 }
+        }, 'idem-disabled-1');
+        assert.equal(disabledAdd.ok, false);
+        assert.equal(disabledAdd.code, 'api_disabled');
+      } finally {
+        t.API_CONFIG.enabled = true;
+      }
+      for (const modalId of ['adminVoucherModal', 'adminRescheduleModal', 'bank-validation-modal', 'rackPreviewModal']) {
+        assert.equal(t.ModalController._overlayIds.includes(modalId), true, `ModalController._overlayIds must include ${modalId}`);
+      }
     } finally {
       for (const id of activeTimeouts) clearTimeout(id);
       for (const id of activeIntervals) clearInterval(id);

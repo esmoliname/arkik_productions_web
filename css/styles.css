@@ -143,8 +143,10 @@ pre,
   top: 0.75rem;
   right: 0.75rem;
   z-index: 10;
-  width: 1.5rem;
-  height: 1.5rem;
+  min-width: 44px;
+  min-height: 44px;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -395,7 +397,7 @@ body {
    ------------------------------------------------------------
    El título usaba `font-syne`: una display geométrica de trazo
    muy ancho. A 60px sus minúsculas se leen "extendidas" y el
-   conjunto pierde ladensity de un titular corporativo. Se retira
+   conjunto pierde la densidad de un titular corporativo. Se retira
    del hero y se fuerza Plus Jakarta Sans (variable, opsz activa).
    Este selector es (0,1,1) a propósito: gana por especificidad a
    CUALQUIER utilidad Tailwind de clase (0,1,0) sin recurrir a
@@ -515,8 +517,6 @@ body {
   padding: 0;
   border: 0;
   white-space: nowrap;
-  /* added via jQuery */
-  ;
 }
 
 /* iOS: 16px base font prevents auto-zoom on field focus */
@@ -983,6 +983,8 @@ input[type="submit"],
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
+  min-height: 44px;
+  scroll-snap-align: start;
   padding: 0.65rem 1rem;
   border-radius: 9999px;
   white-space: nowrap;
@@ -2133,7 +2135,7 @@ footer>.max-w-7xl {
   gap: 6px;
   flex-shrink: 0;
   scroll-snap-align: start;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 16px;
   border-radius: 12px;
   font-size: 12px;
@@ -2168,7 +2170,7 @@ footer>.max-w-7xl {
 #portal-period-filters .pill-btn {
   flex-shrink: 1;
   scroll-snap-align: none;
-  min-height: 42px;
+  min-height: 44px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7388,7 +7390,7 @@ body.rack-preview-open {
 }
 
 /* ==================================================================
-   RAG INTELLIGENCE STUDIO  (#ragStudioView)
+   CENTRO ANALÍTICO (#ragStudioView)
    Superficie dedicada a pantalla completa. Obsidian glass: fondo
    translucido + blur, borde violeta sutil, y un acento por KPI
    inyectado vía la custom property --rag-accent.
@@ -7452,7 +7454,7 @@ body.rack-preview-open {
 .rag-studio-badge {
   display: inline-flex;
   align-items: center;
-  gap: .375rem;
+  gap: .4375rem;
   font-size: .6875rem;
   font-weight: 700;
   letter-spacing: .1em;
@@ -7463,6 +7465,16 @@ body.rack-preview-open {
   border: 1px solid rgba(16, 185, 129, .3);
   background: rgba(16, 185, 129, .2);
   white-space: nowrap;
+}
+
+.rag-studio-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.7);
+  flex-shrink: 0;
 }
 
 .rag-studio-nav {
@@ -7476,6 +7488,7 @@ body.rack-preview-open {
   display: inline-flex;
   align-items: center;
   gap: .4375rem;
+  min-height: 44px;
   padding: .5rem .875rem;
   font-size: .6875rem;
   font-weight: 800;
@@ -7557,7 +7570,7 @@ body.rack-preview-open {
 .rag-studio-input {
   width: 100%;
   padding: .875rem 1.125rem;
-  font-size: .9375rem;
+  font-size: 1rem;
   font-weight: 600;
   color: #f8fafc;
   background: transparent;
@@ -7580,12 +7593,19 @@ body.rack-preview-open {
   margin-top: .75rem;
   padding-bottom: .25rem;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+}
+
+.rag-studio-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .rag-studio-pills .rag-pill {
   flex: 0 0 auto;
+  min-height: 44px;
+  scroll-snap-align: start;
   white-space: nowrap;
 }
 
@@ -7760,7 +7780,7 @@ body.rack-preview-open {
   min-width: 0;
 }
 
-/* El JS emite <span>电话 / <span>✉️ dentro de .rag-contact, así que
+/* El JS emite <span>teléfono / <span>✉️ dentro de .rag-contact, así que
    hace falta el layout en flex. Se acota al Studio para no alterar la
    tarjeta compacta del panel, que usa .rag-contact como texto simple. */
 #ragStudioView .rag-contact {
@@ -7789,7 +7809,7 @@ body.rack-preview-open {
   font-weight: 800;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: #64748b;
+  color: #94a3b8;
   margin-bottom: .1875rem;
 }
 
@@ -7805,7 +7825,7 @@ body.rack-preview-open {
 }
 
 .rag-fin--paid .rag-fin-value {
-  color: #6ee7b7;
+  color: #34d399;
 }
 
 .rag-fin--pending {
@@ -7814,6 +7834,14 @@ body.rack-preview-open {
 
 .rag-fin--pending .rag-fin-value {
   color: #fcd34d;
+}
+
+.rag-fin--balance {
+  border-color: rgba(34, 211, 238, .35);
+}
+
+.rag-fin--balance .rag-fin-value {
+  color: #67e8f9;
 }
 
 .rag-fin--total .rag-fin-value {
@@ -7858,6 +7886,7 @@ body.rack-preview-open {
   align-items: center;
   justify-content: center;
   gap: .45rem;
+  min-height: 44px;
   padding: .42rem .8rem;
   font-size: .6875rem;
   font-weight: 700;
@@ -8276,8 +8305,9 @@ body.rack-preview-open {
   display: none;
 }
 
-.owner-action-toolbar .owner-toolbar-btn {
-  min-height: 38px;
+.owner-action-toolbar .owner-toolbar-btn,
+.owner-action-toolbar button {
+  min-height: 44px;
   white-space: nowrap;
   user-select: none;
 }
@@ -8569,4 +8599,14 @@ body.rack-preview-open {
 .obsidian-kpi--fuchsia {
   border-top: 2px solid #e879f9;
   box-shadow: 0 -4px 20px -6px rgba(232, 121, 249, 0.35), 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+  select,
+  textarea,
+  .glass-input,
+  .rag-studio-input {
+    font-size: 16px !important;
+  }
 }
