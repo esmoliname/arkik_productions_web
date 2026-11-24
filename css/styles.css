@@ -765,6 +765,23 @@ html {
   z-index: 0;
 }
 
+/* Subtle non-invasive seasonal snow layer */
+#seasonalSnowCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none !important;
+  z-index: 30;
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #seasonalSnowCanvas {
+    display: none !important;
+  }
+}
+
 /* Modal Card Container */
 .modal-card {
   width: 100%;

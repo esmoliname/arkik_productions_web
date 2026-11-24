@@ -10051,6 +10051,169 @@ function initFooterParticlesEffect() {
   return handle;
 }
 
+/**
+ * Efecto estacional sutil de nieve ligera (60 FPS, sin shadowBlur, aislado ante modales/pestaña oculta).
+ */
+function initSeasonalSnow() {
+  const SEASONAL_SNOW_ENABLED = true;
+  if (!SEASONAL_SNOW_ENABLED || typeof window === "undefined" || typeof document === "undefined") return null;
+
+  const motionQuery = typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+  if (motionQuery && motionQuery.matches) return null;
+
+  const canvas = document.getElementById("seasonalSnowCanvas");
+  if (!canvas || typeof canvas.getContext !== "function") return null;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const TINTS = [
+    "255, 255, 255",
+    "226, 232, 240",
+    "207, 250, 254",
+    "233, 213, 255"
+  ];
+
+  let logicalW = 0;
+  let logicalH = 0;
+  let rafId = null;
+  let resizeTimer = null;
+  let lastFrameAt = 0;
+  const flakes = [];
+
+  function targetFlakeCount() {
+    return logicalW < 768 ? 24 : 38;
+  }
+
+  function makeFlake(randomY) {
+    return {
+      x: Math.random() * Math.max(1, logicalW),
+      y: randomY ? Math.random() * Math.max(1, logicalH) : (-8 - Math.random() * 32),
+      r: 1.2 + Math.random() * 2.0,
+      alpha: 0.18 + Math.random() * 0.37,
+      vy: 0.34 + Math.random() * 0.52,
+      swayAmp: 0.22 + Math.random() * 0.45,
+      swayFreq: 0.0007 + Math.random() * 0.0011,
+      phase: Math.random() * Math.PI * 2,
+      rgb: TINTS[Math.floor(Math.random() * TINTS.length)]
+    };
+  }
+
+  function syncFlakePool() {
+    const desired = targetFlakeCount();
+    while (flakes.length < desired) {
+      flakes.push(makeFlake(true));
+    }
+    if (flakes.length > desired) {
+      flakes.length = desired;
+    }
+  }
+
+  function resizeNow() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    logicalW = Math.max(1, Math.round(window.innerWidth || document.documentElement.clientWidth || 1));
+    logicalH = Math.max(1, Math.round(window.innerHeight || document.documentElement.clientHeight || 1));
+    canvas.width = Math.round(logicalW * dpr);
+    canvas.height = Math.round(logicalH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    syncFlakePool();
+  }
+
+  function onResize() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeNow, 150);
+  }
+
+  function shouldPause() {
+    if (document.hidden) return true;
+    if (motionQuery && motionQuery.matches) return true;
+    if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return true;
+    return false;
+  }
+
+  function stop() {
+    if (rafId != null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
+  function tick(now) {
+    if (shouldPause()) {
+      stop();
+      ctx.clearRect(0, 0, logicalW, logicalH);
+      return;
+    }
+
+    const dt = lastFrameAt > 0 ? Math.min(2.2, Math.max(0.5, (now - lastFrameAt) / 16.667)) : 1;
+    lastFrameAt = now;
+
+    ctx.clearRect(0, 0, logicalW, logicalH);
+
+    for (let i = 0; i < flakes.length; i++) {
+      const f = flakes[i];
+      f.y += f.vy * dt;
+      f.x += Math.sin(now * f.swayFreq + f.phase) * f.swayAmp * dt;
+
+      if (f.y > logicalH + 8) {
+        f.y = -6;
+        f.x = Math.random() * logicalW;
+      } else if (f.x > logicalW + 8) {
+        f.x = -6;
+      } else if (f.x < -8) {
+        f.x = logicalW + 6;
+      }
+
+      // Soft outer frost halo + crisp inner core (zero shadowBlur for steady 60 FPS)
+      ctx.fillStyle = `rgba(${f.rgb}, ${(f.alpha * 0.28).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(${f.rgb}, ${f.alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (rafId != null || shouldPause()) return;
+    lastFrameAt = 0;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("resize", onResize, { passive: true });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      stop();
+      ctx.clearRect(0, 0, logicalW, logicalH);
+    } else {
+      start();
+    }
+  });
+  if (motionQuery && typeof motionQuery.addEventListener === "function") {
+    motionQuery.addEventListener("change", function (ev) {
+      if (ev.matches) {
+        stop();
+        ctx.clearRect(0, 0, logicalW, logicalH);
+      } else {
+        start();
+      }
+    });
+  }
+
+  resizeNow();
+  start();
+
+  const handle = { start, stop };
+  AnimationRegistry.register("seasonal-snow", handle);
+  return handle;
+}
+
 // ---- Helpers Globales de Interfaz & Clipboard ----
 
 function copyEmailToClipboard(email = "arkikproduc2023@gmail.com") {
@@ -10182,9 +10345,10 @@ function initApp() {
   // se revalidan precios y (si hay sesión) sesión/datos admin; CloudSync.init() ya ejecutó sync("boot").
   PriceManager.loadPublic().catch(function () { });
   AdminModule.restoreSession().catch(function () { });
-  // Motores Canvas 60 FPS aislados en viewport
+  // Motores Canvas 60 FPS aislados en viewport y ante modales
   initHeroStringsEffect();
   initFooterParticlesEffect();
+  initSeasonalSnow();
 }
 
 // ============================================================
