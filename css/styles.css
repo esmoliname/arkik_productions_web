@@ -8898,3 +8898,12 @@ body.rack-preview-open {
     font-size: 16px !important;
   }
 }
+/* Hide floating WhatsApp FAB while any modal is open so it never overlaps modal CTAs */
+html.modal-open #whatsapp-float,
+html.modal-open .floating-wa-btn,
+body.modal-open #whatsapp-float,
+body.modal-open .floating-wa-btn {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
