@@ -258,16 +258,14 @@
         </p>
 
         <!-- Action Buttons -->
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4 pt-2">
           <button onclick="openBookingModal(1)"
-            class="w-full sm:w-auto py-4 px-8 min-h-[44px] rounded-2xl font-bold text-base text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-xl shadow-purple-900/40 hover:shadow-purple-600/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center space-x-3">
+            class="hero-cta-apple w-full sm:w-auto min-h-[54px] px-6 py-3.5 rounded-2xl sm:rounded-full font-bold text-base text-white border border-white/20 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3">
             <span>Cotizar Formato Ideal</span>
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
-            </svg>
+            <span class="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center text-sm leading-none shrink-0" aria-hidden="true">→</span>
           </button>
           <a href="#biblioteca"
-            class="w-full sm:w-auto py-4 px-8 min-h-[44px] rounded-2xl font-semibold text-base text-gray-200 glass-panel hover:text-white hover:border-purple-500/50 transition-all text-center flex items-center justify-center">
+            class="w-full sm:w-auto min-h-[50px] px-6 py-3 rounded-2xl sm:rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/12 text-slate-200 hover:text-white font-medium text-base backdrop-blur-md active:scale-[0.98] transition-all duration-200 text-center flex items-center justify-center">
             Ver Galería
           </a>
         </div>
@@ -1339,97 +1337,102 @@
   </div>
 
   <div id="booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title"
-    class="fixed inset-0 z-50 items-center justify-center p-4 overflow-y-auto overscroll-contain hidden opacity-0 pointer-events-none invisible">
+    class="fixed inset-0 z-50 items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-xl overflow-hidden overscroll-contain hidden opacity-0 pointer-events-none invisible">
     <div class="modal-overlay" id="modal-overlay">
       <div
-        class="modal-card container w-full max-w-56rem max-h-90vh flex flex-col items-center p-4 sm:p-6 relative overflow-y-auto"
+        class="modal-card w-full max-w-4xl flex flex-col overflow-hidden relative"
         id="modal-card">
 
-        <!-- Modal Header -->
-        <div
-          class="p-6 border-b border-purple-500/20 flex items-center justify-between bg-purple-950/30 shrink-0 w-full">
-          <div>
-            <span class="text-[10px] font-bold text-pink-400 tracking-widest uppercase">Cotizador Dinámico Real</span>
-            <h3 id="booking-modal-title" class="text-xl font-bold text-white">Reserva & Pasarela SINPE Móvil (50%)</h3>
+        <!-- ZONA 1: Cabecera + Stepper Fijos (flex-shrink-0, opaco, sin position:sticky suelto) -->
+        <div id="booking-modal-header"
+          class="flex-shrink-0 w-full bg-[#0b0717] border-b border-white/10 px-4 pt-3.5 pb-3 sm:px-6 z-20">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <span class="block text-[10px] font-bold text-pink-400 tracking-widest uppercase truncate">Cotizador Dinámico Real</span>
+              <h3 id="booking-modal-title" class="text-base sm:text-xl font-bold text-white leading-snug truncate">Reserva & Pasarela SINPE Móvil (50%)</h3>
+            </div>
+            <button onclick="closeBookingModal()" aria-label="Cerrar ventana de cotización"
+              class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-white/[0.07] hover:bg-white/[0.15] border border-white/15 text-gray-300 hover:text-white flex items-center justify-center shrink-0 active:scale-95 transition-all">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
           </div>
-          <button onclick="closeBookingModal()" aria-label="Cerrar ventana de cotización"
-            class="w-11 h-11 rounded-full bg-purple-900/40 text-gray-400 hover:text-white flex items-center justify-center">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </button>
+
+          <!-- Progressive Stepper Bar (encapsulado dentro del header fijo) -->
+          <div class="modal-stepper">
+            <div class="modal-stepper-track">
+
+              <button type="button" id="step-indicator-1" data-step="1" onclick="goToStep(1)"
+                class="modal-stepper-node border-purple-500 bg-purple-900/40 text-purple-300"
+                aria-label="Paso 1: Formato y Extras">
+                <span class="modal-stepper-badge">
+                  <span class="modal-stepper-num">1</span>
+                  <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </span>
+                <span class="modal-stepper-label">Formato & Extras</span>
+                <span class="modal-stepper-short">Extras</span>
+              </button>
+              <span class="modal-stepper-connector" id="connector-1" aria-hidden="true"></span>
+
+              <button type="button" id="step-indicator-2" data-step="2" onclick="goToStep(2)"
+                class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 2: Fecha">
+                <span class="modal-stepper-badge">
+                  <span class="modal-stepper-num">2</span>
+                  <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </span>
+                <span class="modal-stepper-label">Fecha</span>
+                <span class="modal-stepper-short">Fecha</span>
+              </button>
+              <span class="modal-stepper-connector" id="connector-2" aria-hidden="true"></span>
+
+              <button type="button" id="step-indicator-3" data-step="3" onclick="goToStep(3)"
+                class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 3: Ubicacion y Cliente">
+                <span class="modal-stepper-badge">
+                  <span class="modal-stepper-num">3</span>
+                  <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </span>
+                <span class="modal-stepper-label">Ubicación & Cliente</span>
+                <span class="modal-stepper-short">Cliente</span>
+              </button>
+              <span class="modal-stepper-connector" id="connector-3" aria-hidden="true"></span>
+
+              <button type="button" id="step-indicator-4" data-step="4" onclick="goToStep(4)"
+                class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 4: Confirmar y Pago">
+                <span class="modal-stepper-badge">
+                  <span class="modal-stepper-num">4</span>
+                  <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </span>
+                <span class="modal-stepper-label">Confirmar & Pago</span>
+                <span class="modal-stepper-short">Pago</span>
+              </button>
+
+            </div>
+          </div>
         </div>
 
-        <!-- Fixed Stepper Bar at Top of Modal: Progressive Tracker -->
-        <div class="modal-stepper">
-          <div class="modal-stepper-track">
-
-            <button type="button" id="step-indicator-1" data-step="1" onclick="goToStep(1)"
-              class="modal-stepper-node border-purple-500 bg-purple-900/40 text-purple-300"
-              aria-label="Paso 1: Formato y Extras">
-              <span class="modal-stepper-badge">
-                <span class="modal-stepper-num">1</span>
-                <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </span>
-              <span class="modal-stepper-label">Formato & Extras</span>
-              <span class="modal-stepper-short">Extras</span>
-            </button>
-            <span class="modal-stepper-connector" id="connector-1" aria-hidden="true"></span>
-
-            <button type="button" id="step-indicator-2" data-step="2" onclick="goToStep(2)"
-              class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 2: Fecha">
-              <span class="modal-stepper-badge">
-                <span class="modal-stepper-num">2</span>
-                <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </span>
-              <span class="modal-stepper-label">Fecha</span>
-              <span class="modal-stepper-short">Fecha</span>
-            </button>
-            <span class="modal-stepper-connector" id="connector-2" aria-hidden="true"></span>
-
-            <button type="button" id="step-indicator-3" data-step="3" onclick="goToStep(3)"
-              class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 3: Ubicacion y Cliente">
-              <span class="modal-stepper-badge">
-                <span class="modal-stepper-num">3</span>
-                <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </span>
-              <span class="modal-stepper-label">Ubicación & Cliente</span>
-              <span class="modal-stepper-short">Cliente</span>
-            </button>
-            <span class="modal-stepper-connector" id="connector-3" aria-hidden="true"></span>
-
-            <button type="button" id="step-indicator-4" data-step="4" onclick="goToStep(4)"
-              class="modal-stepper-node border-gray-700 text-gray-500" aria-label="Paso 4: Confirmar y Pago">
-              <span class="modal-stepper-badge">
-                <span class="modal-stepper-num">4</span>
-                <svg class="modal-stepper-check" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </span>
-              <span class="modal-stepper-label">Confirmar & Pago</span>
-              <span class="modal-stepper-short">Pago</span>
-            </button>
-
-          </div>
-        </div>
-
-        <div class="p-6">
+        <!-- ZONA 2: Área de Contenido con Scroll Limpio (flex-1 min-h-0 overflow-y-auto) -->
+        <div id="booking-modal-body"
+          class="booking-modal-body flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
 
           <!-- STEP 1: Format & Dynamic Extras Counters -->
-          <div id="modal-step-1" class="space-y-6">
+          <div id="modal-step-1" class="space-y-5">
             <div class="format-card rounded-2xl p-4 flex justify-between items-start gap-3">
-              <div class="min-w-0 pr-3">
-                <span id="modal-service-duration-badge" class="format-card__eyebrow">Formato Seleccionado (2 Horas Estándar)</span>
+              <div class="min-w-0 pr-2">
+                <span id="modal-service-duration-badge" class="format-card__eyebrow">Formato Seleccionado (2 Horas
+                  Estándar)</span>
                 <h4 id="modal-service-name" class="format-card__title">Banda Completa</h4>
                 <p id="modal-service-desc" class="format-card__desc mt-1">Cargando...</p>
                 <!-- Logistics Setup & Teardown Metadata (rendered by app.js) -->
@@ -1453,22 +1456,12 @@
               </div>
               <span class="calc-subtotal calc-subtotal--big">₡0</span>
             </div>
-
-            <div class="flex justify-end pt-2">
-              <button onclick="goToStep(2)" class="btn-cta-primary">
-                <span>Siguiente: Fecha</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-              </button>
-            </div>
           </div>
 
           <!-- STEP 2: Date & Time Selection / Dual-Column Calendar & Shift Suite -->
           <div id="modal-step-2" class="hidden">
 
-            <!-- Modal Width Expanded to max-w-56rem -->
-            <div class="modal-card container w-full max-w-56rem max-h-90vh flex flex-col items-center p-4 sm:p-6">
+            <div class="w-full flex flex-col items-center">
 
               <!-- Step 2 Inner: Centered Single-Column Calendar -->
               <div class="step-2-grid">
@@ -1552,22 +1545,6 @@
                 </div>
 
               </div>
-            </div>
-
-            <!-- Step 2 Action Bar: Modal Navigation Footer -->
-            <div
-              class="mt-8 pt-6 border-t border-white/10 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 w-full">
-              <button type="button" onclick="goToStep(1)"
-                class="px-5 py-3 min-h-[48px] active:scale-95 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-2 w-full sm:w-auto">
-                <span>&#9664;</span> Regresar a Formatos
-              </button>
-
-              <button type="button" id="btn-continue-step-2" onclick="goToStep(3)"
-                class="px-7 py-3.5 min-h-[48px] rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-sm shadow-lg shadow-purple-900/40 transition-all transform active:scale-95 flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-40 disabled:pointer-events-none disabled:transform-none"
-                disabled>
-                <span>Continuar a Ubicación & Datos</span>
-                <span>&#9654;</span>
-              </button>
             </div>
 
           </div>
@@ -1751,18 +1728,6 @@
               <div id="step3-error-banner" role="alert" aria-live="assertive"
                 class="hidden bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs p-3 rounded-xl shadow-lg mt-3">
               </div>
-
-              <div class="flex flex-col-reverse sm:flex-row gap-3 pt-2 sm:justify-between">
-                <button type="button" onclick="goToStep(2)" class="btn-cta-secondary">
-                  Regresar
-                </button>
-                <button type="submit" id="btn-continue-pay" class="btn-cta-primary opacity-80 transition-all cursor-pointer">
-                  <span id="btn-continue-pay-label">Continuar a Pago SINPE (50%)</span>
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                  </svg>
-                </button>
-              </div>
             </form>
           </div>
 
@@ -1856,21 +1821,6 @@
                   <p class="text-purple-300">Toda reserva iniciará como <span
                       class="font-semibold text-emerald-300">«Pendiente de Aprobación»</span>. El comprobante adjunto queda archivado en su expediente digital y prefactura formal.</p>
                 </div>
-              </div>
-
-              <div class="flex flex-col-reverse sm:flex-row gap-3 pt-2 sm:justify-between sm:items-center">
-                <button type="button" onclick="goToStep(3)"
-                  class="py-3 px-5 min-h-[44px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel w-full sm:w-auto justify-center">
-                  <span>&#9664;</span> Regresar
-                </button>
-
-                <!-- Confirm & Generate Voucher (enabled only when an image is loaded) -->
-                <button type="button" id="btn-submit-booking" onclick="submitStaticBooking()"
-                  class="py-3 px-6 min-h-[44px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-emerald-900/40 disabled:opacity-40 disabled:pointer-events-none disabled:transform-none"
-                  disabled>
-                  <span>Generar Voucher y Confirmar</span>
-                  <span>&#9654;</span>
-                </button>
               </div>
             </div>
 
@@ -2005,6 +1955,67 @@
                 </button>
               </div>
             </div>
+          </div>
+
+        </div>
+
+        <!-- ZONA 3: Barra Inferior de Acción Fija (flex-shrink-0 + safe-area-inset-bottom) -->
+        <div id="booking-modal-footer"
+          class="booking-modal-footer flex-shrink-0 w-full bg-[#0b0717]/98 border-t border-white/10 px-4 pt-3 sm:px-6 z-20">
+
+          <!-- Footer Paso 1 -->
+          <div id="modal-footer-step-1" class="flex justify-end w-full">
+            <button onclick="goToStep(2)" class="btn-cta-primary w-full sm:w-auto min-h-[48px]">
+              <span>Siguiente: Fecha</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Footer Paso 2 -->
+          <div id="modal-footer-step-2"
+            class="hidden flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4 w-full">
+            <button type="button" onclick="goToStep(1)"
+              class="px-5 py-3 min-h-[46px] active:scale-95 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-2 w-full sm:w-auto">
+              <span>&#9664;</span> Regresar a Formatos
+            </button>
+            <button type="button" id="btn-continue-step-2" onclick="goToStep(3)"
+              class="px-6 py-3 min-h-[48px] rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-sm shadow-lg shadow-purple-900/40 transition-all transform active:scale-95 flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-40 disabled:pointer-events-none disabled:transform-none"
+              disabled>
+              <span>Continuar a Ubicación & Datos</span>
+              <span>&#9654;</span>
+            </button>
+          </div>
+
+          <!-- Footer Paso 3 -->
+          <div id="modal-footer-step-3"
+            class="hidden flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-4 sm:justify-between w-full">
+            <button type="button" onclick="goToStep(2)" class="btn-cta-secondary w-full sm:w-auto min-h-[46px]">
+              Regresar
+            </button>
+            <button type="submit" form="booking-form-step3" id="btn-continue-pay"
+              class="btn-cta-primary opacity-80 transition-all cursor-pointer w-full sm:w-auto min-h-[48px]">
+              <span id="btn-continue-pay-label">Continuar a Pago SINPE (50%)</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Footer Paso 4 (Pasarela SINPE) -->
+          <div id="modal-footer-step-4"
+            class="hidden flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-4 sm:justify-between sm:items-center w-full">
+            <button type="button" onclick="goToStep(3)"
+              class="py-3 px-5 min-h-[46px] rounded-xl text-sm font-semibold text-gray-400 hover:text-white glass-panel w-full sm:w-auto flex items-center justify-center gap-1.5">
+              <span>&#9664;</span> Regresar
+            </button>
+            <button type="button" id="btn-submit-booking" onclick="submitStaticBooking()"
+              class="py-3 px-6 min-h-[48px] rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-emerald-900/40 disabled:opacity-40 disabled:pointer-events-none disabled:transform-none"
+              disabled>
+              <span>Generar Voucher y Confirmar</span>
+              <span>&#9654;</span>
+            </button>
           </div>
 
         </div>

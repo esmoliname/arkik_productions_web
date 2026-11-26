@@ -12124,6 +12124,8 @@ function resetBooking() {
   const gateway = document.getElementById("sinpe-gateway-view");
   if (voucher) voucher.classList.add("hidden");
   if (gateway) gateway.classList.remove("hidden");
+  const modalFooter = document.getElementById("booking-modal-footer");
+  if (modalFooter) modalFooter.classList.remove("hidden");
 
   // Nueva reserva: limpiar comprobante SINPE previamente cargado (miniatura + botón).
   resetVoucherUploadState();
@@ -12654,7 +12656,24 @@ function updateModalStep(stepNumber) {
     }
   }
 
+  // Alternar barra inferior fija del cotizador (Zona 3) según el paso activo
+  const modalFooter = document.getElementById("booking-modal-footer");
+  const confirmedView = document.getElementById("confirmed-voucher-view");
+  const voucherView = document.getElementById("voucher-view");
+  const showingConfirmed = stepNumber === 4 && (Boolean(confirmedView) || (voucherView && !voucherView.classList.contains("hidden")));
+  if (modalFooter) {
+    modalFooter.classList.toggle("hidden", showingConfirmed);
+  }
+  for (let i = 1; i <= 4; i++) {
+    const footerStep = document.getElementById(`modal-footer-step-${i}`);
+    if (footerStep) {
+      footerStep.classList.toggle("hidden", i !== stepNumber || showingConfirmed);
+    }
+  }
+
   // Volver al inicio del contenido del modal en cada transición de paso
+  const modalBody = document.getElementById("booking-modal-body");
+  if (modalBody) modalBody.scrollTop = 0;
   const modalCard = document.getElementById("modal-card");
   if (modalCard) modalCard.scrollTop = 0;
 
@@ -13877,11 +13896,17 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
     </div>
   `;
 
+  const modalFooter = document.getElementById("booking-modal-footer");
+  if (modalFooter) modalFooter.classList.add("hidden");
+  const modalBody = document.getElementById("booking-modal-body");
+  if (modalBody) modalBody.scrollTop = 0;
   const modalCard = document.getElementById("modal-card");
   if (modalCard) modalCard.scrollTop = 0;
 }
 
 function finalizeVoucher() {
+  const modalFooter = document.getElementById("booking-modal-footer");
+  if (modalFooter) modalFooter.classList.remove("hidden");
   if (typeof cart !== "undefined") {
     if (typeof cart.reset === "function") cart.reset();
     cart.voucherImage = null;
