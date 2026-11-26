@@ -269,7 +269,11 @@ const PerfGuard = {
     if (typeof window === "undefined" || !window.addEventListener) return;
     const self = this;
     const onScrollActivity = function () {
+      const wasActive = self._active;
       self._active = true;
+      if (!wasActive && typeof AnimationRegistry !== "undefined" && typeof AnimationRegistry.pauseForScroll === "function") {
+        AnimationRegistry.pauseForScroll();
+      }
       if (document.body && !document.body.classList.contains("is-scrolling")) {
         document.body.classList.add("is-scrolling");
       }
@@ -278,6 +282,9 @@ const PerfGuard = {
         self._active = false;
         if (document.body) {
           document.body.classList.remove("is-scrolling");
+        }
+        if (typeof AnimationRegistry !== "undefined" && typeof AnimationRegistry.resumeAfterScroll === "function") {
+          AnimationRegistry.resumeAfterScroll();
         }
       }, 120);
     };
@@ -9444,6 +9451,7 @@ function guardInternalPathLinks() {
 const AnimationRegistry = {
   engines: new Map(),
   paused: false,
+  scrollPaused: false,
 
   register(name, handle) {
     if (handle && typeof handle.stop === "function" && typeof handle.start === "function") {
@@ -9458,7 +9466,23 @@ const AnimationRegistry = {
 
   resumeAll() {
     this.paused = false;
-    this.engines.forEach(h => h.start());
+    if (!this.scrollPaused) {
+      this.engines.forEach(h => h.start());
+    }
+  },
+
+  pauseForScroll() {
+    if (this.scrollPaused) return;
+    this.scrollPaused = true;
+    this.engines.forEach(h => h.stop());
+  },
+
+  resumeAfterScroll() {
+    if (!this.scrollPaused) return;
+    this.scrollPaused = false;
+    if (!this.paused) {
+      this.engines.forEach(h => h.start());
+    }
   }
 };
 
@@ -9507,7 +9531,8 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
 
   function resizeNow() {
     if (!canvas || !container || !ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const isMobileViewport = typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768;
+    const dpr = isMobileViewport ? 1 : Math.min(window.devicePixelRatio || 1, DPR_CAP);
     const rect = container.getBoundingClientRect();
     logicalW = Math.max(1, Math.round(rect.width));
     logicalH = Math.max(1, Math.round(rect.height));
@@ -9720,6 +9745,7 @@ function initHeroStringsEffect() {
   function start() {
     if (rafId != null || reducedMotion) return;
     if (!heroInView || document.hidden) return;
+    if (AnimationRegistry.paused || AnimationRegistry.scrollPaused) return;
     if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
     rafId = requestAnimationFrame(tick);
   }
@@ -9924,6 +9950,7 @@ function initFooterParticlesEffect() {
   function start() {
     if (rafId != null || reducedMotion) return;
     if (!footerInView || document.hidden) return;
+    if (AnimationRegistry.paused || AnimationRegistry.scrollPaused) return;
     if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return;
     rafId = requestAnimationFrame(tick);
   }
@@ -9997,7 +10024,7 @@ function initSeasonalSnow() {
   const flakes = [];
 
   function targetFlakeCount() {
-    return logicalW < 768 ? 30 : 50;
+    return logicalW < 768 ? 18 : 50;
   }
 
   function makeFlake(randomY) {
@@ -10025,7 +10052,8 @@ function initSeasonalSnow() {
   }
 
   function resizeNow() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const isMobileViewport = typeof window.innerWidth === "number" && window.innerWidth < 768;
+    const dpr = isMobileViewport ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     logicalW = Math.max(1, Math.round(window.innerWidth || document.documentElement.clientWidth || 1));
     logicalH = Math.max(1, Math.round(window.innerHeight || document.documentElement.clientHeight || 1));
     canvas.width = Math.round(logicalW * dpr);
@@ -10042,6 +10070,7 @@ function initSeasonalSnow() {
   function shouldPause() {
     if (document.hidden) return true;
     if (motionQuery && motionQuery.matches) return true;
+    if (AnimationRegistry.paused || AnimationRegistry.scrollPaused) return true;
     if (typeof ModalController !== "undefined" && ModalController.isAnyOpen && ModalController.isAnyOpen()) return true;
     return false;
   }
