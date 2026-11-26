@@ -742,6 +742,13 @@ html {
   }
 }
 
+/* Cross-browser background scroll lock when any modal is active */
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
 /* Native smooth scrolling on iOS & modal viewport ergonomics */
 #booking-modal,
 #adminLoginModal,
@@ -1196,6 +1203,7 @@ input[type="submit"],
     height: 92dvh;
     max-height: 92vh;
     max-height: 92dvh;
+    background-color: rgba(11, 7, 23, 0.96);
     border-radius: 1.5rem 1.5rem 0 0;
   }
 }
@@ -1204,6 +1212,8 @@ input[type="submit"],
   #mediaLightboxModal .ios-media-sheet {
     padding-top: 0;
     padding-bottom: 0;
+    background-color: rgba(11, 7, 23, 0.96);
+    max-height: 88vh;
     max-height: 88dvh;
   }
 }
@@ -2196,17 +2206,24 @@ footer>.max-w-7xl {
   position: relative;
   width: 100%;
   max-width: 72rem;
-  height: 90vh;
+  height: 92vh;
   height: 92dvh;
-  max-height: 90vh;
+  max-height: 92vh;
   max-height: 92dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #0a0714;
+  background: rgba(11, 7, 23, 0.96);
   border: 1px solid rgba(168, 85, 247, 0.25);
   border-radius: 1.5rem;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+@media (min-width: 640px) {
+  .admin-modal-card {
+    max-height: 88vh;
+    max-height: 88dvh;
+  }
 }
 
 @media (max-width: 639.98px) {
@@ -2242,12 +2259,22 @@ footer>.max-w-7xl {
 
 /* Login de la Consola Ejecutiva: centrado y contenido nunca más alto que el viewport */
 #adminLoginModal .executive-auth-card {
+  background-color: rgba(11, 7, 23, 0.96);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
   max-height: 92vh;
   max-height: 92dvh;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  #adminLoginModal .executive-auth-card {
+    max-height: 88vh;
+    max-height: 88dvh;
+  }
 }
 
 /* Motor de scroll interno (flex:1 + min-height:0 → la columna flex se encoge
@@ -3141,9 +3168,14 @@ footer>.max-w-7xl {
    every <option> gets an explicit dark background + light text,
    regardless of the select's own text color (text-white etc.).
    ============================================================ */
+select {
+  background-color: #0d091a;
+  color: #ffffff;
+}
+
 select option {
-  background-color: #0f0a1c !important;
-  color: #f8fafc !important;
+  background-color: #0d091a !important;
+  color: #ffffff !important;
   padding: 10px !important;
 }
 
@@ -3589,12 +3621,11 @@ select.ark-input:active {
 }
 
 .sticky-price-pill {
-  position: sticky;
-  bottom: 0;
-  z-index: 50;
-  backdrop-filter: blur(12px);
+  position: static;
+  z-index: auto;
   -webkit-backdrop-filter: blur(12px);
-  background: rgba(11, 9, 20, 0.95);
+  backdrop-filter: blur(12px);
+  background: rgba(11, 7, 23, 0.96);
   border-top: 1px solid rgba(168, 85, 247, 0.3);
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
   padding: 1rem;
@@ -5135,8 +5166,11 @@ select.ark-input:active {
 }
 
 .extra-step-btn {
-  width: 32px;
-  height: 32px;
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  touch-action: manipulation;
   border-radius: 9999px;
   display: flex;
   align-items: center;
@@ -5466,8 +5500,11 @@ textarea:disabled,
    El scroll vive exclusivamente en #booking-modal-body (.booking-modal-body). */
 #booking-modal .modal-card,
 #booking-modal #modal-card {
+  background-color: rgba(11, 7, 23, 0.96);
   background:
     radial-gradient(ellipse at top, #1a1028 0%, #0b061a 100%);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   overflow: hidden;
 }
 
@@ -6027,13 +6064,14 @@ textarea:disabled,
 
 /* Modal Shell: Deep Obsidian layered glass y contención responsive */
 #modal-politicas .policy-modal-card {
-  background: linear-gradient(165deg, rgba(16, 10, 32, 0.95) 0%, rgba(8, 5, 18, 0.98) 100%);
+  background-color: rgba(11, 7, 23, 0.96);
+  background: linear-gradient(165deg, rgba(16, 10, 32, 0.96) 0%, rgba(8, 5, 18, 0.98) 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 30px 90px -15px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  max-height: 88vh;
-  max-height: 90dvh;
+  backdrop-filter: blur(24px);
+  max-height: 92vh;
+  max-height: 92dvh;
   overflow-x: hidden;
   padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
 }

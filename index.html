@@ -1485,7 +1485,7 @@
           class="booking-modal-body flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
 
           <!-- STEP 1: Format & Dynamic Extras Counters -->
-          <div id="modal-step-1" class="space-y-5">
+          <div id="modal-step-1" class="space-y-5 pb-4">
             <div class="format-card rounded-2xl p-4 flex justify-between items-start gap-3">
               <div class="min-w-0 pr-2">
                 <span id="modal-service-duration-badge" class="format-card__eyebrow">Formato Seleccionado (2 Horas
@@ -1504,14 +1504,6 @@
               <div id="extras-container" class="space-y-3">
                 <!-- Rendered dynamically by app.js counters -->
               </div>
-            </div>
-
-            <div class="sticky-price-pill rounded-xl flex justify-between items-center gap-3">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="text-sm font-bold text-gray-200">Subtotal Cotizado</span>
-                <span class="tot-badge" aria-hidden="true">Total</span>
-              </div>
-              <span class="calc-subtotal calc-subtotal--big">₡0</span>
             </div>
           </div>
 
@@ -2046,7 +2038,14 @@
           class="booking-modal-footer flex-shrink-0 w-full bg-[#0b0717]/98 border-t border-white/10 px-4 pt-3 sm:px-6 z-20">
 
           <!-- Footer Paso 1 -->
-          <div id="modal-footer-step-1" class="flex justify-end w-full">
+          <div id="modal-footer-step-1" class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
+            <div class="flex items-center justify-between sm:justify-start gap-3 px-3 py-2 rounded-xl bg-white/[0.04] border border-purple-500/25">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-xs font-bold text-slate-300 uppercase tracking-wider whitespace-nowrap">Subtotal Cotizado</span>
+                <span class="tot-badge" aria-hidden="true">Total</span>
+              </div>
+              <span class="calc-subtotal font-mono font-extrabold text-lg sm:text-xl text-purple-300 tabular-nums whitespace-nowrap">₡0</span>
+            </div>
             <button onclick="goToStep(2)" class="btn-cta-primary w-full sm:w-auto min-h-[48px]">
               <span>Siguiente: Fecha</span>
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
