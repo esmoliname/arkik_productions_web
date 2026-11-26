@@ -9561,12 +9561,19 @@ function guardInternalPathLinks() {
 
 const AnimationRegistry = {
   engines: new Map(),
+  controllers: new Set(),
   paused: false,
   scrollPaused: false,
 
   register(name, handle) {
     if (handle && typeof handle.stop === "function" && typeof handle.start === "function") {
       this.engines.set(name, handle);
+    }
+  },
+
+  registerController(ctrl) {
+    if (ctrl && typeof ctrl.destroy === "function") {
+      this.controllers.add(ctrl);
     }
   },
 
@@ -9593,6 +9600,30 @@ const AnimationRegistry = {
     this.scrollPaused = false;
     if (!this.paused) {
       this.engines.forEach(h => h.start());
+    }
+  },
+
+  destroyAll() {
+    this.paused = true;
+    this.engines.forEach((h) => {
+      try { if (typeof h.stop === "function") h.stop(); } catch (_err) { /* noop */ }
+      try { if (typeof h.destroy === "function") h.destroy(); } catch (_err) { /* noop */ }
+    });
+    this.engines.clear();
+
+    this.controllers.forEach((ctrl) => {
+      try { if (typeof ctrl.destroy === "function") ctrl.destroy(); } catch (_err) { /* noop */ }
+    });
+    this.controllers.clear();
+
+    if (typeof document !== "undefined" && typeof document.getElementById === "function") {
+      ["heroStringsCanvas", "footerParticlesCanvas", "footerFluidCanvas", "seasonalSnowCanvas"].forEach((id) => {
+        const c = document.getElementById(id);
+        if (c) {
+          c.width = 0;
+          c.height = 0;
+        }
+      });
     }
   }
 };
@@ -9861,9 +9892,10 @@ function initHeroStringsEffect() {
     heroInView = true;
   }
 
-  document.addEventListener("visibilitychange", function () {
+  const onVisibilityChange = function () {
     if (document.hidden) { stop(); } else if (heroInView) { start(); }
-  });
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   window.addEventListener("scroll", onScroll, { passive: true });
   hero.addEventListener("mousemove", onPointerMove, { passive: true });
@@ -9875,7 +9907,20 @@ function initHeroStringsEffect() {
   canvasController.resizeNow();
   start();
 
-  const handle = { start, stop };
+  const destroy = () => {
+    stop();
+    canvasController.destroy();
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("scroll", onScroll);
+    hero.removeEventListener("mousemove", onPointerMove);
+    hero.removeEventListener("touchstart", onPointerMove);
+    hero.removeEventListener("touchmove", onPointerMove);
+    hero.removeEventListener("mouseleave", onPointerLeave);
+    hero.removeEventListener("touchend", onPointerLeave);
+  };
+
+  AnimationRegistry.registerController(canvasController);
+  const handle = { start, stop, destroy };
   AnimationRegistry.register("hero-strings", handle);
   return handle;
 }
@@ -10063,9 +10108,10 @@ function initFooterParticlesEffect() {
     footerInView = true;
   }
 
-  document.addEventListener("visibilitychange", function () {
+  const onVisibilityChange = function () {
     if (document.hidden) { stop(); } else if (footerInView) { start(); }
-  });
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   footer.addEventListener("pointermove", pointerBurst, { passive: true });
   window.addEventListener("scroll", scrollBurst, { passive: true });
@@ -10073,7 +10119,16 @@ function initFooterParticlesEffect() {
   canvasController.resizeNow();
   start();
 
-  const handle = { start, stop };
+  const destroy = () => {
+    stop();
+    canvasController.destroy();
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    footer.removeEventListener("pointermove", pointerBurst);
+    window.removeEventListener("scroll", scrollBurst);
+  };
+
+  AnimationRegistry.registerController(canvasController);
+  const handle = { start, stop, destroy };
   AnimationRegistry.register("footer-particles", handle);
   return handle;
 }
@@ -10214,30 +10269,46 @@ function initSeasonalSnow() {
     rafId = requestAnimationFrame(tick);
   }
 
-  window.addEventListener("resize", onResize, { passive: true });
-  document.addEventListener("visibilitychange", function () {
+  const onVisibilityChange = function () {
     if (document.hidden) {
       stop();
       ctx.clearRect(0, 0, logicalW, logicalH);
     } else {
       start();
     }
-  });
+  };
+  const onMotionChange = function (ev) {
+    if (ev.matches) {
+      stop();
+      ctx.clearRect(0, 0, logicalW, logicalH);
+    } else {
+      start();
+    }
+  };
+
+  window.addEventListener("resize", onResize, { passive: true });
+  document.addEventListener("visibilitychange", onVisibilityChange);
   if (motionQuery && typeof motionQuery.addEventListener === "function") {
-    motionQuery.addEventListener("change", function (ev) {
-      if (ev.matches) {
-        stop();
-        ctx.clearRect(0, 0, logicalW, logicalH);
-      } else {
-        start();
-      }
-    });
+    motionQuery.addEventListener("change", onMotionChange);
   }
 
   resizeNow();
   start();
 
-  const handle = { start, stop };
+  const destroy = () => {
+    stop();
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+      resizeTimer = null;
+    }
+    window.removeEventListener("resize", onResize);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    if (motionQuery && typeof motionQuery.removeEventListener === "function") {
+      motionQuery.removeEventListener("change", onMotionChange);
+    }
+  };
+
+  const handle = { start, stop, destroy };
   AnimationRegistry.register("seasonal-snow", handle);
   return handle;
 }
@@ -10341,7 +10412,62 @@ function setupCrossTabSync() {
   }, { passive: true });
 }
 
+let _arkikDeferredCanvasTimer = null;
+let _arkikPageUnloading = false;
+let _arkikLifecycleBound = false;
+
+function scheduleDeferredCanvasBoot() {
+  if (_arkikDeferredCanvasTimer) {
+    clearTimeout(_arkikDeferredCanvasTimer);
+    _arkikDeferredCanvasTimer = null;
+  }
+  const bootVisuals = () => {
+    if (_arkikPageUnloading) return;
+    initHeroStringsEffect();
+    initFooterParticlesEffect();
+    initSeasonalSnow();
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      if (_arkikPageUnloading) return;
+      window.requestAnimationFrame(() => {
+        if (_arkikPageUnloading) return;
+        _arkikDeferredCanvasTimer = setTimeout(bootVisuals, 180);
+      });
+    });
+  } else {
+    _arkikDeferredCanvasTimer = setTimeout(bootVisuals, 180);
+  }
+}
+
+function releaseGpuResources() {
+  _arkikPageUnloading = true;
+  if (_arkikDeferredCanvasTimer) {
+    clearTimeout(_arkikDeferredCanvasTimer);
+    _arkikDeferredCanvasTimer = null;
+  }
+  if (typeof AnimationRegistry !== "undefined" && typeof AnimationRegistry.destroyAll === "function") {
+    AnimationRegistry.destroyAll();
+  }
+}
+
+function bindGpuLifecycleHooks() {
+  if (_arkikLifecycleBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _arkikLifecycleBound = true;
+  window.addEventListener("pagehide", releaseGpuResources, { passive: true });
+  window.addEventListener("beforeunload", releaseGpuResources, { passive: true });
+  window.addEventListener("pageshow", (ev) => {
+    _arkikPageUnloading = false;
+    if (ev && ev.persisted) {
+      AnimationRegistry.paused = false;
+      AnimationRegistry.scrollPaused = false;
+      scheduleDeferredCanvasBoot();
+    }
+  }, { passive: true });
+}
+
 function initApp() {
+  _arkikPageUnloading = false;
   // Auto-unblock del rate limiting — PRIMERA acción del arranque. Si el
   // candado (`admin_lockout_until` heredado o `lockoutUntil` vivo) expiró o su
   // valor no es válido, se purga aquí mismo: ningún usuario queda bloqueado
@@ -10373,10 +10499,9 @@ function initApp() {
   // se revalidan precios y (si hay sesión) sesión/datos admin; CloudSync.init() ya ejecutó sync("boot").
   PriceManager.loadPublic().catch(function () { });
   AdminModule.restoreSession().catch(function () { });
-  // Motores Canvas 60 FPS aislados en viewport y ante modales
-  initHeroStringsEffect();
-  initFooterParticlesEffect();
-  initSeasonalSnow();
+  // Arranque diferido no bloqueante de motores Canvas + liberación de GPU en pagehide/beforeunload
+  bindGpuLifecycleHooks();
+  scheduleDeferredCanvasBoot();
 }
 
 // ============================================================
@@ -11814,7 +11939,8 @@ function openPoliciesModal() {
   if (!modal) return;
   modal.classList.remove("hidden");
   modal.classList.add("flex");
-  document.body.style.overflow = "hidden";
+  ModalController._lockBodyScroll();
+  ModalController._bindTouchGuard(modal);
   syncModalAnimationState();
 }
 
@@ -11823,12 +11949,7 @@ function closePoliciesModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
-  // Solo restaura el scroll si ningún otro modal sigue abierto
-  // (puede abrirse sobre el modal de reserva desde el paso 3).
-  const bookingModal = document.getElementById("booking-modal");
-  if (!bookingModal || !bookingModal.classList.contains("flex")) {
-    document.body.style.overflow = "";
-  }
+  ModalController._unlockBodyScroll();
   syncModalAnimationState();
 }
 
@@ -11837,7 +11958,8 @@ function openProfileLightbox() {
   if (!lightbox) return;
   lightbox.classList.remove("hidden");
   lightbox.classList.add("flex");
-  document.body.style.overflow = "hidden";
+  ModalController._lockBodyScroll();
+  ModalController._bindTouchGuard(lightbox);
   syncModalAnimationState();
 }
 
@@ -11846,7 +11968,7 @@ function closeProfileLightbox() {
   if (!lightbox) return;
   lightbox.classList.add("hidden");
   lightbox.classList.remove("flex");
-  document.body.style.overflow = "";
+  ModalController._unlockBodyScroll();
   syncModalAnimationState();
 }
 
@@ -11905,6 +12027,96 @@ const ModalController = {
   ],
 
   _returnFocus: {},
+  _lockedScrollY: 0,
+  _scrollLocked: false,
+
+  _lockBodyScroll() {
+    if (this._scrollLocked) return;
+    this._lockedScrollY = (typeof window !== "undefined" && typeof window.scrollY === "number")
+      ? window.scrollY
+      : ((typeof document !== "undefined" && document.documentElement && typeof document.documentElement.scrollTop === "number") ? document.documentElement.scrollTop : 0);
+    this._scrollLocked = true;
+    if (typeof document !== "undefined" && document.documentElement && document.documentElement.classList) {
+      document.documentElement.classList.add("modal-open");
+    }
+    if (typeof document !== "undefined" && document.body) {
+      if (document.body.classList) document.body.classList.add("modal-open");
+      if (document.body.style) {
+        document.body.style.position = "fixed";
+        document.body.style.top = `-${this._lockedScrollY}px`;
+        document.body.style.left = "0";
+        document.body.style.right = "0";
+        document.body.style.width = "100%";
+        document.body.style.overflow = "hidden";
+      }
+    }
+  },
+
+  _unlockBodyScroll() {
+    if (!this._scrollLocked || this.isAnyOpen()) return;
+    const restoreY = this._lockedScrollY;
+    this._scrollLocked = false;
+    if (typeof document !== "undefined" && document.documentElement && document.documentElement.classList) {
+      document.documentElement.classList.remove("modal-open");
+    }
+    if (typeof document !== "undefined" && document.body) {
+      if (document.body.classList) document.body.classList.remove("modal-open");
+      if (document.body.style) {
+        document.body.style.position = "";
+        document.body.style.top = "";
+        document.body.style.left = "";
+        document.body.style.right = "";
+        document.body.style.width = "";
+        document.body.style.overflow = "";
+      }
+    }
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+      const root = (typeof document !== "undefined") ? document.documentElement : null;
+      const prevBehavior = (root && root.style) ? root.style.scrollBehavior : "";
+      if (root && root.style) root.style.scrollBehavior = "auto";
+      window.scrollTo(0, restoreY);
+      if (root && root.style) root.style.scrollBehavior = prevBehavior;
+    }
+  },
+
+  _bindTouchGuard(modal) {
+    if (!modal || typeof modal.addEventListener !== "function") return;
+    if (modal.dataset && modal.dataset.touchGuardBound === "1") return;
+    if (modal.dataset) modal.dataset.touchGuardBound = "1";
+
+    modal.addEventListener("touchmove", (e) => {
+      let node = e.target;
+      let allowScroll = false;
+      while (node && node !== modal) {
+        if (node.nodeType === 1) {
+          if (node.tagName === "TEXTAREA" || (node.tagName === "INPUT" && node.type === "range")) {
+            allowScroll = true;
+            break;
+          }
+          const isExplicitScroller = node.id === "booking-modal-body" ||
+            (node.classList && (
+              node.classList.contains("booking-modal-body") ||
+              node.classList.contains("ios-media-scroll") ||
+              node.classList.contains("admin-scroll-body") ||
+              node.classList.contains("admin-modal-body")
+            ));
+          let isOverflowScroller = false;
+          if (!isExplicitScroller && typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+            const ov = window.getComputedStyle(node).overflowY;
+            isOverflowScroller = ov === "auto" || ov === "scroll";
+          }
+          if ((isExplicitScroller || isOverflowScroller) && node.scrollHeight > node.clientHeight + 1) {
+            allowScroll = true;
+            break;
+          }
+        }
+        node = node.parentNode;
+      }
+      if (!allowScroll && e.cancelable) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  },
 
   _resolve(modalId) {
     if (!modalId) return null;
@@ -11925,7 +12137,8 @@ const ModalController = {
     if (!modal.getAttribute('role')) modal.setAttribute('role', 'dialog');
     modal.classList.remove('hidden', 'opacity-0', 'pointer-events-none', 'invisible');
     modal.classList.add('flex', 'opacity-100', 'pointer-events-auto', 'visible');
-    document.body.style.overflow = 'hidden';
+    this._lockBodyScroll();
+    this._bindTouchGuard(modal);
     syncModalAnimationState();
     requestAnimationFrame(() => {
       const preferred = modal.querySelector('[data-autofocus]:not([disabled])');
@@ -11946,10 +12159,7 @@ const ModalController = {
       }
     }
     // Only restore scroll if no other modals are open
-    const anyOpen = document.querySelectorAll('#bookingModal.flex, #booking-modal.flex, #slotConflictModal.flex, #adminLoginModal.flex, #adminPortalModal.flex, #mediaLightboxModal.flex, #invoicePreviewModal.flex, #preInvoicePreviewModal.flex, #execReportPreviewModal.flex, #ragStudioView.flex');
-    if (anyOpen.length === 0) {
-      document.body.style.overflow = '';
-    }
+    this._unlockBodyScroll();
     syncModalAnimationState();
   },
 
@@ -12833,9 +13043,9 @@ function counterRow({ key, name, tag, unitPrice, priceText, value, max }) {
       </div>
       <div class="extra-card__controls">
         <div class="extra-stepper">
-          <button type="button" onclick="adjustExtra('${key}', -1)" ${atMin ? "disabled" : ""} class="extra-step-btn${atMin ? btnDisabled : ""}" aria-label="Disminuir ${sanitizeInput(name)}">−</button>
+          <button type="button" onclick="adjustExtra('${key}', -1)" ${atMin ? "disabled" : ""} class="extra-step-btn min-w-[44px] min-h-[44px]${atMin ? btnDisabled : ""}" aria-label="Disminuir ${sanitizeInput(name)}">−</button>
           <span class="extra-stepper__value" aria-live="polite">${value}</span>
-          <button type="button" onclick="adjustExtra('${key}', 1)" ${atMax ? "disabled" : ""} class="extra-step-btn${atMax ? btnDisabled : ""}" aria-label="Aumentar ${sanitizeInput(name)}">+</button>
+          <button type="button" onclick="adjustExtra('${key}', 1)" ${atMax ? "disabled" : ""} class="extra-step-btn min-w-[44px] min-h-[44px]${atMax ? btnDisabled : ""}" aria-label="Aumentar ${sanitizeInput(name)}">+</button>
         </div>
         <span class="extra-card__price-badge">${sanitizeInput(unitPrice)}</span>
       </div>
