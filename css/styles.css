@@ -446,6 +446,17 @@ body {
   background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 40%, transparent 80%);
 }
 
+/* Hero Primary Apple-style Squircle/Pill CTA */
+.hero-cta-apple {
+  background: linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 12px 28px -6px rgba(168, 85, 247, 0.45);
+}
+
+.hero-cta-apple:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 16px 34px -6px rgba(217, 70, 239, 0.55);
+}
+
 /* Glassmorphism Panel */
 .glass-panel {
   background: var(--glass-bg);
@@ -750,14 +761,21 @@ html {
   background-color: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   overscroll-behavior: contain;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease-in-out;
+}
+
+@media (min-width: 640px) {
+  #bookingModal,
+  #booking-modal {
+    align-items: center;
+    padding: 1rem;
+  }
 }
 
 #bookingModal.flex,
@@ -1164,16 +1182,29 @@ input[type="submit"],
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
 }
 
 #mediaLightboxModal .ios-media-scroll {
   -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+}
+
+@media (max-width: 639.98px) {
+  #mediaLightboxModal .ios-media-sheet {
+    height: 92vh;
+    height: 92dvh;
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: 1.5rem 1.5rem 0 0;
+  }
 }
 
 @media (min-width: 640px) {
   #mediaLightboxModal .ios-media-sheet {
     padding-top: 0;
     padding-bottom: 0;
+    max-height: 88dvh;
   }
 }
 
@@ -2159,14 +2190,16 @@ footer>.max-w-7xl {
    El scroll táctil/overscroll de ese overlay ya vive en el selector grupal
    de la sección "Modal Wrapper Viewport Constraints" más arriba. */
 
-/* Tarjeta del portal: bounded flexbox, 90vh exactos, scroll interno en el cuerpo.
+/* Tarjeta del portal: bounded flexbox, 92dvh exactos, scroll interno en el cuerpo.
    min-height eliminado: nunca puede empujar la tarjeta fuera del viewport. */
 .admin-modal-card {
   position: relative;
   width: 100%;
   max-width: 72rem;
   height: 90vh;
+  height: 92dvh;
   max-height: 90vh;
+  max-height: 92dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2174,6 +2207,12 @@ footer>.max-w-7xl {
   border: 1px solid rgba(168, 85, 247, 0.25);
   border-radius: 1.5rem;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+@media (max-width: 639.98px) {
+  .admin-modal-card {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 /* Barra de estado ejecutiva del portal administrativo (FinTech Dark Glass) */
@@ -2204,9 +2243,11 @@ footer>.max-w-7xl {
 /* Login de la Consola Ejecutiva: centrado y contenido nunca más alto que el viewport */
 #adminLoginModal .executive-auth-card {
   max-height: 92vh;
-  max-height: 92svh;
+  max-height: 92dvh;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
 }
 
 /* Motor de scroll interno (flex:1 + min-height:0 → la columna flex se encoge
@@ -4000,9 +4041,7 @@ select.ark-input:active {
    Desktop (>=768px) visual behavior remains unchanged.
    ============================================================ */
 
-/* --- 2. RESPONSIVE VIEWPORT & MODAL CONTAINER ---
-   Mobile: fluid bottom-sheet anchored to the bottom edge, rounded
-   top corners, iOS momentum scrolling + bottom safe-area padding. */
+/* --- 2. RESPONSIVE VIEWPORT & MODAL CONTAINER (3-Zone Strict Flex Architecture) --- */
 @media (max-width: 767.98px) {
   #booking-modal {
     align-items: flex-end;
@@ -4013,55 +4052,72 @@ select.ark-input:active {
   #booking-modal .modal-overlay {
     align-items: flex-end;
     padding: 0;
+    overflow: hidden;
   }
 
   #booking-modal #modal-card {
     position: relative;
     top: auto;
-    /* top-auto */
     left: 0;
-    /* inset-x-0 */
     right: 0;
     width: 100%;
     max-width: 100%;
     margin: 0;
-    max-height: 90vh;
-    /* max-h-[90vh] */
+    height: 92vh;
+    height: 92dvh;
+    max-height: 92vh;
+    max-height: 92dvh;
+    display: flex;
+    flex-direction: column;
     border-radius: 1.5rem 1.5rem 0 0;
-    /* rounded-t-3xl */
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    /* iOS momentum */
-    overscroll-behavior: contain;
-    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    overflow: hidden !important;
+    padding: 0 !important;
   }
 }
 
-/* 640–768px tablets keep the softer sm:p-6 bottom padding */
-@media (min-width: 640px) and (max-width: 767.98px) {
-  #booking-modal #modal-card {
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* Desktop (>=768px): centered 2-column card keeps p-8 padding */
+/* Desktop (>=768px): centered card with internal scroll body + sticky footer */
 @media (min-width: 768px) {
+  #booking-modal .modal-overlay {
+    align-items: center;
+    padding: 1rem;
+    overflow: hidden;
+  }
+
   #booking-modal #modal-card {
     margin: auto;
-    /* centered overlay */
+    width: 100%;
+    max-width: 56rem;
+    height: auto;
+    max-height: 88vh;
+    max-height: 88dvh;
+    display: flex;
+    flex-direction: column;
     border-radius: 1.5rem;
-    /* rounded-3xl */
-    padding: 2rem;
-    /* p-8 */
+    overflow: hidden !important;
+    padding: 0 !important;
   }
 }
 
-/* Desktop (>=1024px): wide 2-column card (lg:max-w-5xl) */
+/* Desktop (>=1024px): wide card */
 @media (min-width: 1024px) {
   #booking-modal #modal-card {
-    max-width: 64rem;
-    /* lg:max-w-5xl */
+    max-width: 56rem;
   }
+}
+
+/* Zona 2 (Body scrollable) y Zona 3 (Footer fijo con safe-area iOS) */
+#booking-modal .booking-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+#booking-modal .booking-modal-footer {
+  flex-shrink: 0;
+  padding-bottom: calc(0.875rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* --- 3. MOBILE FORM LEGIBILITY & CONTRAST ---
@@ -4110,19 +4166,15 @@ select.ark-input:active {
    those exact classes — the JS stays 100% untouched.
    ============================================================ */
 
-/* --- Sticky bar shell (keeps the tracker pinned in the modal) --- */
+/* --- Stepper encapsulated cleanly inside fixed #booking-modal-header --- */
 #booking-modal .modal-stepper {
-  position: sticky;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: static;
   z-index: 20;
-  padding: 0.625rem 0.75rem;
-  /* py-2.5 px-3 */
-  background: rgba(0, 0, 0, 0.85);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+  padding: 0.625rem 0 0 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom: none;
 }
 
 /* --- Mobile track: subtle background line behind the badges --- */
@@ -5411,13 +5463,12 @@ textarea:disabled,
 
 /* ── Liquid Glass Purple layout + responsive < 640px ───────────── */
 /* Fondo degradado púrpura profundo del modal (cristal sobre ébano).
-   Mantiene overflow-y auto para el scroll interno del wizard. */
+   El scroll vive exclusivamente en #booking-modal-body (.booking-modal-body). */
 #booking-modal .modal-card,
 #booking-modal #modal-card {
   background:
     radial-gradient(ellipse at top, #1a1028 0%, #0b061a 100%);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Responsive < 640px */
@@ -5981,12 +6032,16 @@ textarea:disabled,
   box-shadow: 0 30px 90px -15px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  max-height: 85vh;
+  max-height: 88vh;
+  max-height: 90dvh;
+  overflow-x: hidden;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 640px) {
   #modal-politicas .policy-modal-card {
     max-height: 88vh;
+    max-height: 88dvh;
   }
 }
 
@@ -8790,10 +8845,16 @@ body.rack-preview-open {
   box-shadow: 0 -4px 20px -6px rgba(232, 121, 249, 0.35), 0 12px 30px rgba(0, 0, 0, 0.5);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 768px) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
   select,
   textarea,
+  #adminLoginModal input,
+  #adminPortalModal input,
+  #adminPortalModal select,
+  #booking-modal input,
+  #booking-modal select,
+  #booking-modal textarea,
   .glass-input,
   .rag-studio-input {
     font-size: 16px !important;
