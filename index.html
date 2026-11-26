@@ -66,7 +66,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
 
   <!-- Custom Styles -->
@@ -2100,124 +2100,110 @@
   <!-- ============================================================ -->
   <div id="mediaLightboxModal" role="dialog" aria-modal="true" aria-labelledby="lightbox-title"
     onclick="if (event.target === this) closeMediaLightbox()"
-    class="fixed inset-0 z-[90] hidden items-center justify-center p-3 sm:p-6 bg-black/40 overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
+    class="fixed inset-0 z-[90] hidden items-end sm:items-center justify-center p-0 sm:p-6 bg-black/75 overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
     <div
-      class="relative m-auto max-w-5xl w-full rounded-[2rem] bg-[#0d0918]/95 border border-purple-500/30 p-4 sm:p-6 shadow-[0_0_80px_rgba(168,85,247,0.35)] overflow-hidden flex flex-col my-auto">
+      class="ios-media-sheet w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-2xl sm:rounded-3xl bg-[#090612]/98 backdrop-blur-2xl border-0 sm:border sm:border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden sm:my-auto">
 
-      <!-- Ambient Glows -->
-      <div class="absolute -top-24 -right-24 w-60 h-60 bg-glow-pink pointer-events-none opacity-40"></div>
-      <div class="absolute -bottom-24 -left-24 w-60 h-60 bg-glow-purple pointer-events-none opacity-40"></div>
-
-      <!-- Close Button -->
-      <button type="button" id="lightbox-close-btn" onclick="closeMediaLightbox()" aria-label="Cerrar visor multimedia"
-        class="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-gray-300 hover:text-white transition-all flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-pink-500">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-
-      <!-- Cinema Pro Media Display Area (HD) -->
-      <div id="lightbox-media-container"
-        class="relative z-10 w-full rounded-2xl overflow-hidden bg-black/80 aspect-video max-h-[70vh] flex items-center justify-center border border-purple-500/25 shadow-inner">
-
-        <!-- Injected dynamically by app.js (Image, Video iframe, or Player) -->
-        <div id="lightbox-media-slot" class="relative w-full h-full"></div>
-
-        <!-- Media Counter -->
-        <span id="lightbox-counter"
-          class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-black/60 border border-white/15 text-[11px] font-bold text-gray-200 backdrop-blur-md">
-          1 / 8
-        </span>
-
-        <!-- Prev / Next Arrows -->
-        <button type="button" id="lightbox-prev-btn" onclick="navigateLightbox(-1)" aria-label="Contenido anterior"
-          class="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-pink-500">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <button type="button" id="lightbox-next-btn" onclick="navigateLightbox(1)" aria-label="Contenido siguiente"
-          class="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-pink-500">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-
-        <!-- Cinema Overlay: Title, Location Tag & Date -->
-        <div
-          class="absolute inset-x-0 bottom-0 z-20 p-4 sm:p-6 pointer-events-none bg-gradient-to-t from-black/95 via-black/50 to-transparent">
-          <div class="flex flex-wrap items-center gap-2">
-            <span id="lightbox-category-badge"
-              class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-950/80 border border-purple-500/40 text-purple-300 backdrop-blur-md">
-              Categoría
-            </span>
-            <span
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/50 border border-white/10 text-[10px] font-semibold text-purple-200 backdrop-blur-md">
-              <svg class="w-3 h-3 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-              </svg>
-              <span id="lightbox-location">Costa Rica</span>
-            </span>
-            <span id="lightbox-date"
-              class="px-2.5 py-1 rounded-full bg-black/50 border border-white/10 text-[10px] font-semibold text-gray-300 backdrop-blur-md">
-              Fecha
-            </span>
-          </div>
-          <h3 id="lightbox-title"
-            class="mt-2.5 text-xl sm:text-3xl font-extrabold text-white leading-tight font-heading drop-shadow-lg">
-            Título del Contenido
-          </h3>
-        </div>
-      </div>
-
-      <!-- Media Details & Metadata -->
-      <div class="relative z-10 mt-4 sm:mt-5 space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <span
-            class="inline-flex items-center gap-1 text-xs text-pink-400 font-semibold bg-pink-500/10 border border-pink-500/30 px-2.5 py-0.5 rounded-full">
-            <svg class="w-3 h-3 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-            </svg>
-            @kikeramirezcr Verificado
+      <!-- App Top Bar (Integrated Counter, Category & Tactile Controls) -->
+      <div class="px-4 py-3.5 border-b border-white/10 flex items-center justify-between gap-2 shrink-0 bg-[#090612]/95">
+        <div class="flex items-center gap-2 min-w-0">
+          <span id="lightbox-counter"
+            class="px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-semibold text-slate-200 font-mono tabular-nums whitespace-nowrap shrink-0">
+            1 / 8
+          </span>
+          <span id="lightbox-category-badge"
+            class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-500/15 border border-purple-400/25 text-purple-200 truncate">
+            Categoría
           </span>
         </div>
 
-        <p id="lightbox-caption" class="text-sm text-gray-300 leading-relaxed max-w-3xl">
-          Descripción detallada y créditos del show en vivo.
-        </p>
-
-        <!-- CTAs: Instagram Direct Link & Copy URL -->
-        <div class="pt-4 border-t border-purple-500/20 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2.5">
-            <a id="lightbox-direct-link" href="#" target="_blank" rel="noopener noreferrer"
-              class="ig-cta-btn inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white shadow-lg min-h-[44px]">
-              <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-              </svg>
-              <span>Ver en Instagram</span>
-            </a>
-
-            <button type="button" id="lightbox-copy-btn" onclick="copyLightboxUrl()"
-              class="glass-panel px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-purple-300 hover:text-white transition-all flex items-center gap-1.5 min-h-[44px]">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
-                </path>
-              </svg>
-              <span>Copiar Enlace</span>
-            </button>
-          </div>
-
-          <button type="button" id="lightbox-quote-btn" onclick="closeMediaLightbox(); openBookingModal(1);"
-            class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/40 transition-all flex items-center gap-1.5 min-h-[44px]">
-            <span>Cotizar Este Formato Similar</span>
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" id="lightbox-prev-btn" onclick="navigateLightbox(-1)" aria-label="Contenido anterior"
+            class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-white/[0.06] hover:bg-white/[0.14] active:scale-95 border border-white/15 text-white flex items-center justify-center backdrop-blur-md transition-all focus:outline-none focus:ring-2 focus:ring-pink-500">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
+          <button type="button" id="lightbox-next-btn" onclick="navigateLightbox(1)" aria-label="Contenido siguiente"
+            class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-white/[0.06] hover:bg-white/[0.14] active:scale-95 border border-white/15 text-white flex items-center justify-center backdrop-blur-md transition-all focus:outline-none focus:ring-2 focus:ring-pink-500">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <button type="button" id="lightbox-close-btn" onclick="closeMediaLightbox()" aria-label="Cerrar visor multimedia"
+            class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.18] active:scale-95 border border-white/15 text-slate-200 hover:text-white transition-all flex items-center justify-center ml-0.5 focus:outline-none focus:ring-2 focus:ring-pink-500">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Body: Clean Media Stage + Metadata + Thumb-Zone Dock -->
+      <div class="ios-media-scroll flex-1 overflow-y-auto overscroll-contain flex flex-col">
+
+        <!-- Clean Media Stage (No text or controls overlapping the photo) -->
+        <div id="lightbox-media-container"
+          class="w-full aspect-[4/3] sm:aspect-video bg-black relative overflow-hidden shrink-0 select-none">
+          <div id="lightbox-media-slot" class="relative w-full h-full flex items-center justify-center"></div>
+        </div>
+
+        <!-- Information Body & Thumb-Zone Action Dock -->
+        <div class="p-5 sm:p-6 flex-1 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <div class="inline-flex items-center gap-1.5 min-w-0 text-slate-300 font-medium">
+              <span aria-hidden="true">📍</span>
+              <span id="lightbox-location" class="truncate">Costa Rica</span>
+              <span class="text-slate-500" aria-hidden="true">·</span>
+              <span id="lightbox-date" class="text-slate-400 whitespace-nowrap">Fecha</span>
+            </div>
+
+            <span
+              class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/[0.04] border border-white/10 text-[11px] font-medium text-pink-300 shrink-0">
+              <svg class="w-3 h-3 text-pink-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+              </svg>
+              <span>@kikeramirezcr</span>
+            </span>
+          </div>
+
+          <h3 id="lightbox-title" class="text-xl sm:text-2xl font-bold text-white leading-snug">
+            Título del Contenido
+          </h3>
+
+          <p id="lightbox-caption" class="text-sm text-slate-300 leading-relaxed">
+            Descripción detallada y créditos del show en vivo.
+          </p>
+
+          <!-- Thumb-Zone Action Dock -->
+          <div class="mt-auto pt-3 border-t border-white/10 flex flex-col gap-2.5">
+            <button type="button" id="lightbox-quote-btn" onclick="closeMediaLightbox(); openBookingModal(1);"
+              class="w-full min-h-[48px] px-5 py-3 rounded-2xl text-sm sm:text-base font-bold text-white bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-white/15 shadow-[0_8px_24px_rgba(168,85,247,0.35)] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+              <span>Cotizar Este Formato Similar →</span>
+            </button>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <a id="lightbox-direct-link" href="#" target="_blank" rel="noopener noreferrer"
+                class="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/15 text-xs sm:text-sm font-medium text-slate-100 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                <svg class="w-4 h-4 text-pink-300 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+                </svg>
+                <span>Ver en Instagram</span>
+              </a>
+
+              <button type="button" id="lightbox-copy-btn" onclick="copyLightboxUrl()"
+                class="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/15 text-xs sm:text-sm font-medium text-slate-100 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                <svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
+                  </path>
+                </svg>
+                <span>Copiar Enlace</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
