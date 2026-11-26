@@ -1131,10 +1131,49 @@ input[type="submit"],
   animation-delay: 0.35s;
 }
 
-/* Cinema Pro Lightbox: fullscreen liquid glass backdrop */
+/* Native iOS App Multimedia Lightbox & Editorial Gallery Typography */
 #mediaLightboxModal {
-  backdrop-filter: blur(30px) brightness(0.3);
-  -webkit-backdrop-filter: blur(30px) brightness(0.3);
+  backdrop-filter: blur(28px) brightness(0.32);
+  -webkit-backdrop-filter: blur(28px) brightness(0.32);
+  -webkit-overflow-scrolling: touch;
+}
+
+#mediaLightboxModal .ios-media-sheet {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch;
+}
+
+#mediaLightboxModal .ios-media-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 640px) {
+  #mediaLightboxModal .ios-media-sheet {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+#biblioteca h2,
+#biblioteca h3,
+#biblioteca p,
+#biblioteca button,
+#biblioteca a,
+#mediaLightboxModal h3,
+#mediaLightboxModal p,
+#mediaLightboxModal button,
+#mediaLightboxModal a,
+#mediaLightboxModal span:not(#lightbox-counter) {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-stretch: 100% !important;
+  letter-spacing: -0.02em !important;
+}
+
+#mediaLightboxModal #lightbox-counter {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0 !important;
 }
 
 /* Native dark form controls (pickers iOS/Android en modo oscuro) */

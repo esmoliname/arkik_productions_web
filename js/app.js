@@ -10571,7 +10571,7 @@ function renderGalleryTopBar(item) {
 function renderGalleryBottomBlock(title, subtitle, mobileHintHtml) {
   return `
     <div class="absolute bottom-0 inset-x-0 p-4 sm:p-5 z-10 pointer-events-none flex flex-col justify-end text-left">
-      <h3 class="text-white font-bold text-sm sm:text-base leading-snug drop-shadow-md group-hover:text-pink-200 transition-colors">
+      <h3 class="text-white font-bold text-base sm:text-lg leading-snug drop-shadow-md group-hover:text-pink-200 transition-colors">
         ${title}
       </h3>
       ${subtitle ? `<p class="line-clamp-2 text-xs sm:text-sm text-slate-300 leading-relaxed mt-1">${subtitle}</p>` : ""}
@@ -10596,7 +10596,7 @@ function galleryInstagramCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-2xl sm:rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
@@ -10635,7 +10635,7 @@ function galleryVideoCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy"
@@ -10670,7 +10670,7 @@ function galleryImageCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] transition-all duration-500"
+    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${url}" alt="${title}" loading="lazy"
@@ -10714,6 +10714,7 @@ function embeddableHostLabel(url) {
 let lightboxList = [];
 let lightboxIndex = -1;
 let lightboxTouchX = null;
+let lightboxTouchY = null;
 
 // Misma lógica de filtro que renderMediaGallery: navegar solo por lo visible en el grid.
 function lightboxFilteredItems() {
@@ -10756,78 +10757,69 @@ function renderLightboxItem(item) {
   if (!slot) return;
   slot.innerHTML = "";
   if (item.type === "video" && item.embedUrl && !NOT_EMBEDDABLE.test(item.embedUrl)) {
-    // Dominios embebibles (YouTube, Vimeo, etc.): iframe normal.
+    // Dominios embebibles (YouTube, Vimeo, etc.): iframe limpio en el contenedor 16:9 / 4:3.
     const iframe = document.createElement("iframe");
     iframe.src = item.embedUrl + (item.embedUrl.includes("?") ? "&" : "?") + "autoplay=1";
     iframe.title = item.title;
     iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
     iframe.setAttribute("allowfullscreen", "");
-    iframe.className = "w-full h-full border-0 rounded-2xl";
+    iframe.className = "w-full h-full border-0";
     slot.appendChild(iframe);
   } else if (item.type === "video" && item.embedUrl && NOT_EMBEDDABLE.test(item.embedUrl)) {
     // Dominio no embebible (Instagram/Drive/Facebook/…): NO crear iframe.
-    // Mostrar placeholder visual + botón para abrir el original en pestaña nueva.
     const src = item.thumbnail || resolveDefaultGalleryThumbnail(item);
     const openUrl = sanitizeUrl(item.directUrl || item.embedUrl);
     const hostLabel = embeddableHostLabel(openUrl);
     const wrap = document.createElement("div");
-    wrap.className = "relative w-full h-full flex flex-col items-center justify-center gap-4 rounded-2xl overflow-hidden";
-    wrap.style.cssText = "background:linear-gradient(160deg,rgba(139,92,246,0.10),rgba(11,6,26,0.85));border:1px solid rgba(139,92,246,0.25);";
-    const imgWrap = document.createElement("div");
-    imgWrap.className = "w-full h-[60vh] overflow-hidden";
+    wrap.className = "relative w-full h-full flex flex-col items-center justify-center overflow-hidden";
     const img = document.createElement("img");
     img.src = src;
     img.alt = item.title;
     img.className = "w-full h-full object-cover";
-    img.style.cssText = "filter:saturate(1.05);";
     attachGalleryImgFallback(img);
-    imgWrap.appendChild(img);
     const overlay = document.createElement("div");
-    overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center";
-    overlay.style.cssText = "background:rgba(11,6,26,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);";
-    const icon = document.createElement("div");
-    icon.textContent = "📹";
-    icon.style.cssText = "font-size:2rem;opacity:0.9;";
+    overlay.className = "absolute inset-0 flex flex-col items-center justify-center gap-2 p-5 text-center bg-black/60 backdrop-blur-sm";
     const msg = document.createElement("p");
-    msg.style.cssText = "font-weight:700;color:#ffffff;font-size:0.9rem;max-width:34ch;text-shadow:0 1px 3px rgba(0,0,0,0.6);";
-    msg.textContent = "Este video no se puede reproducir embebido.";
-    const sub = document.createElement("p");
-    sub.style.cssText = "font-size:0.75rem;color:#c4b5fd;margin-bottom:0.25rem;";
-    sub.textContent = `Solo se permite incrustarlo en una pestaña nueva.`;
+    msg.className = "font-bold text-white text-sm max-w-[32ch]";
+    msg.textContent = "Reproducción externa requerida";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.style.cssText = "display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;min-height:44px;padding:0.75rem 1.25rem;border-radius:0.75rem;font-weight:700;font-size:0.875rem;color:#ffffff;background:linear-gradient(135deg,#8b5cf6 0%,#5b21b6 100%);box-shadow:0 8px 24px rgba(139,92,246,0.3);border:1px solid transparent;cursor:pointer;";
-    btn.textContent = `Abrir en ${hostLabel}`;
+    btn.className = "inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-purple-600 hover:bg-purple-500 border border-white/15 shadow-lg active:scale-95 transition-all";
+    btn.textContent = `Abrir en ${hostLabel} ↗`;
     btn.addEventListener("click", () => window.open(openUrl, "_blank", "noopener"));
-    overlay.appendChild(icon);
     overlay.appendChild(msg);
-    overlay.appendChild(sub);
     overlay.appendChild(btn);
-    wrap.appendChild(imgWrap);
+    wrap.appendChild(img);
     wrap.appendChild(overlay);
     slot.appendChild(wrap);
   } else {
     const img = document.createElement("img");
     img.src = item.thumbnail || item.directUrl || resolveDefaultGalleryThumbnail(item);
     img.alt = item.title;
-    img.className = "w-full h-full object-contain max-h-[70vh] rounded-2xl shadow-2xl";
+    img.className = "w-full h-full object-contain bg-black";
     attachGalleryImgFallback(img);
     slot.appendChild(img);
   }
 }
 
-// Gestos táctiles horizontales (swipe) dentro del visor.
+// Gestos táctiles horizontales (swipe izquierda/derecha estilo Fotos iOS / Instagram).
 function attachLightboxSwipe(el) {
   if (!el || el.dataset.swipeBound) return;
   el.dataset.swipeBound = "1";
   el.addEventListener("touchstart", (e) => {
+    if (!e.touches || !e.touches[0]) return;
     lightboxTouchX = e.touches[0].clientX;
+    lightboxTouchY = e.touches[0].clientY;
   }, { passive: true });
   el.addEventListener("touchend", (e) => {
-    if (lightboxTouchX === null) return;
+    if (lightboxTouchX === null || !e.changedTouches || !e.changedTouches[0]) return;
     const dx = e.changedTouches[0].clientX - lightboxTouchX;
-    if (Math.abs(dx) > 40) navigateLightbox(dx < 0 ? 1 : -1);
+    const dy = lightboxTouchY !== null ? (e.changedTouches[0].clientY - lightboxTouchY) : 0;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      navigateLightbox(dx < 0 ? 1 : -1);
+    }
     lightboxTouchX = null;
+    lightboxTouchY = null;
   }, { passive: true });
 }
 
@@ -10860,6 +10852,7 @@ function closeMediaLightbox() {
   lightboxList = [];
   lightboxIndex = -1;
   lightboxTouchX = null;
+  lightboxTouchY = null;
   const container = document.getElementById("lightbox-media-container");
   if (container) delete container.dataset.swipeBound;
   if (modal) {
