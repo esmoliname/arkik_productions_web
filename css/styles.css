@@ -769,11 +769,12 @@ html {
 #seasonalSnowCanvas {
   position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none !important;
-  z-index: 30;
-  opacity: 0.65;
+  z-index: 45;
+  display: block !important;
+  opacity: 0.9;
 }
 
 @media (prefers-reduced-motion: reduce) {

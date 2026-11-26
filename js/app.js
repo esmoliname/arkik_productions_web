@@ -10070,9 +10070,8 @@ function initSeasonalSnow() {
 
   const TINTS = [
     "255, 255, 255",
-    "226, 232, 240",
-    "207, 250, 254",
-    "233, 213, 255"
+    "248, 250, 252",
+    "241, 245, 249"
   ];
 
   let logicalW = 0;
@@ -10083,18 +10082,18 @@ function initSeasonalSnow() {
   const flakes = [];
 
   function targetFlakeCount() {
-    return logicalW < 768 ? 24 : 38;
+    return logicalW < 768 ? 30 : 50;
   }
 
   function makeFlake(randomY) {
     return {
       x: Math.random() * Math.max(1, logicalW),
-      y: randomY ? Math.random() * Math.max(1, logicalH) : (-8 - Math.random() * 32),
-      r: 1.2 + Math.random() * 2.0,
-      alpha: 0.18 + Math.random() * 0.37,
-      vy: 0.34 + Math.random() * 0.52,
-      swayAmp: 0.22 + Math.random() * 0.45,
-      swayFreq: 0.0007 + Math.random() * 0.0011,
+      y: randomY ? Math.random() * Math.max(1, logicalH) : (-10 - Math.random() * 32),
+      r: 1.8 + Math.random() * 2.4,
+      alpha: 0.45 + Math.random() * 0.40,
+      vy: 0.6 + Math.random() * 1.0,
+      swayAmp: 0.25 + Math.random() * 0.5,
+      swayFreq: 0.0008 + Math.random() * 0.0012,
       phase: Math.random() * Math.PI * 2,
       rgb: TINTS[Math.floor(Math.random() * TINTS.length)]
     };
@@ -10166,9 +10165,9 @@ function initSeasonalSnow() {
       }
 
       // Soft outer frost halo + crisp inner core (zero shadowBlur for steady 60 FPS)
-      ctx.fillStyle = `rgba(${f.rgb}, ${(f.alpha * 0.28).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${f.rgb}, ${(f.alpha * 0.32).toFixed(3)})`;
       ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r * 1.6, 0, Math.PI * 2);
+      ctx.arc(f.x, f.y, f.r * 1.75, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = `rgba(${f.rgb}, ${f.alpha.toFixed(3)})`;
