@@ -3821,7 +3821,8 @@ describe('Auth Recovery Suite (Backend, Migration, Session, RBAC, HTTP E2E, Fron
       assert.equal(t.cart.isSubmitting, false);
 
       // Zero-Trust offline queue & API-disabled fail-closed invariants + ModalController overlay coverage
-      assert.equal(t.BookingStore._enqueueOfflineBooking(), false);
+      assert.equal(t.BookingStore._enqueueOfflineBooking, undefined);
+      assert.equal(t.BookingStore.syncOfflineQueue, undefined);
       assert.equal(lsStore.get(t.STORAGE_KEYS.offlineQueue) || '[]', '[]');
       t.API_CONFIG.enabled = false;
       try {

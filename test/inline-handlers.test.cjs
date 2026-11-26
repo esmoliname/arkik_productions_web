@@ -14,13 +14,13 @@ describe('Inline handler inventory (D2-NEW-03)', () => {
     const m = html.match(handlerRe) || [];
     assert.equal(m.length, 93);
   });
-  test('js/app.js has 27 inline handlers', () => {
+  test('js/app.js has 26 inline handlers', () => {
     const m = appJs.match(handlerRe) || [];
-    assert.equal(m.length, 27);
+    assert.equal(m.length, 26);
   });
-  test('total inline handlers = 120', () => {
+  test('total inline handlers = 119', () => {
     const a = (html.match(handlerRe) || []).length;
     const b = (appJs.match(handlerRe) || []).length;
-    assert.equal(a + b, 120);
+    assert.equal(a + b, 119);
   });
 });

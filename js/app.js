@@ -2405,21 +2405,6 @@ const BookingStore = {
     return { ok: true, booking: created, source: "remote" };
   },
 
-  _enqueueOfflineBooking() {
-    // Zero-Trust estricto: no se encolan reservas locales sin confirmación del servidor.
-    return false;
-  },
-
-  async syncOfflineQueue() {
-    try {
-      const existing = safeParse(STORAGE_KEYS.offlineQueue, []);
-      if (Array.isArray(existing) && existing.length > 0) {
-        safeSet(STORAGE_KEYS.offlineQueue, []);
-      }
-    } catch (_err) { /* noop */ }
-    return { synced: 0, remaining: 0 };
-  },
-
   get(code) {
     return this._data.find(b => b.code === code) || null;
   },
@@ -2661,9 +2646,6 @@ const CloudSync = {
     }, { passive: true });
 
     window.addEventListener("online", function () {
-      if (typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
-        BookingStore.syncOfflineQueue().catch(function () { });
-      }
       self.refresh("online").catch(function () { });
     }, { passive: true });
 
@@ -2748,12 +2730,7 @@ const CloudSync = {
         }
       }
 
-      // 2) Reconciliar cola offline ANTES de hidratar reservas para no sobrescribir cambios locales
-      if (ok && typeof BookingStore !== "undefined" && BookingStore.syncOfflineQueue) {
-        await BookingStore.syncOfflineQueue().catch(function () { });
-      }
-
-      // 3) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa preservando pendientes locales
+      // 2) Reservas: cuando hay sesión de admin activa, bajar lista autoritativa
       if (ok && this._adminSessionActive()) {
         const bookings = await BookingStore.hydrate(true);
         if (bookings && bookings.ok === false) {
@@ -6980,7 +6957,8 @@ async function renderAndSaveAccountingPDF(booking, filename, statusOverride) {
   // Asegura precarga y decodificación completa del logo antes de rasterizar
   await preloadExecutiveImages(container);
 
-  if (window.html2pdf) {
+  if (typeof html2pdf !== "undefined" || typeof window.html2pdf === "function") {
+    const pdfEngine = typeof html2pdf !== "undefined" ? html2pdf : window.html2pdf;
     try {
       const opt = {
         margin: [8, 8, 8, 8],
@@ -6995,11 +6973,16 @@ async function renderAndSaveAccountingPDF(booking, filename, statusOverride) {
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
       };
-      await window.html2pdf().set(opt).from(container).save();
+      await pdfEngine().set(opt).from(container).save();
       return true;
     } catch (err) {
       console.warn("[PDF Engine] html2pdf falló, recurriendo a impresión:", err);
+      if (typeof showToast === "function") {
+        showToast("No se pudo generar el PDF automáticamente. Abriendo vista de impresión alternativa...", "info");
+      }
     }
+  } else if (typeof showToast === "function") {
+    showToast("Librería PDF no disponible (posible fallo de CDN o bloqueador). Abriendo vista de impresión...", "info");
   }
 
   // Fallback si html2pdf no está presente o falla
@@ -7828,8 +7811,8 @@ async function triggerPreInvoicePDFDownload() {
   const normalizedCode = rawCode.startsWith("ARK-") ? rawCode : `ARK-${rawCode}`;
   booking.code = normalizedCode;
 
-  if (typeof html2pdf === "undefined") {
-    showToast("Librería PDF no disponible, abriendo impresión nativa...", "info");
+  if (typeof html2pdf === "undefined" && typeof window.html2pdf !== "function") {
+    showToast("Librería PDF no disponible (posible bloqueo de CDN). Abriendo impresión nativa...", "info");
     window.print();
     return;
   }
@@ -8097,14 +8080,21 @@ function sendBookingEmail(btnEl) {
     resetBtn();
   };
 
-  if (typeof window.emailjs === "undefined" || !serviceID || !templateID) {
-    simulate("configuración incompleta o SDK ausente");
+  if (typeof emailjs === "undefined" && typeof window.emailjs === "undefined") {
+    showToast("El servicio de correo (EmailJS) no pudo cargarse desde el CDN. Descarga tu Pre-Factura o envíala por WhatsApp.", "error");
+    resetBtn();
     return;
   }
 
+  if (!serviceID || !templateID) {
+    simulate("configuración incompleta");
+    return;
+  }
+
+  const emailClient = typeof emailjs !== "undefined" ? emailjs : window.emailjs;
   showToast("Enviando comprobante por correo...", "info");
 
-  window.emailjs.send(serviceID, templateID, payload)
+  emailClient.send(serviceID, templateID, payload)
     .then((res) => {
       if (res && (res.status === 200 || res.text)) {
         showToast("✉️ Comprobante enviado exitosamente a " + toEmail, "success");
@@ -8709,8 +8699,9 @@ function exportOwnerReportPDF() {
     if (wrapper && wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
   };
 
-  if (!window.html2pdf) {
+  if (typeof html2pdf === "undefined" && !window.html2pdf) {
     cleanup();
+    showToast("Librería PDF no disponible (fallo de CDN o bloqueador). Abriendo vista de impresión...", "info");
     printFallback(container.innerHTML, `Reporte_Ejecutivo_${new Date().toISOString().slice(0, 10)}`);
     return;
   }
@@ -8991,7 +8982,10 @@ async function exportExecutiveReportPDF() {
     return;
   }
 
-  if (!window.html2pdf) {
+  if (typeof html2pdf === "undefined" && !window.html2pdf) {
+    if (typeof showToast === "function") {
+      showToast("Librería PDF no disponible (fallo de CDN o bloqueador). Abriendo vista de impresión...", "info");
+    }
     printFallback(canvas.innerHTML, `Reporte_Ejecutivo_${stamp}`);
     return;
   }
@@ -9046,8 +9040,9 @@ async function exportExecutiveReportPDF() {
  * Se vincula al botón "Descargar Word (.docx)" en el Centro de Acción.
  */
 function exportOwnerReportDOCX() {
-  if (!window.docx) {
-    showToast("La librería docx no está disponible.", "error");
+  const docxLib = typeof docx !== "undefined" ? docx : window.docx;
+  if (!docxLib) {
+    showToast("No se pudo cargar la librería Word (.docx) desde el CDN. Verifica tu conexión o bloqueador de red.", "error");
     return;
   }
 
@@ -9277,48 +9272,76 @@ function exportOwnerReportDOCX() {
 }
 
 function printFallback(htmlContent, title) {
-  const w = window.open("", "_blank");
-  if (!w) {
-    showToast("Por favor permita ventanas emergentes para exportar el documento.", "error");
-    return;
+  let w = null;
+  try {
+    w = window.open("", "_blank");
+  } catch (_err) {
+    w = null;
   }
-  w.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>${title}</title>
-        <style>
-          @page { size: A4 portrait; margin: 0; }
-          html, body { background: #ffffff !important; color: #0f172a !important; }
-          body { font-family: 'Inter', system-ui, sans-serif; margin: 0; padding: 0; color-scheme: light; }
-          .pdf-container,
-          .pdf-container * { box-sizing: border-box; }
-          .pdf-container {
-            width: 210mm;
-            min-height: 297mm;
-            max-height: 297mm;
-            padding: 12mm 15mm;
-            background: #ffffff !important;
-            color: #0f172a !important;
-            font-family: 'Inter', system-ui, sans-serif;
-            font-variant-numeric: tabular-nums;
-            overflow: hidden;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .pdf-container img { max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          @media print { button { display: none; } }
-        </style>
-      </head>
-      <body>
-        <div style="margin-bottom: 20px;">
-          <button onclick="window.print()" style="padding: 10px 20px; background: #6d28d9; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Imprimir / Guardar como PDF</button>
-        </div>
-        ${htmlContent}
-      </body>
-    </html>
-  `);
-  w.document.close();
+  if (!w || w.closed || typeof w.closed === "undefined") {
+    if (typeof showToast === "function") {
+      showToast("El navegador bloqueó la ventana emergente de impresión. Habilita los pop-ups o usa Ctrl+P para guardar como PDF.", "error");
+    }
+    return false;
+  }
+
+  try {
+    const doc = w.document;
+    doc.title = String(title || "Arkik Productions");
+
+    const styleEl = doc.createElement("style");
+    styleEl.textContent = `
+      @page { size: A4 portrait; margin: 0; }
+      html, body { background: #ffffff !important; color: #0f172a !important; }
+      body { font-family: 'Inter', system-ui, sans-serif; margin: 0; padding: 0; color-scheme: light; }
+      .pdf-container,
+      .pdf-container * { box-sizing: border-box; }
+      .pdf-container {
+        width: 210mm;
+        min-height: 297mm;
+        max-height: 297mm;
+        padding: 12mm 15mm;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-family: 'Inter', system-ui, sans-serif;
+        font-variant-numeric: tabular-nums;
+        overflow: hidden;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .pdf-container img { max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @media print { .arkik-print-toolbar { display: none !important; } }
+    `;
+    if (doc.head) doc.head.appendChild(styleEl);
+
+    if (doc.body) {
+      doc.body.innerHTML = "";
+      const toolbar = doc.createElement("div");
+      toolbar.className = "arkik-print-toolbar";
+      toolbar.style.marginBottom = "20px";
+
+      const printBtn = doc.createElement("button");
+      printBtn.type = "button";
+      printBtn.textContent = "Imprimir / Guardar como PDF";
+      printBtn.style.cssText = "padding: 10px 20px; background: #6d28d9; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;";
+      printBtn.addEventListener("click", () => {
+        try { w.print(); } catch (_err) { /* noop */ }
+      });
+      toolbar.appendChild(printBtn);
+
+      const contentWrap = doc.createElement("div");
+      contentWrap.innerHTML = String(htmlContent || "");
+
+      doc.body.appendChild(toolbar);
+      doc.body.appendChild(contentWrap);
+    }
+    return true;
+  } catch (_err) {
+    if (typeof showToast === "function") {
+      showToast("No se pudo preparar la vista de impresión controlada. Intenta usar Ctrl+P.", "error");
+    }
+    return false;
+  }
 }
 
 // ============================================================
@@ -13002,19 +13025,30 @@ function resetVoucherUploadState() {
 // persistencia en SafeStorage) + bloqueo mínimo de 3 s del botón en
 // cada toque. Anti-spam client-side: no sustituye RLS en la nube, pero
 // dispara el envío espurio de doble toque y los bots lentos.
+// Rate-limit cliente persistente con ventana fija en SafeStorage.
+// La autoridad definitiva reside siempre en el rate-limiter de PostgreSQL.
 const ClientThrottler = {
   _KEY: "arkik_submit_throttle_v1",
-  _lockUntil: 0,
 
-  _read() {
+  _readState(now) {
+    const winMs = this._windowMs();
     try {
       const raw = SafeStorage.getItem(this._KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr.filter((t) => typeof t === "number") : [];
-    } catch (err) { return []; }
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const windowStart = Number(parsed.windowStart) || 0;
+        const count = Number(parsed.count) || 0;
+        const lockUntil = Number(parsed.lockUntil) || 0;
+        if (windowStart > 0 && now - windowStart < winMs) {
+          return { windowStart, count: Math.max(0, count), lockUntil: lockUntil > now ? lockUntil : 0 };
+        }
+        return { windowStart: 0, count: 0, lockUntil: lockUntil > now ? lockUntil : 0 };
+      }
+    } catch (_err) { /* noop */ }
+    return { windowStart: 0, count: 0, lockUntil: 0 };
   },
-  _write(arr) {
-    try { SafeStorage.setItem(this._KEY, JSON.stringify(arr)); } catch (err) { /* noop */ }
+  _writeState(state) {
+    try { SafeStorage.setItem(this._KEY, JSON.stringify(state)); } catch (_err) { /* noop */ }
   },
   _windowMs() {
     return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitWindowMs)
@@ -13028,24 +13062,38 @@ const ClientThrottler = {
     return (typeof CLIENT_GUARD_CONFIG !== "undefined" && CLIENT_GUARD_CONFIG && CLIENT_GUARD_CONFIG.submitLockMs)
       ? CLIENT_GUARD_CONFIG.submitLockMs : 3000;
   },
-  isLocked() { return Date.now() < this._lockUntil; },
-  lock(ms) { this._lockUntil = Date.now() + (ms || this._submitLockMs()); },
+  isLocked() {
+    const now = Date.now();
+    return now < this._readState(now).lockUntil;
+  },
+  lock(ms) {
+    const now = Date.now();
+    const state = this._readState(now);
+    state.lockUntil = now + (ms || this._submitLockMs());
+    this._writeState(state);
+  },
   check() {
     const now = Date.now();
-    if (this.isLocked()) return { ok: false, reason: "locked", retryMs: this._lockUntil - now };
-    const recent = this._read().filter((t) => now - t < this._windowMs());
-    if (recent.length >= this._max()) {
-      const oldest = Math.min.apply(null, recent);
-      return { ok: false, reason: "rate", retryMs: Math.max(1000, oldest + this._windowMs() - now) };
+    const state = this._readState(now);
+    if (now < state.lockUntil) {
+      return { ok: false, reason: "locked", retryMs: state.lockUntil - now };
+    }
+    if (state.windowStart > 0 && now - state.windowStart < this._windowMs() && state.count >= this._max()) {
+      return { ok: false, reason: "rate", retryMs: Math.max(1000, state.windowStart + this._windowMs() - now) };
     }
     return { ok: true };
   },
   record() {
     const now = Date.now();
-    const recent = this._read().filter((t) => now - t < this._windowMs());
-    recent.push(now);
-    this._write(recent);
-    this.lock();
+    const state = this._readState(now);
+    if (!state.windowStart || now - state.windowStart >= this._windowMs()) {
+      state.windowStart = now;
+      state.count = 1;
+    } else {
+      state.count += 1;
+    }
+    state.lockUntil = now + this._submitLockMs();
+    this._writeState(state);
   }
 };
 
