@@ -783,6 +783,62 @@ html {
   }
 }
 
+/* Minimalist Holiday Season Accents (toggle via body.holiday-season) */
+body:not(.holiday-season) .holiday-pill {
+  display: none !important;
+}
+
+body.holiday-season nav::before,
+body.holiday-season header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.5), rgba(253, 230, 138, 0.65), rgba(56, 189, 248, 0.5), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes holidaySheen {
+  0%, 72% {
+    transform: translateX(-160%) skewX(-24deg);
+    opacity: 0;
+  }
+  78% {
+    opacity: 0.75;
+  }
+  92% {
+    transform: translateX(260%) skewX(-24deg);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateX(260%) skewX(-24deg);
+    opacity: 0;
+  }
+}
+
+body.holiday-season .holiday-cta-sheen::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 42%;
+  height: 140%;
+  background: linear-gradient(90deg, transparent, rgba(253, 230, 138, 0.36), rgba(255, 255, 255, 0.25), transparent);
+  pointer-events: none;
+  transform: translateX(-160%) skewX(-24deg);
+  animation: holidaySheen 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.holiday-season .holiday-cta-sheen::after {
+    animation: none !important;
+    display: none !important;
+  }
+}
+
 /* Modal Card Container */
 .modal-card {
   width: 100%;
