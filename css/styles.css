@@ -705,10 +705,30 @@ html {
   background: rgba(168, 85, 247, 0.6);
 }
 
-/* Floating WhatsApp FAB: z-40 + safe-area inset, never covers modal CTAs */
+/* Floating WhatsApp FAB: z-40 + iOS safe-area inset, never covers modal CTAs */
 #whatsapp-float {
-  z-index: 40;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  right: 1rem;
+  z-index: 40;
+}
+
+/* Navbar responsive Staff label (< 400px: "Staff", >= 400px: "Acceso Staff") */
+.nav-staff-short {
+  display: inline;
+}
+
+.nav-staff-full {
+  display: none;
+}
+
+@media (min-width: 400px) {
+  .nav-staff-short {
+    display: none;
+  }
+
+  .nav-staff-full {
+    display: inline;
+  }
 }
 
 /* Native smooth scrolling on iOS & modal viewport ergonomics */
@@ -3291,14 +3311,16 @@ select.ark-input:active {
 
 /* ---- Floating WhatsApp Safe Area Anchor ---- */
 .floating-wa-btn {
-  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-  right: 1.5rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  right: 1rem;
+  z-index: 40;
 }
 
 @media (min-width: 640px) {
+  #whatsapp-float,
   .floating-wa-btn {
-    bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
-    right: 2rem;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    right: 1.5rem;
   }
 }
 
@@ -8211,6 +8233,32 @@ body.rack-preview-open {
    during active scrolling, and restricts will-change strictly to moving elements.
    ============================================================ */
 @media (max-width: 768px) {
+
+  /* Eliminate full-page WebKit CPU repaints caused by background-attachment: fixed */
+  body {
+    background-attachment: scroll !important;
+  }
+
+  /* Defer offscreen layout & paint in iOS Safari / Mobile WebKit */
+  #esencia,
+  #formatos,
+  #biblioteca,
+  #proceso,
+  footer {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 520px;
+  }
+
+  /* Prevent giant offscreen blur orbs from spiking iOS Jetsam VRAM */
+  .animate-orb-1,
+  .animate-orb-2,
+  .animate-orb-3,
+  .animate-orb-slow,
+  .animate-orb-reverse {
+    animation: none !important;
+    filter: blur(48px) !important;
+    transform: none !important;
+  }
 
   /* Static elements MUST NOT consume persistent GPU memory layers */
   .gpu,

@@ -175,40 +175,40 @@
   <!-- Navigation Bar -->
   <nav
     class="sticky top-0 z-40 backdrop-blur-xl bg-[#0c0818]/90 border-b border-purple-500/20 shadow-lg shadow-purple-950/20">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-      <div class="flex items-center justify-between h-20">
+    <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 w-full">
+      <div class="flex items-center justify-between gap-2 h-14 sm:h-20">
         <!-- Logo (interactivo: abre la presentación de marca VIP) -->
         <a href="#" onclick="openBrandModal(); return false;" role="button"
           aria-label="Abrir presentación de marca Arkik Producciones"
-          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-0 cursor-pointer hover:scale-105 transition-all duration-300">
+          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-0 flex-shrink-0 cursor-pointer hover:scale-105 transition-all duration-300">
           <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
-            class="brand-logo brand-logo-nav h-8 sm:h-10 w-auto object-contain rounded-lg border border-purple-500/20 shadow-md shrink-0"
+            class="brand-logo brand-logo-nav w-9 h-9 sm:h-10 sm:w-auto object-cover sm:object-contain rounded-xl sm:rounded-lg border border-purple-500/20 shadow-md flex-shrink-0"
             loading="lazy" width="160" height="96" />
-          <div class="min-w-0">
-            <span class="hidden sm:block text-xl font-extrabold text-white tracking-tight">Arkik <span
+          <div class="min-w-0 hidden sm:block">
+            <span class="text-xl font-extrabold text-white tracking-tight">Arkik <span
                 class="text-gradient-purple">Producciones</span></span>
           </div>
         </a>
 
         <!-- Streamlined Navigation Menu -->
-        <div class="flex items-center space-x-2 sm:space-x-8 text-sm font-medium">
+        <div class="flex items-center gap-1.5 sm:gap-5 lg:gap-8 text-sm font-medium shrink-0">
           <a href="#formatos"
-            class="hidden sm:inline-block text-gray-300 hover:text-purple-400 transition-colors">Formatos Musicales</a>
+            class="hidden md:inline-block text-gray-300 hover:text-purple-400 transition-colors whitespace-nowrap">Formatos Musicales</a>
           <a href="#biblioteca"
-            class="hidden sm:inline-block text-gray-300 hover:text-purple-400 transition-colors">Galería / Videos</a>
+            class="hidden md:inline-block text-gray-300 hover:text-purple-400 transition-colors whitespace-nowrap">Galería / Videos</a>
 
           <!-- Main Navbar Admin Launcher ("Acceso Staff") -->
-          <div class="relative group">
-            <button type="button" onclick="openAdminModal()"
-              aria-label="Acceso Operativo (Ctrl + Shift + A)"
+          <div class="relative group shrink-0">
+            <button type="button" onclick="openAdminModal()" aria-label="Acceso Operativo (Ctrl + Shift + A)"
               title="Acceso Operativo (Ctrl + Shift + A)"
-              class="bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-semibold text-gray-300 hover:text-white px-4 py-2.5 rounded-full flex items-center justify-center gap-2 backdrop-blur-md transition-all duration-300 hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)] active:scale-95 min-h-[42px]">
-              <svg class="w-4 h-4 text-purple-400 group-hover:text-purple-300 transition-colors shrink-0" fill="none"
+              class="whitespace-nowrap bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-medium sm:font-semibold text-gray-300 hover:text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-full flex items-center justify-center gap-1.5 sm:gap-2 backdrop-blur-md transition-all duration-300 hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)] active:scale-95 min-h-[38px] sm:min-h-[42px]">
+              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 group-hover:text-purple-300 transition-colors shrink-0" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
-              <span>Acceso Staff</span>
+              <span class="nav-staff-short">Staff</span>
+              <span class="nav-staff-full">Acceso Staff</span>
             </button>
             <span
               class="hidden lg:block absolute right-0 top-full mt-2 whitespace-nowrap px-3 py-1.5 rounded-lg text-[10px] font-mono font-semibold text-gray-200 bg-[#0c0818]/95 border border-purple-500/30 shadow-2xl backdrop-blur-md opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none">
@@ -217,11 +217,11 @@
           </div>
 
           <button onclick="openBookingModal(1)"
-            class="holiday-cta-sheen group relative flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] overflow-hidden min-h-[44px] shrink-0">
-            <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            class="holiday-cta-sheen group relative whitespace-nowrap flex items-center justify-center gap-1.5 sm:gap-2.5 px-3.5 py-2 sm:px-7 sm:py-3.5 rounded-full sm:rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white text-xs sm:text-sm font-semibold sm:font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 sm:hover:-translate-y-0.5 shadow-md sm:shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] active:scale-95 overflow-hidden min-h-[38px] sm:min-h-[44px] shrink-0">
+            <svg class="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
             </svg>
-            Cotizar Ahora
+            <span>Cotizar Ahora</span>
           </button>
         </div>
       </div>
@@ -1108,13 +1108,14 @@
   </footer>
 
   <!-- Floating WhatsApp Button (Anchored with Safe-Area) -->
-  <a href="https://wa.me/50662274984" target="_blank" rel="noopener noreferrer" aria-label="Chatear con Arkik Productions por WhatsApp" role="link"
-    class="social-link fixed floating-wa-btn z-50 flex items-center justify-center gap-2.5 px-6 py-3.5 bg-green-500 hover:bg-green-400 text-white font-bold rounded-2xl shadow-[0_0_15px_rgba(34,197,94,0.4)] transition-all transform hover:-translate-y-1">
+  <a id="whatsapp-float" href="https://wa.me/50662274984" target="_blank" rel="noopener noreferrer"
+    aria-label="Chatear con Arkik Productions por WhatsApp" role="link"
+    class="social-link fixed floating-wa-btn w-12 h-12 sm:w-auto sm:h-12 p-0 sm:px-4 rounded-full flex items-center justify-center sm:gap-2 bg-[#25D366] hover:bg-[#22c35e] text-white font-bold text-sm shadow-[0_8px_24px_rgba(37,211,102,0.35)] active:scale-95 transition-all sm:hover:-translate-y-0.5">
     <svg class="w-6 h-6 fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path
         d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
     </svg>
-    <span>WhatsApp</span>
+    <span class="hidden sm:inline whitespace-nowrap">WhatsApp</span>
   </a>
 
   <!-- Tarjeta Ejecutiva VIP Lightbox (Glassmorphism VIP) -->
