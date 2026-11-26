@@ -90,6 +90,10 @@ function fnv1aHex(text) {
 // para que el usuario pueda cotizar, generar vouchers y confirmar reservas
 // sin una sola excepción de JavaScript durante la sesión.
 
+// Caché de lectura/escritura en memoria compartida con MemoryStorage y safeParse/safeSet.
+// Declarada explícitamente antes de MemoryStorage para evitar acoplamiento frágil por hoisting/TDZ.
+const MemoryCache = new Map();
+
 const MemoryStorage = (function () {
   const store = new Map();
   const api = {
@@ -102,11 +106,12 @@ const MemoryStorage = (function () {
       store.set(String(key), String(value));
     },
     removeItem(key) {
-      if (typeof MemoryCache !== 'undefined') MemoryCache.delete(key);
-      store.delete(String(key));
+      const k = String(key);
+      MemoryCache.delete(k);
+      store.delete(k);
     },
     clear() {
-      if (typeof MemoryCache !== 'undefined') MemoryCache.clear();
+      MemoryCache.clear();
       store.clear();
     },
     key(index) {
@@ -166,14 +171,22 @@ const SafeStorage = {
     return MemoryStorage.getItem(key);
   },
 
-  setItem(key, value) {
+  setItem(key, value, options) {
     const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    const rethrowQuota = Boolean(options && options.rethrowQuota);
     if (this._ensure()) {
       try {
         this._local.setItem(key, serialized);
         return true;
       } catch (err) {
-        /* cuota agotada o bloqueo puntual: degradar a memoria */
+        if (rethrowQuota && typeof isQuotaExceededException === "function" && isQuotaExceededException(err)) {
+          throw err;
+        }
+        /* cuota agotada o bloqueo puntual (navegación privada): degradar a memoria */
+        if (!rethrowQuota || (typeof isQuotaExceededException === "function" && !isQuotaExceededException(err))) {
+          this._localOk = false;
+          this._local = null;
+        }
       }
     }
     try {
@@ -296,8 +309,6 @@ const PerfGuard = {
     }, 120);
   }
 };
-
-const MemoryCache = new Map();
 
 function safeParse(key, fallback) {
   if (MemoryCache.has(key)) {
@@ -787,11 +798,7 @@ function safeSaveBookings(bookings) {
 
   const tryDirectWrite = function (arr) {
     const serialized = JSON.stringify(arr);
-    if (typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEYS.bookings, serialized);
-    } else {
-      SafeStorage.setItem(STORAGE_KEYS.bookings, serialized);
-    }
+    SafeStorage.setItem(STORAGE_KEYS.bookings, serialized, { rethrowQuota: true });
     MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(serialized));
     try { MemoryStorage.setItem(STORAGE_KEYS.bookings, serialized); } catch (e) { }
     return true;
@@ -802,7 +809,11 @@ function safeSaveBookings(bookings) {
   } catch (err) {
     if (!isQuotaExceededException(err)) {
       console.warn("[Arkik Security] Error no relacionado con cuota al guardar reservas:", err);
-      try { SafeStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(list)); } catch (e) { }
+      try {
+        const serialized = JSON.stringify(list);
+        SafeStorage.setItem(STORAGE_KEYS.bookings, serialized);
+        MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(serialized));
+      } catch (e) { }
       return false;
     }
 
@@ -847,7 +858,7 @@ function safeSaveBookings(bookings) {
         try {
           const fallbackJson = JSON.stringify(list);
           MemoryCache.set(STORAGE_KEYS.bookings, JSON.parse(fallbackJson));
-          MemoryStorage.setItem(STORAGE_KEYS.bookings, fallbackJson);
+          SafeStorage.setItem(STORAGE_KEYS.bookings, fallbackJson);
         } catch (memErr) { }
         return false;
       }
@@ -941,6 +952,35 @@ function updateOfflineModeBanner(forceOffline) {
     banner.classList.add("hidden");
   }
 }
+
+// Costa Rica no usa horario de verano (DST): UTC-6 fijo, alineado 100% con api/_lib/logic.js.
+const CR_OFFSET_MS = -6 * 3600 * 1000;
+
+function crIsoOf(instant) {
+  const ms = instant instanceof Date
+    ? instant.getTime()
+    : (typeof instant === "number" && Number.isFinite(instant) ? instant : Date.now());
+  const ref = Number.isFinite(ms) ? ms : Date.now();
+  return new Date(ref + CR_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+const ALLOWED_BOOKING_STATUS_CLASSES = new Set([
+  "pendiente", "confirmada", "realizada", "cancelada",
+  "pending", "confirmed", "completed", "cancelled",
+  "disabled", "soldout"
+]);
+
+function sanitizeBookingStatusClass(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return ALLOWED_BOOKING_STATUS_CLASSES.has(normalized) ? normalized : "pendiente";
+}
+
+const DEFAULT_GAM_PROVINCES_FALLBACK = ["San José", "Heredia", "Alajuela", "Cartago"];
+const DEFAULT_NON_GAM_EXCEPTIONS_FALLBACK = {
+  "San José": ["Pérez Zeledón"],
+  "Heredia": ["Sarapiquí"],
+  "Cartago": ["Turrialba"]
+};
 
 function isoOf(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -2184,7 +2224,9 @@ const AvailabilityManager = {
     const state = this.resolve(iso).state;
     if (state === "soldout" || state === "disabled") return 0;
     const details = this.getDetails(iso);
-    if (typeof details.remainingSlots === "number") return details.remainingSlots;
+    if (typeof details.remainingSlots === "number" && Number.isFinite(details.remainingSlots)) {
+      return Math.max(0, details.remainingSlots);
+    }
     const booked = BookingStore.countForDate(iso);
     return Math.max(0, DEFAULT_MAX_EVENTS_PER_DAY - booked);
   },
@@ -2256,56 +2298,6 @@ const BookingStore = {
     this.replace(list);
     this._hydratedAt = Date.now();
     return { ok: true, source: "remote", total: list.length };
-  },
-
-  _persistLocalBooking(booking, options) {
-    const opts = options || {};
-    this.load();
-    if (typeof PriceManager !== "undefined" && typeof PriceManager.load === "function") {
-      PriceManager.load();
-    }
-    if (typeof AvailabilityManager !== "undefined" && typeof AvailabilityManager.load === "function") {
-      AvailabilityManager.load();
-    }
-
-    if (!booking.code || !booking.code.startsWith("ARK-")) {
-      booking.code = (typeof generateBookingCode === "function")
-        ? generateBookingCode()
-        : ("ARK-" + ((typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") ? crypto.randomUUID().split("-")[0].toUpperCase() : Date.now().toString(16).slice(-8).toUpperCase()));
-    }
-    booking.status = booking.status || "pendiente";
-    booking.statusText = "Pendiente de Aprobación";
-    booking.statusLabel = "Pendiente de Aprobación";
-    booking.syncStatus = "offline_unverified";
-    booking.isOfflineDegraded = true;
-    enforceVerifiedTotalsOnBooking(booking, booking);
-    validateBookingSchema(booking);
-    booking.updatedAt = booking.updatedAt || new Date().toISOString();
-
-    const existingIdx = this._data.findIndex(function (b) { return b && b.code === booking.code; });
-    if (existingIdx >= 0) {
-      this._data[existingIdx] = booking;
-    } else {
-      this._data.unshift(booking);
-    }
-    this.persist();
-
-    if (opts.queuePayload) {
-      this._enqueueOfflineBooking(booking, opts.idempotencyKey, opts.queuePayload);
-    }
-    if (typeof AvailabilityManager !== "undefined" && AvailabilityManager._details && AvailabilityManager._details[booking.selectedDate]) {
-      delete AvailabilityManager._details[booking.selectedDate];
-    }
-    if (typeof CalendarModule !== "undefined" && typeof CalendarModule.render === "function") {
-      try { CalendarModule.render(); } catch (e) { }
-    }
-    if (opts.broadcastOnly) {
-      if (typeof CloudSync !== "undefined" && typeof CloudSync.broadcast === "function") {
-        CloudSync.broadcast("bookings", { code: booking.code, date: booking.selectedDate });
-      }
-    } else if (typeof CloudSync !== "undefined" && typeof CloudSync.notify === "function") {
-      CloudSync.notify("bookings", { code: booking.code, date: booking.selectedDate });
-    }
   },
 
   /**
@@ -3408,9 +3400,23 @@ class CartState {
 
   get isNonGam() {
     if (!this.province) return false;
-    if (!GAM_PROVINCES.includes(this.province)) return true;
+    const hasStorageCfg = typeof StorageEngine !== "undefined" && typeof StorageEngine.getConfig === "function";
+    const cfgGam = hasStorageCfg ? StorageEngine.getConfig("gamProvinces", null) : null;
+    const gamProvinces = Array.isArray(cfgGam) && cfgGam.length > 0
+      ? cfgGam
+      : (typeof GAM_PROVINCES !== "undefined" && Array.isArray(GAM_PROVINCES)
+        ? GAM_PROVINCES
+        : DEFAULT_GAM_PROVINCES_FALLBACK);
+    if (!gamProvinces.includes(this.province)) return true;
     if (!this.canton) return false;
-    return (NON_GAM_EXCEPTIONS[this.province] || []).includes(this.canton);
+    const cfgExceptions = hasStorageCfg ? StorageEngine.getConfig("nonGamExceptions", null) : null;
+    const exceptions = (cfgExceptions && typeof cfgExceptions === "object" && !Array.isArray(cfgExceptions))
+      ? cfgExceptions
+      : (typeof NON_GAM_EXCEPTIONS !== "undefined" && NON_GAM_EXCEPTIONS && typeof NON_GAM_EXCEPTIONS === "object"
+        ? NON_GAM_EXCEPTIONS
+        : DEFAULT_NON_GAM_EXCEPTIONS_FALLBACK);
+    const cantonExceptions = exceptions[this.province];
+    return Array.isArray(cantonExceptions) ? cantonExceptions.includes(this.canton) : false;
   }
 
   get locationKnown() {
@@ -3698,7 +3704,13 @@ function validateSlotAvailability(dateISO, timeSlot) {
 
   // Capacidad del día: el servidor manda (remainingSlots de detail/capacity)
   // y el conteo local solo queda como estimación heredada.
-  if (AvailabilityManager.remainingSlots(dateISO) <= 0) {
+  // Si remainingSlots devuelve undefined, null o NaN, se rechaza fail-closed
+  // (evita que undefined <= 0 sea false y deje pasar silenciosamente).
+  const remaining = AvailabilityManager.remainingSlots(dateISO);
+  if (typeof remaining !== "number" || !Number.isFinite(remaining)) {
+    return fail("availability_unverified", "Disponibilidad pendiente de sincronización. Intenta de nuevo en unos segundos.");
+  }
+  if (remaining <= 0) {
     return fail("day_full", "Este día ya no tiene cupos disponibles.");
   }
 
@@ -3861,18 +3873,24 @@ const CalendarModule = {
     this.selectedDate = "";
   },
 
-  // Calcula límites de fecha según reglas operativas
-  getThresholds() {
-    const now = new Date();
-    // 72 horas (3 días) de antelación mínima obligatoria
-    const minBookingDate = new Date(now.getTime() + LOGISTICS_CONFIG.minNoticeHours * 3600 * 1000);
-    const minISO = isoOf(minBookingDate);
+  // Calcula límites de fecha según reglas operativas en hora oficial de Costa Rica (UTC-6, sin DST).
+  // Alineado 100% con api/_lib/logic.js (assertCapacity).
+  getThresholds(referenceNow) {
+    const refMs = referenceNow instanceof Date && !Number.isNaN(referenceNow.getTime())
+      ? referenceNow.getTime()
+      : (typeof referenceNow === "number" && Number.isFinite(referenceNow) ? referenceNow : Date.now());
+    const minNoticeHours = Number(LOGISTICS_CONFIG && LOGISTICS_CONFIG.minNoticeHours) >= 0
+      ? Number(LOGISTICS_CONFIG.minNoticeHours)
+      : 72;
+    const maxHorizonDays = Number(LOGISTICS_CONFIG && LOGISTICS_CONFIG.maxHorizonDays) >= 0
+      ? Number(LOGISTICS_CONFIG.maxHorizonDays)
+      : 365;
 
-    // 365 días horizonte máximo
-    const maxBookingDate = new Date(now.getTime() + LOGISTICS_CONFIG.maxHorizonDays * 24 * 3600 * 1000);
-    const maxISO = isoOf(maxBookingDate);
+    const nowISO = crIsoOf(refMs);
+    const minISO = crIsoOf(refMs + minNoticeHours * 3600 * 1000);
+    const maxISO = crIsoOf(refMs + maxHorizonDays * 24 * 3600 * 1000);
 
-    return { nowISO: isoOf(now), minISO, maxISO };
+    return { nowISO, minISO, maxISO };
   },
 
   render() {
@@ -4000,6 +4018,9 @@ const CalendarModule = {
     if (override === "disabled") return { css: "ark-cal-day--disabled", selectable: false };
 
     const remaining = AvailabilityManager.remainingSlots(iso);
+    if (typeof remaining !== "number" || !Number.isFinite(remaining)) {
+      return { css: "ark-cal-day--soldout", selectable: false };
+    }
     if (remaining >= 2) {
       return { css: "ark-cal-day--available", selectable: true };
     }
@@ -5308,7 +5329,8 @@ const AdminModule = {
     }
     const localBookings = BookingStore.getBookingsForDate(iso).length;
     const remaining = AvailabilityManager.remainingSlots(iso);
-    const occupied = Math.max(localBookings, DEFAULT_MAX_EVENTS_PER_DAY - remaining);
+    const safeRemaining = (typeof remaining === "number" && Number.isFinite(remaining)) ? remaining : 0;
+    const occupied = Math.max(localBookings, DEFAULT_MAX_EVENTS_PER_DAY - safeRemaining);
     const count = Math.min(DEFAULT_MAX_EVENTS_PER_DAY, occupied);
     if (count === 0) return { key: "libre", label: "Libre", dot: "cal-dot--green" };
     if (count === 1) return { key: "parcial", label: "Parcial", dot: "cal-dot--yellow" };
@@ -5323,7 +5345,7 @@ const AdminModule = {
     this.calCursor = cursor;
     const [y, m] = cursor.split("-").map(Number);
     if (monthEl) monthEl.textContent = `${CALENDAR_LOCALE.months[m - 1]} ${y}`;
-    const today = isoOf(new Date());
+    const today = crIsoOf(Date.now());
     const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Semana inicia en lunes
     const daysInMonth = new Date(y, m, 0).getDate();
     const cells = [];
@@ -5376,36 +5398,95 @@ const AdminModule = {
       : st.key === "agotado" ? "status-badge--soldout"
         : st.key === "parcial" ? "status-badge--pendiente"
           : "status-badge--confirmada";
-    const rows = bookings.length ? bookings.map(b => {
-      const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
-      const setup = sanitizeInput(service ? service.setup_display : (b.setupDisplay || "2h antes"));
-      const teardown = sanitizeInput(service ? service.teardown_display : (b.teardownDisplay || "1h después"));
-      return `
-      <div class="p-3 rounded-xl bg-black/30 border border-white/5 space-y-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="font-mono font-extrabold text-purple-300 text-xs">${sanitizeInput(b.code)}</span>
-          <span class="status-badge status-badge--${b.status}">${BOOKING_STATUSES[b.status] || sanitizeInput(b.status)}</span>
-        </div>
-        <p class="text-sm font-bold text-white">${sanitizeInput(b.clientName)}</p>
-        <p class="text-[11px] text-gray-400">${sanitizeInput(b.serviceName)}${b.eventType ? " · " + sanitizeInput(b.eventType) : ""}${b.selectedTime ? " · " + sanitizeInput(b.selectedTime) : ""}</p>
-        <p class="text-[11px] text-gray-500">Logística: Montaje ${setup} · Desmontaje ${teardown}</p>
-        <p class="text-[11px] text-gray-500">${sanitizeInput(b.canton)}, ${sanitizeInput(b.province)}</p>
-        <p class="text-[11px] text-gray-500">Contacto: ${sanitizeInput(b.clientPhone)}${b.clientEmail ? " · " + sanitizeInput(b.clientEmail) : ""}</p>
-        <p class="text-[11px] text-gray-500">Ref. SINPE: <span class="font-mono font-bold text-cyan-300">${b.sinpeRef ? sanitizeInput(b.sinpeRef) : "S/N"}</span></p>
-      </div>`;
-    }).join("") : `<p class="text-xs text-gray-500 text-center py-4">Sin eventos. Día libre.</p>`;
 
     sheet.innerHTML = `
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <span class="text-[10px] font-bold text-pink-400 uppercase tracking-widest">Logística del Día</span>
-          <h5 class="text-sm font-bold text-white">${formatDisplayDate(iso)} · ${weekday}</h5>
+          <h5 class="text-sm font-bold text-white" data-day-sheet-title></h5>
         </div>
-        <span class="status-badge ${chipClass}">${st.label}</span>
+        <span class="status-badge ${chipClass}" data-day-sheet-chip></span>
         <button type="button" data-day-sheet-close onclick="AdminModule.calSelectedDay = ''; AdminModule.hideDaySheet();"
           class="admin-act-btn admin-act-btn--neutral">Cerrar</button>
       </div>
-      <div class="space-y-2 mt-3">${rows}</div>`;
+      <div class="space-y-2 mt-3" data-day-sheet-rows></div>`;
+
+    const titleEl = sheet.querySelector("[data-day-sheet-title]");
+    if (titleEl) titleEl.textContent = `${formatDisplayDate(iso)} · ${weekday}`;
+    const chipEl = sheet.querySelector("[data-day-sheet-chip]");
+    if (chipEl) chipEl.textContent = st.label;
+
+    const rowsWrap = sheet.querySelector("[data-day-sheet-rows]");
+    if (rowsWrap) {
+      if (!bookings.length) {
+        const emptyP = document.createElement("p");
+        emptyP.className = "text-xs text-gray-500 text-center py-4";
+        emptyP.textContent = "Sin eventos. Día libre.";
+        rowsWrap.appendChild(emptyP);
+      } else {
+        bookings.forEach((b) => {
+          const service = CATALOG_SERVICES.find(s => s.id === b.serviceId);
+          const setup = service ? service.setup_display : (b.setupDisplay || "2h antes");
+          const teardown = service ? service.teardown_display : (b.teardownDisplay || "1h después");
+          const safeStatusClass = sanitizeBookingStatusClass(b.status);
+          const statusLabel = (BOOKING_STATUSES && BOOKING_STATUSES[safeStatusClass]) || String(b.status || safeStatusClass);
+
+          const card = document.createElement("div");
+          card.className = "p-3 rounded-xl bg-black/30 border border-white/5 space-y-1";
+
+          const topRow = document.createElement("div");
+          topRow.className = "flex flex-wrap items-center gap-2";
+
+          const codeSpan = document.createElement("span");
+          codeSpan.className = "font-mono font-extrabold text-purple-300 text-xs";
+          codeSpan.textContent = String(b.code || "");
+
+          const statusSpan = document.createElement("span");
+          statusSpan.className = `status-badge status-badge--${safeStatusClass}`;
+          statusSpan.textContent = statusLabel;
+
+          topRow.appendChild(codeSpan);
+          topRow.appendChild(statusSpan);
+          card.appendChild(topRow);
+
+          const clientP = document.createElement("p");
+          clientP.className = "text-sm font-bold text-white";
+          clientP.textContent = String(b.clientName || "");
+          card.appendChild(clientP);
+
+          const svcP = document.createElement("p");
+          svcP.className = "text-[11px] text-gray-400";
+          svcP.textContent = `${String(b.serviceName || "")}${b.eventType ? " · " + String(b.eventType) : ""}${b.selectedTime ? " · " + String(b.selectedTime) : ""}`;
+          card.appendChild(svcP);
+
+          const logP = document.createElement("p");
+          logP.className = "text-[11px] text-gray-500";
+          logP.textContent = `Logística: Montaje ${String(setup)} · Desmontaje ${String(teardown)}`;
+          card.appendChild(logP);
+
+          const locP = document.createElement("p");
+          locP.className = "text-[11px] text-gray-500";
+          locP.textContent = `${String(b.canton || "")}, ${String(b.province || "")}`;
+          card.appendChild(locP);
+
+          const contactP = document.createElement("p");
+          contactP.className = "text-[11px] text-gray-500";
+          contactP.textContent = `Contacto: ${String(b.clientPhone || "")}${b.clientEmail ? " · " + String(b.clientEmail) : ""}`;
+          card.appendChild(contactP);
+
+          const sinpeP = document.createElement("p");
+          sinpeP.className = "text-[11px] text-gray-500";
+          sinpeP.textContent = "Ref. SINPE: ";
+          const sinpeCode = document.createElement("span");
+          sinpeCode.className = "font-mono font-bold text-cyan-300";
+          sinpeCode.textContent = b.sinpeRef ? String(b.sinpeRef) : "S/N";
+          sinpeP.appendChild(sinpeCode);
+          card.appendChild(sinpeP);
+
+          rowsWrap.appendChild(card);
+        });
+      }
+    }
     sheet.classList.remove("hidden");
   },
 
@@ -5420,7 +5501,7 @@ const AdminModule = {
     const input = document.getElementById("admin-resched-date");
     if (input) {
       input.value = "";
-      input.min = isoOf(new Date(Date.now() + 3 * 86400000)); // antelación mínima 72 h
+      input.min = CalendarModule.getThresholds().minISO; // antelación mínima 72 h (CR UTC-6)
     }
     ModalController.open("adminRescheduleModal");
   },
@@ -9397,6 +9478,8 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
   let logicalW = 0;
   let logicalH = 0;
   let resizeTimer = null;
+  let ro = null;
+  let hasWindowResizeListener = false;
   const DPR_CAP = 2;
 
   function resizeNow() {
@@ -9416,19 +9499,38 @@ function createDynamicCanvasController(canvas, container, ctx, onAfterResize) {
   function debouncedResize() {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
+      resizeTimer = null;
       resizeNow();
     }, 150);
   }
 
   if (typeof ResizeObserver === "function" && container) {
-    const ro = new ResizeObserver(debouncedResize);
+    ro = new ResizeObserver(debouncedResize);
     ro.observe(container);
-  } else {
+  } else if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
     window.addEventListener("resize", debouncedResize, { passive: true });
+    hasWindowResizeListener = true;
+  }
+
+  function destroy() {
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+      resizeTimer = null;
+    }
+    if (ro) {
+      try { ro.disconnect(); } catch (_err) { /* noop */ }
+      ro = null;
+    }
+    if (hasWindowResizeListener && typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+      window.removeEventListener("resize", debouncedResize);
+      hasWindowResizeListener = false;
+    }
   }
 
   return {
     resizeNow,
+    destroy,
+    cleanup: destroy,
     get width() { return logicalW; },
     get height() { return logicalH; }
   };
@@ -10076,10 +10178,19 @@ document.addEventListener("DOMContentLoaded", () => {
 // El evento `storage` solo se dispara en las OTRAS pestañas del mismo
 // navegador, no en quien escribió. Sirve para detectar en tiempo real que
 // otra pestaña ocupó el turno seleccionado y avisar antes del envío.
-function setupCrossTabSync() {
-  if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+let _activeCrossTabSyncCleanup = null;
 
-  window.addEventListener("storage", (event) => {
+function setupCrossTabSync() {
+  if (typeof window === "undefined" || typeof window.addEventListener !== "function") {
+    const noop = () => { };
+    return { destroy: noop, cleanup: noop };
+  }
+
+  if (typeof _activeCrossTabSyncCleanup === "function") {
+    _activeCrossTabSyncCleanup();
+  }
+
+  const onStorage = (event) => {
     if (!event) return;
     // key === null significa storage.clear() en otra pestaña.
     if (event.key !== null && event.key !== STORAGE_KEYS.bookings && event.key !== STORAGE_KEYS.availability) return;
@@ -10100,7 +10211,24 @@ function setupCrossTabSync() {
     } catch (err) {
       console.warn("[Arkik] Cross-tab sync:", err);
     }
-  }, { passive: true });
+  };
+
+  window.addEventListener("storage", onStorage, { passive: true });
+
+  let active = true;
+  const destroy = () => {
+    if (!active) return;
+    active = false;
+    if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+      window.removeEventListener("storage", onStorage);
+    }
+    if (_activeCrossTabSyncCleanup === destroy) {
+      _activeCrossTabSyncCleanup = null;
+    }
+  };
+
+  _activeCrossTabSyncCleanup = destroy;
+  return { destroy, cleanup: destroy };
 }
 
 function initApp() {
