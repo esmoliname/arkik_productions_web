@@ -286,7 +286,7 @@ const PerfGuard = {
         if (typeof AnimationRegistry !== "undefined" && typeof AnimationRegistry.resumeAfterScroll === "function") {
           AnimationRegistry.resumeAfterScroll();
         }
-      }, 120);
+      }, 160);
     };
 
     window.addEventListener("scroll", onScrollActivity, { passive: true, capture: true });
@@ -5782,8 +5782,8 @@ const AdminModule = {
     const rows = items.map(item => `
       <div class="admin-media-row flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/10" data-media-id="${sanitizeInput(item.id)}">
         <div class="flex items-center gap-3 min-w-0">
-          <div class="w-12 h-12 rounded-xl overflow-hidden bg-black/50 flex-shrink-0 border border-white/15">
-            <img src="${sanitizeUrl(item.thumbnail)}" alt="${sanitizeInput(item.title)}" class="w-full h-full object-cover">
+          <div class="w-12 h-12 aspect-square rounded-xl overflow-hidden bg-black/50 flex-shrink-0 border border-white/15">
+            <img src="${sanitizeUrl(item.thumbnail)}" alt="${sanitizeInput(item.title)}" loading="lazy" decoding="async" width="96" height="96" class="w-full h-full object-cover">
           </div>
           <div class="min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
@@ -6300,7 +6300,7 @@ function bookingCard(b) {
   const isCancelled = b.status === "cancelada";
 
   const voucherThumbBadge = b.voucherImage
-    ? `<img src="${b.voucherImage}" alt="Miniatura SINPE" class="w-4 h-4 rounded object-cover border border-purple-400/50 shrink-0">`
+    ? `<img src="${b.voucherImage}" alt="Miniatura SINPE" loading="lazy" decoding="async" width="16" height="16" class="w-4 h-4 rounded object-cover border border-purple-400/50 shrink-0">`
     : `<svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
   const voucherMissingWarn = hasVoucherAttached
     ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono">Adjunto</span>`
@@ -8384,7 +8384,7 @@ async function openRackPreview(code) {
         ${booking.voucherImage ? `
         <div class="p-4 rounded-xl bg-white/5 border border-emerald-500/30">
           <p class="text-[10px] font-bold tracking-widest text-emerald-300/70 uppercase mb-2">Comprobante SINPE Adjunto ✅</p>
-          <img src="${booking.voucherImage}" alt="Comprobante SINPE" class="rounded-lg max-h-48 object-contain border border-emerald-500/30 cursor-pointer hover:opacity-80 transition-opacity" onclick="closeRackPreview(); AdminModule.openVoucherPreview('${booking.voucherImage}')" style="cursor:pointer;">
+          <img src="${booking.voucherImage}" alt="Comprobante SINPE" loading="lazy" decoding="async" class="rounded-lg max-h-48 object-contain border border-emerald-500/30 cursor-pointer hover:opacity-80 transition-opacity" onclick="closeRackPreview(); AdminModule.openVoucherPreview('${booking.voucherImage}')" style="cursor:pointer;">
         </div>` : booking.hasVoucher ? `
         <div class="p-4 rounded-xl bg-white/5 border border-amber-500/30">
           <p class="text-[10px] font-bold tracking-widest text-amber-300/70 uppercase mb-2">Comprobante SINPE no disponible ⚠️</p>
@@ -10469,8 +10469,8 @@ function renderCatalog(services, category = "Todos") {
       ` : ""}
 
       <div>
-        <div class="catalog-card__media h-48 sm:h-52 w-full relative overflow-hidden rounded-t-2xl bg-[#090514]">
-          <img src="${service.image_url}" alt="${sanitizeInput(service.alt || service.name)}" loading="lazy" decoding="async" class="catalog-card__img w-full h-full object-cover" />
+        <div class="catalog-card__media aspect-[4/3] w-full relative overflow-hidden rounded-t-2xl bg-[#090514]">
+          <img src="${service.image_url}" alt="${sanitizeInput(service.alt || service.name)}" loading="lazy" decoding="async" width="800" height="600" class="catalog-card__img w-full h-full object-cover" />
           <div class="catalog-card__overlay absolute inset-0"></div>
           <span class="absolute bottom-3 left-4 text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-300">
             ${sanitizeInput(service.category)}
@@ -10694,7 +10694,7 @@ function galleryInstagramCard(item) {
     <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-2xl sm:rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
-        <img src="${thumbnail}" alt="${title}" loading="lazy"
+        <img src="${thumbnail}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
              class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
 
         <!-- Dual Scrim: Subtle Top Readability + Deep Bottom Contrast -->
@@ -10733,7 +10733,7 @@ function galleryVideoCard(item) {
     <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-[#07040e]">
-        <img src="${thumbnail}" alt="${title}" loading="lazy"
+        <img src="${thumbnail}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
           class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
         <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-[#07040e] via-[#07040e]/75 to-transparent pointer-events-none"></div>
@@ -10768,7 +10768,7 @@ function galleryImageCard(item) {
     <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
-        <img src="${url}" alt="${title}" loading="lazy"
+        <img src="${url}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
           class="w-full h-full object-cover hover:scale-105 group-hover:scale-105 transition-transform duration-700 ease-out" />
         <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-[#07040e] via-[#07040e]/75 to-transparent pointer-events-none"></div>
@@ -10868,6 +10868,7 @@ function renderLightboxItem(item) {
     const wrap = document.createElement("div");
     wrap.className = "relative w-full h-full flex flex-col items-center justify-center overflow-hidden";
     const img = document.createElement("img");
+    img.decoding = "async";
     img.src = src;
     img.alt = item.title;
     img.className = "w-full h-full object-cover";
@@ -10889,6 +10890,7 @@ function renderLightboxItem(item) {
     slot.appendChild(wrap);
   } else {
     const img = document.createElement("img");
+    img.decoding = "async";
     img.src = item.thumbnail || item.directUrl || resolveDefaultGalleryThumbnail(item);
     img.alt = item.title;
     img.className = "w-full h-full object-contain bg-black";
@@ -13899,7 +13901,7 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
   const voucherThumbnailHtml = safeImg ? `
     <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-500/20 text-center">
       <span class="text-[10px] font-semibold text-gray-400 block mb-2">Comprobante SINPE Adjunto:</span>
-      <img src="${safeImg}" alt="Comprobante SINPE subido" class="max-h-36 max-w-full mx-auto rounded-lg border border-purple-500/40 object-contain shadow-md" />
+      <img src="${safeImg}" alt="Comprobante SINPE subido" loading="lazy" decoding="async" class="max-h-36 max-w-full mx-auto rounded-lg border border-purple-500/40 object-contain shadow-md" />
       ${b.sinpeRef ? `<p class="text-[10px] text-emerald-300 font-mono mt-1.5">Ref: ${sanitizeInput(b.sinpeRef)}</p>` : ''}
     </div>
   ` : (b.sinpeRef ? `
@@ -13936,7 +13938,7 @@ function renderConfirmedVoucherScreen(booking, waUrl) {
       <div id="voucher-printable-area" class="glass-panel p-5 rounded-2xl text-left space-y-3 text-xs border border-purple-500/30 shadow-xl shadow-purple-950/40">
         <div class="flex items-center justify-between border-b border-purple-500/20 pb-3">
           <div class="flex items-center space-x-2">
-            <img src="img/arkik_logo.jpg" alt="Arkik Productions" class="h-8 w-auto rounded border border-purple-500/30">
+            <img src="img/arkik_logo.jpg" alt="Arkik Productions" loading="lazy" decoding="async" width="128" height="76" class="h-8 w-auto rounded border border-purple-500/30">
             <div>
               <span class="font-extrabold text-white text-sm">Arkik Productions</span>
               <p class="text-[9px] text-gray-400">Granadilla, SJ · +506 6227-4984</p>

@@ -1282,13 +1282,13 @@ html {
 
 /* ---- Tarjeta Ejecutiva Lightbox (Glassmorphism VIP) ---- */
 
-/* Avatar interactivo de Juan José (sección #esencia): resplandor neón envolvente */
+/* Avatar interactivo de Juan José (sección #esencia): acabado limpio sin halo pesado */
 .executive-avatar {
-  box-shadow: 0 0 14px rgba(168, 85, 247, 0.35), 0 4px 18px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 
 .executive-avatar:hover {
-  box-shadow: 0 0 28px rgba(236, 72, 153, 0.5), 0 6px 22px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.35), 0 6px 18px rgba(0, 0, 0, 0.55);
 }
 
 /* Resplandor ambiental posterior (backlight glow solo detrás/contornos de la tarjeta, nunca sobre la foto) */
@@ -1472,42 +1472,37 @@ html {
 
 /* ---- Marco de Esencia: cristal limpio + ambientación continua estilo footer ---- */
 
-/* Cuadro grande principal (#esencia): cristal profundo esmerilado, sin mallas ni tramas */
-.esencia-sphere-card {
+/* ---- Sección #esencia: tarjetas oscuras sobrias y limpias ---- */
+#esencia .esencia-inner-card {
+  position: relative;
+  z-index: 10;
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
+}
+
+#esencia .esencia-testimonial-card {
   position: relative;
   z-index: 10;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 50px rgba(168, 85, 247, 0.16), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
 }
 
-.esencia-sphere-card:hover {
-  border-color: rgba(168, 85, 247, 0.3);
-  box-shadow: 0 0 65px rgba(168, 85, 247, 0.25), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
+#esencia .esencia-testimonial-card blockquote {
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: -0.005em;
 }
 
-/* Cristal ultralimpio translúcido para las tarjetas interiores */
-/* Fondo oscuro fluido continuo SIN mallas ni tramas; solo luz ambiental difusa */
-.esencia-glass-card,
-.esencia-inner-card {
-  position: relative;
-  z-index: 10;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Tarjeta de Juan José: mismo cristal continuo con borde bioluminiscente púrpura.
-   Recorta los glows internos para no generar el parche oscuro (bache negro). */
-.esencia-testimonial-card {
-  overflow: hidden;
-  border-color: rgba(168, 85, 247, 0.2);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px rgba(168, 85, 247, 0.12);
+/* Aísla el <footer> de firma de las reglas globales de <footer> de página */
+#esencia .esencia-testimonial-card .esencia-signature {
+  contain: none;
+  overflow: visible;
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+  width: 100%;
 }
 
 /* ---- Full-Bleed Section Continuity (no gaps at any zoom level) ---- */
@@ -6447,16 +6442,11 @@ textarea:disabled,
    toca app.js: todo se aplica vía overrides CSS con scope #catalog-grid.
    ════════════════════════════════════════════════════════════════ */
 
-/* ── #esencia: contenedores internos con halo elegante y vidrio esmerilado profundo ── */
+/* ── #esencia: superficie oscura sobria y uniforme ── */
 #esencia .esencia-inner-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 20px 40px -15px rgba(0, 0, 0, 0.7),
-    0 0 35px rgba(147, 51, 234, 0.15),
-    0 0 70px rgba(168, 85, 247, 0.10);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
 }
 
 /* ── Tarjetas del catálogo: dark glassmorphic de alta gama ──
@@ -8429,15 +8419,68 @@ body.rack-preview-open {
     background-color: rgba(10, 6, 24, 0.96) !important;
   }
 
-  .esencia-inner-card {
-    background: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  #esencia .esencia-inner-card {
+    background: #0b0716 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  /* RAPID TOUCH-SCROLLING MODE: completely disable blur and heavy glow shadows */
+  #esencia .esencia-testimonial-card {
+    background: #0b0716 !important;
+    border: 1px solid rgba(168, 85, 247, 0.18) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  #esencia .esencia-testimonial-card .esencia-signature {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+  }
+
+  /* Elimina backdrop-blur pesados con especificidad de ID en móvil (#catalog-grid, #proceso, #cobertura, #gallery-grid) */
+  .mobile-safe-nav,
+  #catalog-grid .glass-panel,
+  #proceso .glass-panel,
+  #cobertura .glass-panel,
+  #cobertura .command-val-card,
+  #gallery-grid [class*="backdrop-blur"],
+  .extra-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .mobile-safe-nav {
+    background-color: rgba(12, 8, 24, 0.96) !important;
+  }
+
+  #catalog-grid .glass-panel,
+  #proceso .glass-panel,
+  #cobertura .glass-panel {
+    background: #0b0716 !important;
+    box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6) !important;
+  }
+
+  /* Evita filtros de píxel y transiciones pesadas sobre imágenes en celular al decodificar */
+  .catalog-card__img,
+  #gallery-grid .gallery-card img {
+    filter: none !important;
+    transition: none !important;
+  }
+
+  /* RAPID TOUCH-SCROLLING MODE: pausa animaciones CSS y apaga sombras/blurs durante el scroll */
+  body.is-scrolling *,
+  body.is-scrolling *::before,
+  body.is-scrolling *::after {
+    animation-play-state: paused !important;
+  }
+
   body.is-scrolling [class*="backdrop-blur"],
+  body.is-scrolling #catalog-grid .glass-panel,
   body.is-scrolling .esencia-inner-card,
+  body.is-scrolling .esencia-testimonial-card,
   body.is-scrolling .modal-overlay,
   body.is-scrolling .modal-card,
   body.is-scrolling .bg-glow-purple,
@@ -8906,4 +8949,86 @@ body.modal-open .floating-wa-btn {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* ============================================================
+   MOBILE APP ERGONOMICS — Safe-Area, Scroll Containment & Touch
+   ------------------------------------------------------------
+   Elimina desplazamientos accidentales del fondo, desbordes
+   horizontales y recortes en bordes en iOS / Android sin tocar
+   la lógica del cotizador ni la seguridad.
+   ============================================================ */
+html,
+body {
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+.mobile-safe-nav {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+#whatsapp-float {
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, calc(0.875rem + env(safe-area-inset-bottom, 0px)));
+}
+
+/* Bloqueo estricto del scroll del fondo al abrir cualquier modal */
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none;
+}
+
+/* Restaura gestos de scroll táctil exclusivamente dentro de los cuerpos de modales */
+#booking-modal .booking-modal-body,
+#executive-modal,
+#brand-modal,
+#adminLoginModal,
+#adminPortalModal,
+#preInvoicePreviewModal {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Evita que el FAB de WhatsApp tape el copyright o enlaces al final del footer */
+  #master-liquid-footer {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Resguardo de bordes laterales y notch en lightboxes móviles */
+  #executive-modal,
+  #brand-modal {
+    padding:
+      max(1rem, env(safe-area-inset-top, 0px))
+      max(0.75rem, env(safe-area-inset-right, 0px))
+      max(1rem, env(safe-area-inset-bottom, 0px))
+      max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+
+  #executive-modal .executive-lightbox,
+  #brand-modal .brand-lightbox {
+    width: 100%;
+    max-width: min(24rem, 100%);
+  }
+
+  /* Evita recortes horizontales en secciones con safe-area landscape */
+  section > .max-w-7xl,
+  footer > .max-w-7xl {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
 }

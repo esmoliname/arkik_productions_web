@@ -181,16 +181,16 @@
 
   <!-- Navigation Bar -->
   <nav
-    class="sticky top-0 z-40 backdrop-blur-xl bg-[#0c0818]/90 border-b border-purple-500/20 shadow-lg shadow-purple-950/20">
-    <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 w-full">
-      <div class="flex items-center justify-between gap-2 h-14 sm:h-20">
+    class="mobile-safe-nav sticky top-0 z-40 backdrop-blur-xl bg-[#0c0818]/90 border-b border-purple-500/20 shadow-lg shadow-purple-950/20">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full">
+      <div class="flex items-center justify-between gap-2 min-h-[60px] sm:h-20 py-1.5 sm:py-0">
         <!-- Logo (interactivo: abre la presentación de marca VIP) -->
         <a href="#" onclick="openBrandModal(); return false;" role="button"
           aria-label="Abrir presentación de marca Arkik Producciones"
-          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-0 flex-shrink-0 cursor-pointer hover:scale-105 transition-all duration-300">
+          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-[44px] min-h-[44px] flex-shrink-0 cursor-pointer hover:scale-105 transition-all duration-300">
           <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
-            class="brand-logo brand-logo-nav w-9 h-9 sm:h-10 sm:w-auto object-cover sm:object-contain rounded-xl sm:rounded-lg border border-purple-500/20 shadow-md flex-shrink-0"
-            loading="lazy" width="160" height="96" />
+            class="brand-logo brand-logo-nav w-10 h-10 sm:h-10 sm:w-auto object-cover sm:object-contain rounded-xl sm:rounded-lg border border-purple-500/20 shadow-md flex-shrink-0"
+            decoding="async" fetchpriority="high" width="160" height="96" />
           <div class="min-w-0 hidden sm:block">
             <span class="text-xl font-extrabold text-white tracking-tight">Arkik <span
                 class="text-gradient-purple">Producciones</span></span>
@@ -198,7 +198,7 @@
         </a>
 
         <!-- Streamlined Navigation Menu -->
-        <div class="flex items-center gap-1.5 sm:gap-5 lg:gap-8 text-sm font-medium shrink-0">
+        <div class="flex items-center gap-2 sm:gap-5 lg:gap-8 text-sm font-medium shrink-0">
           <a href="#formatos"
             class="hidden md:inline-block text-gray-300 hover:text-purple-400 transition-colors whitespace-nowrap">Formatos Musicales</a>
           <a href="#biblioteca"
@@ -208,7 +208,7 @@
           <div class="relative group shrink-0">
             <button type="button" onclick="openAdminModal()" aria-label="Acceso Operativo (Ctrl + Shift + A)"
               title="Acceso Operativo (Ctrl + Shift + A)"
-              class="whitespace-nowrap bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-medium sm:font-semibold text-gray-300 hover:text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-full flex items-center justify-center gap-1.5 sm:gap-2 backdrop-blur-md transition-all duration-300 hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)] active:scale-95 min-h-[38px] sm:min-h-[42px]">
+              class="whitespace-nowrap bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-medium sm:font-semibold text-gray-300 hover:text-white px-3.5 py-2.5 sm:px-4 sm:py-2.5 rounded-full flex items-center justify-center gap-1.5 sm:gap-2 backdrop-blur-md transition-all duration-300 hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)] active:scale-95 min-h-[44px] min-w-[44px]">
               <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 group-hover:text-purple-300 transition-colors shrink-0" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -224,7 +224,7 @@
           </div>
 
           <button onclick="openBookingModal(1)"
-            class="holiday-cta-sheen group relative whitespace-nowrap flex items-center justify-center gap-1.5 sm:gap-2.5 px-3.5 py-2 sm:px-7 sm:py-3.5 rounded-full sm:rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white text-xs sm:text-sm font-semibold sm:font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 sm:hover:-translate-y-0.5 shadow-md sm:shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] active:scale-95 overflow-hidden min-h-[38px] sm:min-h-[44px] shrink-0">
+            class="holiday-cta-sheen group relative whitespace-nowrap flex items-center justify-center gap-1.5 sm:gap-2.5 px-4 py-2.5 sm:px-7 sm:py-3.5 rounded-full sm:rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white text-xs sm:text-sm font-semibold sm:font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 sm:hover:-translate-y-0.5 shadow-md sm:shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] active:scale-95 overflow-hidden min-h-[44px] shrink-0">
             <svg class="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
             </svg>
@@ -288,7 +288,7 @@
 
           <!-- Benefit 1: 2 Horas Base -->
           <div
-            class="benefit-card benefit-mesh-1 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
+            class="benefit-card benefit-mesh-1 p-4 sm:p-6 rounded-2xl flex items-center gap-3.5 sm:gap-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
             <div
               class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600/20 to-purple-900/40 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 group-hover:border-purple-400 transition-all shrink-0">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -296,9 +296,9 @@
                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
             </div>
-            <div class="relative z-10">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg font-extrabold text-white tracking-tight">2 Horas Base</span>
+            <div class="relative z-10 min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-base sm:text-lg font-extrabold text-white tracking-tight">2 Horas Base</span>
                 <span
                   class="neon-pill px-2.5 py-0.5 rounded-full bg-purple-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-purple-400/70">Estándar</span>
               </div>
@@ -310,7 +310,7 @@
 
           <!-- Benefit 2: 50% SINPE -->
           <div
-            class="benefit-card benefit-mesh-2 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
+            class="benefit-card benefit-mesh-2 p-4 sm:p-6 rounded-2xl flex items-center gap-3.5 sm:gap-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
             <div
               class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-900/40 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-110 group-hover:border-emerald-400 transition-all shrink-0">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -319,9 +319,9 @@
                 </path>
               </svg>
             </div>
-            <div class="relative z-10">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg font-extrabold text-emerald-400 tracking-tight">50% Reserva SINPE</span>
+            <div class="relative z-10 min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-base sm:text-lg font-extrabold text-emerald-400 tracking-tight">50% Reserva SINPE</span>
                 <span
                   class="neon-pill neon-pill-emerald px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-emerald-400/70">Garantizado</span>
               </div>
@@ -332,7 +332,7 @@
 
           <!-- Benefit 3: GAM ₡0 Cobertura -->
           <div
-            class="benefit-card benefit-mesh-3 p-6 rounded-2xl flex items-center space-x-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
+            class="benefit-card benefit-mesh-3 p-4 sm:p-6 rounded-2xl flex items-center gap-3.5 sm:gap-4 group hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(236,72,153,0.2)] transition-all duration-300">
             <div
               class="relative z-10 w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600/20 to-indigo-900/40 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-110 group-hover:border-indigo-400 transition-all shrink-0">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -342,9 +342,9 @@
                   d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
               </svg>
             </div>
-            <div class="relative z-10">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg font-extrabold text-indigo-400 tracking-tight">Cobertura GAM ₡0</span>
+            <div class="relative z-10 min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-base sm:text-lg font-extrabold text-indigo-400 tracking-tight">Cobertura GAM ₡0</span>
                 <span
                   class="neon-pill neon-pill-indigo px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-white text-[10px] font-black uppercase tracking-wider border border-indigo-400/70">Sin
                   Viáticos</span>
@@ -358,105 +358,74 @@
       </div>
     </section>
 
-    <!-- Nuestra Esencia / Quiénes Somos (Full-Bleed Container) -->
+    <!-- Nuestra Esencia / Quiénes Somos (Estilo oscuro sobrio y limpio) -->
     <section id="esencia" class="w-full relative z-10 overflow-hidden py-12 sm:py-16 md:py-24">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full relative z-10">
-        <div
-          class="esencia-sphere-card relative z-10 overflow-hidden rounded-3xl p-8 md:p-12 my-4 sm:my-8 border border-white/10 shadow-2xl">
-          <!-- Ambient Neon Glows (Deep Background Isolated) -->
-          <div class="absolute -top-28 -right-28 w-80 h-80 bg-glow-purple pointer-events-none -z-10 animate-orb-slow">
-          </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
+
+          <!-- Col 1: Nuestra Esencia — superficie oscura sobria y limpia -->
           <div
-            class="absolute -bottom-28 -left-28 w-80 h-80 bg-glow-pink opacity-40 pointer-events-none -z-10 animate-orb-reverse">
-          </div>
+            class="esencia-inner-card bg-[#0b0716]/95 border border-white/10 rounded-2xl sm:rounded-3xl p-6 sm:p-8 flex flex-col justify-between">
+            <div>
+              <span class="block text-purple-300/90 font-semibold text-xs tracking-widest uppercase mb-2.5">Nuestra
+                Esencia</span>
+              <h2 class="text-white font-heading font-bold text-2xl md:text-3xl tracking-tight leading-snug mb-4">
+                Experiencias musicales inolvidables con sonido de <span class="text-purple-200 font-bold">alta
+                  gama</span>
+              </h2>
 
-          <div class="relative z-10">
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-stretch relative z-10">
-
-              <!-- Col 1: Nuestra Esencia — copywriting premium sobre cristal esmerilado profundo -->
-              <div
-                class="esencia-inner-card esencia-glass-card bg-white/[0.03] backdrop-blur-md border border-white/10 shadow-2xl rounded-3xl p-6 sm:p-8 relative z-10 overflow-hidden flex flex-col justify-between">
-                <!-- Soft internal glow element -->
-                <div
-                  class="absolute -top-24 -left-24 w-64 h-64 bg-purple-600/15 rounded-full blur-[80px] pointer-events-none -z-10">
-                </div>
-
-                <div class="relative z-10">
-                  <span class="block text-purple-300 font-extrabold text-xs tracking-widest uppercase mb-2">Nuestra
-                    Esencia</span>
-                  <h2 class="text-white font-heading font-bold text-2xl md:text-3xl tracking-tight leading-snug mb-4">
-                    Experiencias musicales inolvidables con sonido de <span class="text-purple-300 font-bold">alta
-                      gama</span>
-                  </h2>
-
-                  <div class="mt-4 space-y-4">
-                    <p class="text-slate-200 text-base sm:text-lg leading-relaxed font-medium mb-4">
-                      En <span class="font-bold text-purple-300">Arkik Productions</span> transformamos ideas en
-                      producciones inolvidables. Somos una productora especializada en la contratación de
-                      <span class="font-bold text-purple-300">músicos profesionales</span>, producción de bandas en
-                      vivo y sistemas de sonido de <span class="font-bold text-purple-300">alta gama</span> y fidelidad
-                      para bodas, fiestas y eventos corporativos en
-                      <span class="text-cyan-300 font-bold">todo Costa Rica</span>.
-                    </p>
-                    <p class="text-slate-200 text-base sm:text-lg leading-relaxed font-medium mb-4">
-                      Nos define la cercanía y el compromiso en cada detalle: al contactarnos tratás directamente
-                      con los productores y artistas encargados de dar vida a tu evento.
-                      <span class="font-bold text-purple-300">Sin intermediarios</span> ni respuestas genéricas;
-                      desde la primera cotización hasta el último acorde, nos aseguramos de que tu celebración
-                      suene impecable.
-                    </p>
-                  </div>
-                </div>
+              <div class="mt-4 space-y-4">
+                <p class="text-slate-200 text-base leading-relaxed font-normal">
+                  En <span class="font-semibold text-white">Arkik Productions</span> transformamos ideas en
+                  producciones inolvidables. Somos una productora especializada en la contratación de
+                  <span class="font-semibold text-white">músicos profesionales</span>, producción de bandas en
+                  vivo y sistemas de sonido de <span class="font-semibold text-white">alta gama</span> y fidelidad
+                  para bodas, fiestas y eventos corporativos en
+                  <span class="text-purple-200 font-semibold">todo Costa Rica</span>.
+                </p>
+                <p class="text-slate-200 text-base leading-relaxed font-normal">
+                  Nos define la cercanía y el compromiso en cada detalle: al contactarnos tratás directamente
+                  con los productores y artistas encargados de dar vida a tu evento.
+                  <span class="font-semibold text-white">Sin intermediarios</span> ni respuestas genéricas;
+                  desde la primera cotización hasta el último acorde, nos aseguramos de que tu celebración
+                  suene impecable.
+                </p>
               </div>
-
-              <!-- Col 2: Mensaje directo de Juan José — cristal esmerilado profundo, legibilidad total -->
-              <div
-                class="esencia-inner-card esencia-glass-card bg-white/[0.03] backdrop-blur-md border border-white/10 shadow-2xl rounded-3xl p-6 sm:p-8 relative z-10 overflow-hidden flex flex-col justify-between">
-                <!-- Soft internal glow element -->
-                <div
-                  class="absolute -top-24 -right-24 w-64 h-64 bg-pink-600/15 rounded-full blur-[80px] pointer-events-none -z-10">
-                </div>
-
-                <!-- Cita, comillas y firma con contraste superior sobre vidrio oscuro -->
-                <div class="relative z-10 flex flex-col h-full justify-between">
-                  <div>
-                    <svg class="w-8 h-8 text-purple-300/90" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z">
-                      </path>
-                    </svg>
-                    <blockquote class="mt-4 text-slate-200 font-medium text-base sm:text-lg italic leading-relaxed">
-                      «Detrás de cada reserva hay músicos de verdad, sonido de <span
-                        class="text-purple-300 font-bold not-italic">alta gama</span> y años de experiencia sobre el
-                      escenario. Por eso hablas directo con el equipo, sin scripts ni call centers: tu evento queda en
-                      las
-                      mejores manos desde el primer mensaje.»
-                    </blockquote>
-                  </div>
-                  <footer class="mt-6 flex items-center gap-3.5 bg-transparent p-0 m-0 border-none relative z-20">
-                    <div
-                      class="executive-avatar group p-[2px] rounded-full bg-gradient-to-tr from-purple-500 via-pink-500 to-cyan-400 shadow-lg shadow-purple-500/20 hover:scale-[1.08] hover:shadow-pink-500/40 hover:ring-2 hover:ring-pink-500/50 transition-all duration-300 cursor-pointer shrink-0">
-                      <button type="button" onclick="openExecutiveModal()"
-                        aria-label="Ver tarjeta ejecutiva de Juan José Ramírez Chaves"
-                        class="w-12 h-12 rounded-full overflow-hidden border border-black/40 block">
-                        <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves 🎧 Productor musical y audiovisual"
-                          class="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-110"
-                          loading="lazy" width="96" height="96" />
-                      </button>
-                    </div>
-                    <div class="relative z-20">
-                      <p class="text-white font-bold text-sm sm:text-base tracking-tight">Juan José Ramírez</p>
-                      <p class="text-purple-300 text-xs sm:text-sm font-medium">Productor musical y audiovisual ·
-                        Granadilla, San
-                        José</p>
-                    </div>
-                  </footer>
-                </div>
-              </div>
-
             </div>
           </div>
+
+          <!-- Col 2: Tarjeta de Juan José Ramírez — diseño oscuro sobrio, sin cursivas ni cajas anidadas -->
+          <div
+            class="esencia-testimonial-card bg-[#0b0716]/95 border border-purple-500/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 flex flex-col justify-between relative">
+            <div class="flex flex-col h-full justify-between">
+              <div>
+                <svg class="w-7 h-7 text-purple-400/50 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z">
+                  </path>
+                </svg>
+                <blockquote class="mt-4 font-sans not-italic text-slate-100 text-base sm:text-lg leading-relaxed font-normal">
+                  «Detrás de cada reserva hay <span class="text-white font-semibold">músicos de verdad</span>, sonido de alta gama y años de experiencia sobre el escenario. Por eso <span class="text-purple-200 font-semibold">hablas directo con el equipo</span>, <span class="text-white font-semibold">sin scripts ni call centers</span>: tu evento queda en las mejores manos desde el primer mensaje.»
+                </blockquote>
+              </div>
+              <footer class="esencia-signature mt-6 pt-5 border-t border-white/10 flex items-center gap-3.5 bg-transparent">
+                <div class="executive-avatar group rounded-full ring-1 ring-purple-400/30 hover:ring-purple-300/60 transition-colors duration-200 cursor-pointer shrink-0">
+                  <button type="button" onclick="openExecutiveModal()"
+                    aria-label="Ver tarjeta ejecutiva de Juan José Ramírez Chaves"
+                    class="w-12 h-12 aspect-square rounded-full overflow-hidden bg-[#090514] block">
+                    <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves 🎧 Productor musical y audiovisual"
+                      class="w-full h-full object-cover object-top"
+                      loading="lazy" decoding="async" width="96" height="96" />
+                  </button>
+                </div>
+                <div class="min-w-0">
+                  <p class="font-semibold text-white text-sm sm:text-base tracking-tight leading-snug">Juan José Ramírez</p>
+                  <p class="text-xs sm:text-sm text-slate-300 leading-snug mt-0.5">Productor musical y audiovisual · Granadilla, San José</p>
+                </div>
+              </footer>
+            </div>
+          </div>
+
         </div>
       </div>
     </section>
@@ -561,20 +530,20 @@
     <section id="proceso-transparente" class="w-full py-12 sm:py-16 md:py-24 relative z-10">
       <div id="proceso" class="sr-only" aria-hidden="true"></div>
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="text-center max-w-3xl mx-auto mb-8 sm:mb-14">
           <span class="text-xs font-bold text-purple-400 tracking-wider uppercase">Proceso Transparente</span>
           <h2 class="fluid-h2 font-extrabold text-white mt-1">Reserva en 4 Pasos con SINPE Móvil</h2>
           <p class="text-gray-400 text-sm mt-3">Transfiere solo el 50% para asegurar la fecha de tu evento en agenda.
           </p>
         </div>
 
-        <div id="process-stepper-stage" class="relative max-w-7xl mx-auto px-4 py-8">
+        <div id="process-stepper-stage" class="relative max-w-7xl mx-auto px-0 sm:px-4 py-4 sm:py-8">
           <!-- Horizontal Interactive Timeline Spine (Desktop) -->
           <div
             class="hidden lg:block absolute top-[4.5rem] left-[10%] right-[10%] h-[2px] bg-gradient-to-r from-purple-600 via-fuchsia-500 to-indigo-500 opacity-30 z-0 animate-pulse-slow pointer-events-none"
             aria-hidden="true"></div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 relative z-10">
             <!-- Step 1: Selección & Formato -->
             <div
               class="process-step-card relative z-10 bg-[#090514]/90 backdrop-blur-xl border border-white/10 hover:border-purple-500/40 rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] hover:shadow-[0_20px_40px_rgba(168,85,247,0.18)] group min-h-[260px]">
@@ -708,11 +677,11 @@
           </p>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 items-stretch">
 
           <!-- Left Column: Matriz Logística & Cobertura Nacional -->
           <div
-            class="glass-panel rounded-3xl p-7 sm:p-9 border border-purple-500/20 relative overflow-hidden flex flex-col justify-between">
+            class="glass-panel rounded-3xl p-5 sm:p-8 border border-purple-500/20 relative overflow-hidden flex flex-col justify-between">
             <div class="absolute -top-24 -left-24 w-64 h-64 bg-glow-purple pointer-events-none opacity-50"></div>
 
             <div class="relative z-10">
@@ -795,7 +764,7 @@
             </div>
 
             <!-- Footer Badge -->
-            <div class="mt-6 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-gray-400">
+            <div class="mt-6 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
               <span class="flex items-center gap-1.5"><span class="text-emerald-400">🚚</span> Flota de Transporte
                 Propia</span>
               <span class="flex items-center gap-1.5"><span class="text-purple-400">🎧</span> Garantía de Audio
@@ -805,7 +774,7 @@
 
           <!-- Right Column: Línea Directa con Producción -->
           <div
-            class="glass-panel rounded-3xl p-7 sm:p-9 border border-purple-500/20 relative overflow-hidden flex flex-col justify-between">
+            class="glass-panel rounded-3xl p-5 sm:p-8 border border-purple-500/20 relative overflow-hidden flex flex-col justify-between">
             <div class="absolute -bottom-24 -right-24 w-64 h-64 bg-glow-indigo pointer-events-none opacity-50"></div>
 
             <div class="relative z-10 flex flex-col h-full">
@@ -833,7 +802,7 @@
                     </svg>
                   </span>
                   <span class="flex-1 min-w-0">
-                    <span class="flex items-center gap-2">
+                    <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <strong class="text-sm font-bold text-white">WhatsApp Directo</strong>
                       <span
                         class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Respuesta
@@ -957,7 +926,7 @@
 
           <div class="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button type="button" id="btn-footer-cta-booking"
-              class="group inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-medium px-5 py-2 rounded-full transition-all">
+              class="group w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs sm:text-sm font-medium px-5 py-2.5 rounded-full active:scale-95 transition-all">
               <span>Agendar Cotización</span>
               <svg class="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-1" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -966,7 +935,7 @@
             </button>
 
             <a href="#formatos"
-              class="group inline-flex items-center gap-2 bg-transparent border border-slate-600 hover:border-slate-400 text-slate-300 text-xs font-medium px-5 py-2 rounded-full transition-all">
+              class="group w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 bg-transparent border border-slate-600 hover:border-slate-400 text-slate-300 text-xs sm:text-sm font-medium px-5 py-2.5 rounded-full active:scale-95 transition-all">
               <span>Explorar Formatos</span>
             </a>
           </div>
@@ -981,7 +950,7 @@
             <div
               class="footer-brand-card backdrop-blur-md bg-white/5 border border-white/10 p-3 rounded-2xl inline-flex items-center gap-3">
               <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
-                class="h-10 w-auto object-contain rounded-lg border border-purple-500/20 shrink-0" />
+                class="h-10 w-auto object-contain rounded-lg border border-purple-500/20 shrink-0" loading="lazy" decoding="async" width="160" height="96" />
               <div class="min-w-0">
                 <span
                   class="font-jakarta text-base sm:text-lg font-bold text-white tracking-wide block leading-tight">Arkik
@@ -1002,7 +971,7 @@
             <ul class="w-full sm:w-auto flex flex-col gap-2.5 items-center sm:items-start">
               <li class="w-full sm:w-auto">
                 <a href="#formatos"
-                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white active:scale-[0.98] transition-all duration-300 w-full sm:w-auto">
                   <span>Formatos Musicales</span>
                   <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1012,7 +981,7 @@
               </li>
               <li class="w-full sm:w-auto">
                 <a href="#biblioteca"
-                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white active:scale-[0.98] transition-all duration-300 w-full sm:w-auto">
                   <span>Galería / Videos</span>
                   <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1022,7 +991,7 @@
               </li>
               <li class="w-full sm:w-auto">
                 <button type="button" id="btn-footer-sinpe-link"
-                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white active:scale-[0.98] transition-all duration-300 w-full sm:w-auto">
                   <span>Reserva SINPE Móvil</span>
                   <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1032,7 +1001,7 @@
               </li>
               <li class="w-full sm:w-auto">
                 <button type="button" id="btn-footer-policies-link"
-                  class="group flex items-center justify-center sm:justify-start gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white transition-all duration-300 w-full sm:w-auto">
+                  class="group flex items-center justify-center sm:justify-start gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-purple-500/30 text-xs sm:text-sm text-slate-300 hover:text-white active:scale-[0.98] transition-all duration-300 w-full sm:w-auto">
                   <span>Políticas de Empresa &amp; Términos</span>
                   <svg class="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-1 transition-transform shrink-0"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1143,9 +1112,9 @@
 
       <!-- Fotografía limpia y bien encuadrada (sin overlays ni degradados) -->
       <div class="relative">
-        <div class="h-64 sm:h-72 overflow-hidden bg-[#0c0814]">
+        <div class="aspect-[4/3] sm:aspect-auto sm:h-72 overflow-hidden bg-[#0c0814]">
           <img src="img/Foto Kike .jpg" alt="Juan José Ramírez Chaves 🎧 Productor musical y audiovisual"
-            class="w-full h-full object-cover object-top" loading="lazy" width="667" height="1000" />
+            class="w-full h-full object-cover object-top" loading="lazy" decoding="async" width="667" height="1000" />
         </div>
 
         <!-- Botón Cerrar 'X' superior en cristal -->
@@ -1220,9 +1189,9 @@
       </button>
 
       <!-- Visualizador del Logotipo (marco de resplandor neón sutil) -->
-      <div class="brand-emblem rounded-2xl p-4 mb-5">
+      <div class="brand-emblem rounded-2xl p-4 mb-5 aspect-video flex items-center justify-center overflow-hidden">
         <img src="img/arkik_logo.jpg" alt="Emblema oficial de Arkik Producciones"
-          class="w-full h-auto object-contain rounded-xl" loading="lazy" width="512" height="300" />
+          class="w-full h-full object-contain rounded-xl" loading="lazy" decoding="async" width="512" height="300" />
       </div>
 
       <!-- Identidad de Marca -->
@@ -1867,7 +1836,7 @@
                     </svg>
 
                     <!-- Thumbnail Preview (hidden until an image is loaded) -->
-                    <img id="voucher-thumb" src="#" alt="Comprobante SINPE cargado"
+                    <img id="voucher-thumb" src="#" alt="Comprobante SINPE cargado" decoding="async"
                       class="hidden max-h-32 w-auto rounded-lg border border-emerald-500/40 object-contain shadow-lg">
 
                     <!-- Default / Loaded text -->
@@ -1926,7 +1895,7 @@
                 class="glass-panel p-5 rounded-2xl text-left space-y-2.5 text-xs border border-purple-500/30">
                 <div class="flex items-center justify-between border-b border-purple-500/20 pb-3">
                   <div class="flex items-center space-x-2">
-                    <img src="img/arkik_logo.jpg" alt="Arkik Productions"
+                    <img src="img/arkik_logo.jpg" alt="Arkik Productions" loading="lazy" decoding="async" width="128" height="76"
                       class="h-8 w-auto rounded border border-purple-500/30">
                     <div>
                       <span class="font-extrabold text-white text-sm">Arkik Productions</span>
@@ -2242,7 +2211,7 @@
       <!-- Vault Header -->
       <div class="text-center pt-1">
         <div class="relative inline-flex items-center justify-center mb-4">
-          <img src="img/arkik_logo.jpg" alt="Arkik Logo"
+          <img src="img/arkik_logo.jpg" alt="Arkik Logo" loading="lazy" decoding="async" width="96" height="96"
             class="w-12 h-12 object-contain rounded-2xl border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.25)]" />
           <span
             class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-400/60 flex items-center justify-center">
@@ -2753,7 +2722,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
-      <img id="admin-voucher-img" src="" alt="Comprobante SINPE de la reserva"
+      <img id="admin-voucher-img" src="" alt="Comprobante SINPE de la reserva" loading="lazy" decoding="async"
         class="max-w-[90vw] max-h-[85vh] object-contain rounded-xl border border-purple-500/30 bg-[#0c0814]/60 shadow-[0_0_60px_rgba(168,85,247,0.25)]">
       <p class="text-center text-[10px] text-gray-500 mt-3">Comprobante de transferencia SINPE (alta resolución)</p>
     </div>
