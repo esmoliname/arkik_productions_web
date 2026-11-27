@@ -1363,10 +1363,10 @@
   </div>
 
   <div id="booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title"
-    class="fixed inset-0 z-50 items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-xl overflow-hidden overscroll-contain hidden opacity-0 pointer-events-none invisible">
-    <div class="modal-overlay" id="modal-overlay">
+    class="fixed inset-0 z-50 items-stretch sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-xl overflow-hidden overscroll-contain hidden opacity-0 pointer-events-none invisible">
+    <div class="modal-overlay items-stretch sm:items-center p-0 sm:p-4" id="modal-overlay">
       <div
-        class="modal-card w-full max-w-4xl flex flex-col overflow-hidden relative"
+        class="modal-card w-full h-[100dvh] max-h-[100dvh] rounded-none border-0 sm:max-w-4xl sm:h-auto sm:max-h-[88dvh] sm:rounded-3xl sm:border flex flex-col overflow-hidden relative"
         id="modal-card">
 
         <!-- ZONA 1: Cabecera + Stepper Fijos (flex-shrink-0, opaco, sin position:sticky suelto) -->
@@ -1386,7 +1386,7 @@
           </div>
 
           <!-- Progressive Stepper Bar (encapsulado dentro del header fijo) -->
-          <div class="modal-stepper">
+          <div class="modal-stepper mt-3">
             <div class="modal-stepper-track">
 
               <button type="button" id="step-indicator-1" data-step="1" onclick="goToStep(1)"
