@@ -2307,51 +2307,51 @@
   <!-- Executive Console: Panel de Control Ejecutivo (dashboard por rol) -->
   <div id="adminPortalModal" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title"
     onclick="if (event.target === this) closeAdminPortalModal()"
-    class="fixed inset-0 z-50 hidden items-center justify-center p-4 opacity-0 pointer-events-none invisible">
-    <div class="admin-lightbox admin-modal-card w-full max-w-6xl">
+    class="fixed inset-0 z-50 hidden items-stretch sm:items-center justify-center p-0 sm:p-4 opacity-0 pointer-events-none invisible">
+    <div class="admin-lightbox admin-modal-card w-full h-[100dvh] max-h-[100dvh] rounded-none sm:max-w-6xl sm:h-auto sm:max-h-[90dvh] sm:rounded-3xl">
 
       <!-- Admin Executive Status & Control Bar -->
       <header id="admin-header-bar"
-        class="w-full bg-[#080511]/95 backdrop-blur-3xl border-b border-white/10 p-3 sm:p-4 relative z-20 shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(147,51,234,0.15)] admin-glass-bar shrink-0">
+        class="w-full bg-[#080511]/95 backdrop-blur-3xl border-b border-white/10 px-3 pb-3 sm:p-4 relative z-20 shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(147,51,234,0.15)] admin-glass-bar shrink-0">
 
-        <!-- Flexible Session Info Bar -->
+        <!-- Flexible Session Info Bar (2 niveles en móvil < 640px, fila fluida en escritorio) -->
         <div id="adminSessionInfo"
-          class="w-full flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 backdrop-blur-md">
+          class="w-full flex flex-col sm:flex-row sm:flex-wrap lg:flex-nowrap sm:items-center sm:justify-between gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 backdrop-blur-md">
 
-          <!-- Sección Izquierda: Identidad y perfil condensado (sin apilamiento vertical en móviles) -->
-          <div class="flex items-center gap-3 min-w-0">
-            <div
-              class="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center shrink-0 relative group">
-              <span id="admin-role-dot"
-                class="inline-flex items-center justify-center w-2.5 h-2.5 relative text-emerald-500">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-current"></span>
-              </span>
+          <!-- Nivel 1 (Móvil): Identidad + Píldora de Sesión Activa con flex-wrap gap-2 -->
+          <div class="flex flex-wrap items-center justify-between gap-2 w-full sm:w-auto min-w-0">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div
+                class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center shrink-0 relative group">
+                <span id="admin-role-dot"
+                  class="inline-flex items-center justify-center w-2.5 h-2.5 relative text-emerald-500">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 bg-current"></span>
+                </span>
+              </div>
+              <div class="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span id="admin-role-badge"
+                  class="bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0">PROPIETARIO</span>
+                <span id="admin-user-name" class="text-white font-bold text-xs sm:text-sm truncate">Juan José
+                  Ramírez</span>
+              </div>
             </div>
-            <div class="min-w-0 flex flex-wrap sm:flex-nowrap items-center gap-x-2.5 gap-y-1">
-              <span id="admin-role-badge"
-                class="bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md shrink-0">PROPIETARIO</span>
-              <span id="admin-user-name" class="text-white font-bold text-xs sm:text-sm truncate">Juan José
-                Ramírez</span>
-              <span class="text-white/20 hidden xs:inline">·</span>
-              <span class="text-slate-400 text-xs font-medium hidden xs:inline">Sesión autenticada</span>
+
+            <!-- Píldora de estado y contador de expiración -->
+            <div class="flex items-center shrink-0">
+              <div
+                class="px-2.5 sm:px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[11px] sm:text-xs font-mono font-semibold flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                <span id="admin-session-timer" class="admin-session-timer font-mono">Sesión Activa · Expira en 15:00</span>
+              </div>
             </div>
           </div>
 
-          <!-- Sección Central: Indicador y contador de expiración -->
-          <div class="flex items-center justify-center shrink-0">
-            <div
-              class="px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-mono font-semibold flex items-center gap-2">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-              <span id="admin-session-timer" class="admin-session-timer font-mono">Sesión expira en 15:00</span>
-            </div>
-          </div>
-
-          <!-- Sección Derecha: Acciones Rápidas con micro-estados táctiles -->
-          <div class="flex items-center gap-2 shrink-0">
+          <!-- Nivel 2 (Móvil): Grid de 12 columnas para Actualizar (4) + Centro Analítico (5) + Salir (3) -->
+          <div class="admin-session-actions grid grid-cols-12 gap-2 w-full mt-2.5 sm:flex sm:w-auto sm:mt-0 sm:items-center sm:gap-2.5">
             <button type="button" id="admin-manual-refresh" onclick="AdminModule.refreshManual()"
               aria-label="Actualizar datos desde el servidor"
-              class="min-h-[44px] px-3.5 py-2 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 hover:border-cyan-400 text-cyan-200 hover:text-white text-xs font-semibold tracking-wide flex items-center gap-1.5 shadow-sm transition-all duration-200 ease-out active:scale-95">
+              class="col-span-4 sm:w-auto min-h-[44px] px-3 py-2 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 hover:border-cyan-400 text-cyan-200 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-200 ease-out active:scale-95">
               <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2362,21 +2362,22 @@
             </button>
             <button type="button" id="btn-header-analytics" onclick="openRagStudio()"
               aria-label="Abrir Centro Analítico a pantalla completa"
-              class="btn-analytics-launch min-h-[44px] px-3.5 py-2 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 hover:border-purple-400 text-purple-200 hover:text-white text-xs font-semibold tracking-wide flex items-center gap-1.5 shadow-sm transition-all duration-200 ease-out active:scale-95 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)]">
-              <span>CENTRO ANALÍTICO ↗</span>
+              class="btn-analytics-launch col-span-5 sm:w-auto min-h-[44px] px-3 py-2 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 hover:border-purple-400 text-purple-200 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm transition-all duration-200 ease-out active:scale-95 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+              <span class="admin-analytics-short">Centro ↗</span>
+              <span class="admin-analytics-full">Centro Analítico ↗</span>
             </button>
             <button type="button" onclick="adminLogout()" aria-label="Cerrar Sesión"
-              class="admin-logout-btn min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-xs font-semibold tracking-wide flex items-center gap-1.5 shadow-sm transition-all duration-200 ease-out active:scale-95 hover:shadow-[0_0_20px_rgba(244,63,94,0.25)]">
-              <svg class="w-3.5 h-3.5 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5"
+              class="admin-logout-btn col-span-3 sm:w-auto min-h-[44px] px-3 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-200 ease-out active:scale-95">
+              <svg class="w-3.5 h-3.5 shrink-0"
                 fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
               </svg>
-              <span>Cerrar Sesión</span>
+              <span>Salir</span>
             </button>
             <button type="button" id="admin-portal-close" onclick="closeAdminPortalModal()"
               aria-label="Cerrar panel de control"
-              class="min-w-[44px] min-h-[44px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white transition-all duration-200 ease-out active:scale-95 shadow-sm">
+              class="hidden lg:inline-flex min-w-[44px] min-h-[44px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 items-center justify-center text-gray-300 hover:text-white transition-all duration-200 ease-out active:scale-95 shadow-sm">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
@@ -3026,7 +3027,7 @@
   <!-- reservas y métricas financieras.                             -->
   <!-- ============================================================ -->
   <div id="ragStudioView" role="dialog" aria-modal="true" aria-labelledby="rag-studio-brand"
-    class="fixed inset-0 z-[95] hidden flex-col bg-[#07040f] opacity-0 pointer-events-none invisible">
+    class="fixed inset-0 z-[95] hidden flex-col w-full h-[100dvh] max-h-[100dvh] bg-[#07040f] opacity-0 pointer-events-none invisible">
 
     <!-- Barra de navegación superior -->
     <header class="rag-studio-bar">
@@ -3034,12 +3035,12 @@
         <span class="rag-studio-brand-name" id="rag-studio-brand">ARKIK PRODUCTIONS · CENTRO ANALÍTICO</span>
         <span id="rag-studio-badge" class="rag-studio-badge">Sincronizado en Tiempo Real</span>
       </div>
-      <div class="rag-studio-nav">
-        <button type="button" id="btn-rag-studio-back" onclick="closeRagStudio()" class="rag-studio-btn">
+      <div class="rag-studio-nav grid grid-cols-2 gap-2.5 w-full sm:flex sm:w-auto">
+        <button type="button" id="btn-rag-studio-back" onclick="closeRagStudio()" class="rag-studio-btn min-h-[44px] justify-center text-center">
           <span>Volver al Panel Admin</span>
         </button>
         <button type="button" id="btn-rag-studio-logout" onclick="ragStudioLogout()"
-          class="rag-studio-btn rag-studio-btn--danger">
+          class="rag-studio-btn rag-studio-btn--danger min-h-[44px] justify-center text-center">
           <span>Cerrar Sesión</span>
         </button>
       </div>
@@ -3050,10 +3051,10 @@
       <label for="rag-studio-search" class="rag-studio-label">Buscador de Auditoría</label>
       <div class="rag-studio-command">
         <input type="search" id="rag-studio-search" autocomplete="off" spellcheck="false"
-          placeholder="Buscar por cliente, teléfono (+506), código ARK-XXXXXXXX, provincia o estado SINPE..."
-          aria-label="Consultar el índice operacional" class="rag-studio-input">
+          placeholder="Buscar cliente, teléfono o código..."
+          aria-label="Consultar el índice operacional" class="rag-studio-input w-full min-w-0">
       </div>
-      <div id="rag-studio-pills" class="rag-studio-pills snap-x" role="group" aria-label="Filtros rápidos del índice"></div>
+      <div id="rag-studio-pills" class="rag-studio-pills px-1 -mx-1 overflow-x-auto no-scrollbar snap-x" role="group" aria-label="Filtros rápidos del índice"></div>
     </div>
 
     <!-- SECTION B: KPI dashboard -->
