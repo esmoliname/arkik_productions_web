@@ -2171,7 +2171,7 @@ footer>.max-w-7xl {
   position: fixed;
   inset: 0;
   z-index: 50;
-  padding: 1rem;
+  padding: 0;
   background-color: rgba(6, 4, 14, 0.9);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -2179,8 +2179,18 @@ footer>.max-w-7xl {
 
 #adminPortalModal:not(.hidden) {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
+}
+
+@media (min-width: 640px) {
+  #adminPortalModal {
+    padding: 1rem;
+  }
+
+  #adminPortalModal:not(.hidden) {
+    align-items: center;
+  }
 }
 
 @keyframes adminModalIn {
@@ -2199,35 +2209,68 @@ footer>.max-w-7xl {
    El scroll táctil/overscroll de ese overlay ya vive en el selector grupal
    de la sección "Modal Wrapper Viewport Constraints" más arriba. */
 
-/* Tarjeta del portal: bounded flexbox, 92dvh exactos, scroll interno en el cuerpo.
-   min-height eliminado: nunca puede empujar la tarjeta fuera del viewport. */
+/* Tarjeta del portal: 100dvh fullscreen en móvil (<640px) y tarjeta centrada en escritorio (>=640px). */
 .admin-modal-card {
   position: relative;
   width: 100%;
-  max-width: 72rem;
-  height: 92vh;
-  height: 92dvh;
-  max-height: 92vh;
-  max-height: 92dvh;
+  max-width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: rgba(11, 7, 23, 0.96);
-  border: 1px solid rgba(168, 85, 247, 0.25);
-  border-radius: 1.5rem;
+  border: 0;
+  border-radius: 0;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
 }
 
 @media (min-width: 640px) {
   .admin-modal-card {
-    max-height: 88vh;
-    max-height: 88dvh;
+    max-width: 72rem;
+    height: auto;
+    max-height: 90vh;
+    max-height: 90dvh;
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    border-radius: 1.5rem;
   }
 }
 
 @media (max-width: 639.98px) {
   .admin-modal-card {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Cabecera del panel admin integrada con safe-area-inset-top en móvil */
+#adminPortalModal #admin-header-bar {
+  padding-top: calc(0.875rem + env(safe-area-inset-top, 0px));
+}
+
+@media (min-width: 640px) {
+  #adminPortalModal #admin-header-bar {
+    padding-top: 1rem;
+  }
+}
+
+/* Etiqueta adaptable del botón Centro Analítico (< 400px: "Centro ↗", >= 400px: "Centro Analítico ↗") */
+.admin-analytics-short {
+  display: inline;
+}
+
+.admin-analytics-full {
+  display: none;
+}
+
+@media (min-width: 400px) {
+  .admin-analytics-short {
+    display: none;
+  }
+
+  .admin-analytics-full {
+    display: inline;
   }
 }
 
@@ -7699,7 +7742,7 @@ body.rack-preview-open {
   align-items: center;
   justify-content: space-between;
   gap: .75rem 1rem;
-  padding: .875rem 1.25rem;
+  padding: calc(.875rem + env(safe-area-inset-top, 0px)) 1.25rem .875rem;
   border-bottom: 1px solid rgba(168, 85, 247, .22);
   background: rgba(13, 8, 31, .82);
   backdrop-filter: blur(20px);
@@ -7784,6 +7827,11 @@ body.rack-preview-open {
 /* ---------- Layout de secciones ---------- */
 
 #ragStudioView {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -7830,8 +7878,8 @@ body.rack-preview-open {
 
 .rag-studio-input {
   width: 100%;
+  min-width: 0;
   padding: .875rem 1.125rem;
-  font-size: .9375rem;
   font-weight: 600;
   color: #f8fafc;
   background: transparent;
@@ -7852,6 +7900,10 @@ body.rack-preview-open {
   display: flex;
   gap: .5rem;
   margin-top: .75rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
   padding-bottom: .25rem;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -8296,9 +8348,23 @@ body.rack-preview-open {
   }
 }
 
-@media (max-width: 620px) {
+@media (max-width: 639.98px) {
   .rag-studio-bar {
-    padding: .75rem 1rem;
+    padding: calc(.875rem + env(safe-area-inset-top, 0px)) 1rem .75rem;
+  }
+
+  .rag-studio-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem;
+    width: 100%;
+  }
+
+  .rag-studio-btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    text-align: center;
   }
 
   .rag-studio-section {
