@@ -268,7 +268,14 @@ const PerfGuard = {
   init() {
     if (typeof window === "undefined" || !window.addEventListener) return;
     const self = this;
+    const syncNavbarScrollState = function () {
+      const nav = document.getElementById("site-navbar") || (typeof document.querySelector === "function" && document.querySelector("nav.mobile-safe-nav"));
+      if (!nav || !nav.classList) return;
+      const y = typeof window.scrollY === "number" ? window.scrollY : (window.pageYOffset || 0);
+      nav.classList.toggle("navbar-scrolled", y > 24);
+    };
     const onScrollActivity = function () {
+      syncNavbarScrollState();
       const wasActive = self._active;
       self._active = true;
       if (!wasActive && typeof AnimationRegistry !== "undefined" && typeof AnimationRegistry.pauseForScroll === "function") {
@@ -291,6 +298,7 @@ const PerfGuard = {
 
     window.addEventListener("scroll", onScrollActivity, { passive: true, capture: true });
     window.addEventListener("touchmove", onScrollActivity, { passive: true, capture: true });
+    syncNavbarScrollState();
   },
   isMobile() {
     return typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768;
@@ -4382,6 +4390,15 @@ const AdminModule = {
     this.role = roleId;
     const ownerBtn = document.getElementById("admin-role-owner");
     const itBtn = document.getElementById("admin-role-it");
+    const glider = document.getElementById("admin-role-glider");
+    const segmented = document.getElementById("admin-role-segmented");
+    if (glider) {
+      glider.style.transform = roleId === "it" ? "translateX(100%)" : "translateX(0%)";
+      glider.classList.toggle("role-glider--it", roleId === "it");
+    }
+    if (segmented && segmented.setAttribute) {
+      segmented.setAttribute("data-active-role", roleId);
+    }
     if (ownerBtn) {
       const active = roleId === "owner";
       ownerBtn.classList.toggle("role-btn--active", active);
@@ -10481,18 +10498,18 @@ function renderCatalog(services, category = "Todos") {
           <h3 class="text-xl font-bold text-white group-hover:text-purple-300 transition-colors">${sanitizeInput(service.name)}</h3>
           <p class="text-sm text-gray-400 mt-2 line-clamp-3 leading-relaxed">${sanitizeInput(service.description)}</p>
 
-          <div class="mt-4 pt-4 border-t border-purple-500/20 space-y-2">
-            <div class="flex items-center text-xs text-purple-300 font-medium">
-              <svg class="w-4 h-4 mr-2 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <div class="mt-4 pt-4 border-t border-white/10 space-y-2 tabular-nums">
+            <div class="flex items-center text-xs text-slate-300 font-medium tabular-nums">
+              <svg class="w-4 h-4 mr-2 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               ${sanitizeInput(service.duration)}
             </div>
             <!-- Operational Logistics Setup & Teardown -->
-            <div class="flex items-center text-xs text-emerald-400 font-medium">
-              <span class="mr-1.5">⏱️</span>
-              <span>Montaje: <strong>${service.setup_display || "2h antes"}</strong> · Desmontaje: <strong>${service.teardown_display || "1h después"}</strong></span>
+            <div class="flex items-center text-xs text-slate-300 font-medium tabular-nums">
+              <span class="mr-1.5 text-slate-400" aria-hidden="true">⏱️</span>
+              <span>Montaje: <strong class="text-slate-200 font-semibold tabular-nums">${service.setup_display || "2h antes"}</strong> · Desmontaje: <strong class="text-slate-200 font-semibold tabular-nums">${service.teardown_display || "1h después"}</strong></span>
             </div>
-            <div class="flex items-start text-xs text-gray-400">
-              <svg class="w-4 h-4 mr-2 text-purple-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div class="flex items-start text-xs text-slate-300">
+              <svg class="w-4 h-4 mr-2 text-slate-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               <span>${sanitizeInput(service.tech_specs)}</span>
             </div>
           </div>
@@ -10500,9 +10517,9 @@ function renderCatalog(services, category = "Todos") {
       </div>
 
       <div class="p-6 pt-0">
-        <div class="flex items-baseline justify-between mb-4">
-          <span class="text-xs text-gray-400 font-medium">Tarifa Base (2 hrs)</span>
-          <span class="text-2xl font-extrabold text-gradient-purple">${formatCRC(PriceManager.getServicePrice(service))}</span>
+        <div class="flex items-baseline justify-between mb-4 tabular-nums">
+          <span class="text-xs text-slate-400 font-medium">Tarifa Base (2 hrs)</span>
+          <span class="catalog-card__price text-2xl font-extrabold text-white text-gradient-purple tabular-nums">${formatCRC(PriceManager.getServicePrice(service))}</span>
         </div>
 
         <button onclick="openBookingModal(${service.id})" class="w-full py-3 px-5 rounded-xl font-medium text-sm text-white bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-[0_0_20px_rgba(168,85,247,0.35)] hover:shadow-[0_0_28px_rgba(168,85,247,0.55)] border border-purple-400/30 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group">
@@ -10691,7 +10708,7 @@ function galleryInstagramCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-2xl sm:rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+    <article data-gallery-card-id="${sanitizeInput(item.id)}" class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group rounded-2xl sm:rounded-3xl overflow-hidden relative block cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-pink-500/50"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
@@ -10730,7 +10747,7 @@ function galleryVideoCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
+    <article data-gallery-card-id="${sanitizeInput(item.id)}" class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div id="gallery-media-${sanitizeInput(item.id)}" class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${thumbnail}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
@@ -10765,7 +10782,7 @@ function galleryImageCard(item) {
     : "border-white/10";
 
   return `
-    <article class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
+    <article data-gallery-card-id="${sanitizeInput(item.id)}" class="gallery-card ${featuredClass} min-h-[250px] aspect-[4/3] md:aspect-auto md:min-h-0 md:h-full group relative rounded-2xl sm:rounded-3xl overflow-hidden cursor-pointer border hover:border-purple-500/50 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] active:scale-[0.98] transition-all duration-200"
              onclick="openMediaLightbox('${sanitizeInput(item.id)}')">
       <div class="relative w-full h-full overflow-hidden bg-[#07040e]">
         <img src="${url}" alt="${title}" loading="lazy" decoding="async" width="800" height="600"
@@ -10920,7 +10937,7 @@ function attachLightboxSwipe(el) {
   }, { passive: true });
 }
 
-function openMediaLightbox(id) {
+function openMediaLightbox(id, triggerEl) {
   const items = lightboxFilteredItems();
   const idx = items.findIndex(m => String(m.id) === String(id));
   if (idx === -1) return;
@@ -10932,6 +10949,30 @@ function openMediaLightbox(id) {
 
   const modal = document.getElementById("mediaLightboxModal");
   if (modal) {
+    const sheet = typeof modal.querySelector === "function" ? modal.querySelector(".ios-media-sheet") : null;
+    if (sheet && sheet.style) {
+      let sourceEl = triggerEl || (typeof window !== "undefined" && window.event && window.event.currentTarget) || null;
+      if (!sourceEl && typeof document.querySelector === "function") {
+        sourceEl = document.querySelector(`[data-gallery-card-id="${String(id).replace(/"/g, "")}"]`);
+      }
+      if (sourceEl && typeof sourceEl.getBoundingClientRect === "function" && typeof window !== "undefined" && window.innerWidth && window.innerHeight) {
+        const rect = sourceEl.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          const cx = Math.round(((rect.left + rect.width / 2) / window.innerWidth) * 100);
+          const cy = Math.round(((rect.top + rect.height / 2) / window.innerHeight) * 100);
+          sheet.style.transformOrigin = `${Math.max(10, Math.min(90, cx))}% ${Math.max(10, Math.min(90, cy))}%`;
+        } else {
+          sheet.style.transformOrigin = "50% 50%";
+        }
+      } else {
+        sheet.style.transformOrigin = "50% 50%";
+      }
+      if (sheet.classList) {
+        sheet.classList.remove("ios-sheet-opening");
+        void sheet.offsetWidth;
+        sheet.classList.add("ios-sheet-opening");
+      }
+    }
     ModalController.open("mediaLightboxModal");
   }
 }
@@ -10953,6 +10994,11 @@ function closeMediaLightbox() {
   const container = document.getElementById("lightbox-media-container");
   if (container) delete container.dataset.swipeBound;
   if (modal) {
+    const sheet = typeof modal.querySelector === "function" ? modal.querySelector(".ios-media-sheet") : null;
+    if (sheet) {
+      if (sheet.classList) sheet.classList.remove("ios-sheet-opening");
+      if (sheet.style) sheet.style.transformOrigin = "50% 50%";
+    }
     ModalController.close("mediaLightboxModal");
   }
 }
@@ -12771,8 +12817,15 @@ function saveClientAndLocationValues() {
 }
 
 function updateModalStep(stepNumber) {
-  const direction = stepNumber > lastModalStep ? "forward" : "backward";
+  const prevStep = lastModalStep;
+  const direction = stepNumber < prevStep ? "prev" : "next";
   lastModalStep = stepNumber;
+
+  const progressEl = document.getElementById("booking-stepper-progress");
+  if (progressEl && progressEl.style) {
+    const progressMap = { 1: "0%", 2: "33.3%", 3: "66.6%", 4: "100%" };
+    progressEl.style.width = progressMap[stepNumber] || "0%";
+  }
 
   for (let i = 1; i <= 4; i++) {
     const stepIndicator = document.getElementById(`step-indicator-${i}`);
@@ -12925,7 +12978,7 @@ function updateModalStep(stepNumber) {
 function animateStepPane(pane, direction) {
   pane.classList.remove("animate-step-in", "animate-step-in-back");
   void pane.offsetWidth;
-  pane.classList.add(direction === "forward" ? "animate-step-in" : "animate-step-in-back");
+  pane.classList.add(direction === "prev" || direction === "backward" ? "animate-step-in-back" : "animate-step-in");
 }
 
 // ---- Contadores de Extras Dinámicos ----
