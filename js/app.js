@@ -3084,6 +3084,11 @@ const SecurityModule = {
       if (purge) {
         ADMIN_LEGACY_RATE_KEYS.forEach((key) => {
           try { SafeStorage.removeItem(key); } catch (e) { /* noop */ }
+          try {
+            if (typeof window !== "undefined" && window.localStorage) {
+              window.localStorage.removeItem(key);
+            }
+          } catch (e) { /* noop */ }
           report.legacyPurged.push(key);
         });
       }
@@ -4295,6 +4300,7 @@ const AdminModule = {
     const modal = document.getElementById("adminLoginModal");
     if (!modal) return;
     trackModal(true);
+    try { SecurityModule.purgeExpiredLockout(); } catch (e) { /* noop */ }
     this.resetLockoutState();
     resetLoginTrap();
     this.setRole("owner");
@@ -4312,7 +4318,6 @@ const AdminModule = {
       this.startLockoutCountdown(lockStatus.waitMs);
       return;
     }
-    ModalController.open("adminLoginModal");
     if (pin && !pin.disabled) {
       requestAnimationFrame(() => pin.focus({ preventScroll: true }));
     }
@@ -4393,7 +4398,7 @@ const AdminModule = {
     const glider = document.getElementById("admin-role-glider");
     const segmented = document.getElementById("admin-role-segmented");
     if (glider) {
-      glider.style.transform = roleId === "it" ? "translateX(100%)" : "translateX(0%)";
+      glider.style.transform = roleId === "it" ? "translateX(calc(100% + 0.375rem))" : "translateX(0%)";
       glider.classList.toggle("role-glider--it", roleId === "it");
     }
     if (segmented && segmented.setAttribute) {
@@ -11155,6 +11160,14 @@ function setupEventListeners() {
   if (roleOwner) roleOwner.addEventListener("click", () => AdminModule.setRole("owner"));
   const roleIt = document.getElementById("admin-role-it");
   if (roleIt) roleIt.addEventListener("click", () => AdminModule.setRole("it"));
+  const adminLoginForm = document.getElementById("admin-login-form");
+  if (adminLoginForm) {
+    adminLoginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      AdminModule.attemptLogin(e);
+    });
+  }
   const adminPin = document.getElementById("admin-pin");
   if (adminPin) {
     adminPin.addEventListener("keydown", (e) => {

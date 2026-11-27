@@ -183,11 +183,11 @@
   <nav id="site-navbar"
     class="mobile-safe-nav site-navbar sticky top-0 z-40 bg-transparent border-b border-transparent">
     <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full">
-      <div class="flex items-center justify-between gap-2 min-h-[60px] sm:h-20 py-1.5 sm:py-0">
+      <div class="site-navbar-row flex items-center justify-between gap-2 w-full min-h-[58px] sm:h-20 py-1.5 sm:py-0">
         <!-- Logo (interactivo: abre la presentación de marca VIP) -->
         <a href="#" onclick="openBrandModal(); return false;" role="button"
           aria-label="Abrir presentación de marca Arkik Producciones"
-          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-[44px] min-h-[44px] flex-shrink-0 cursor-pointer hover:scale-105 transition-all duration-300">
+          class="brand-logo-trigger flex items-center space-x-2 sm:space-x-3 group min-w-[40px] min-h-[40px] flex-shrink-0 cursor-pointer hover:scale-105 transition-transform duration-200">
           <img src="img/arkik_logo.jpg" alt="Arkik Producciones - Sonido Profesional para Eventos"
             class="brand-logo brand-logo-nav w-10 h-10 sm:h-10 sm:w-auto object-cover sm:object-contain rounded-xl sm:rounded-lg border border-purple-500/20 shadow-md flex-shrink-0"
             decoding="async" fetchpriority="high" width="160" height="96" />
@@ -198,7 +198,7 @@
         </a>
 
         <!-- Streamlined Navigation Menu -->
-        <div class="flex items-center gap-2 sm:gap-5 lg:gap-8 text-sm font-medium shrink-0">
+        <div class="site-navbar-actions flex items-center justify-end gap-2 sm:gap-5 lg:gap-8 text-sm font-medium shrink-0">
           <a href="#formatos"
             class="hidden md:inline-block text-gray-300 hover:text-purple-400 transition-colors whitespace-nowrap">Formatos Musicales</a>
           <a href="#biblioteca"
@@ -208,7 +208,7 @@
           <div class="relative group shrink-0">
             <button type="button" onclick="openAdminModal()" aria-label="Acceso Operativo (Ctrl + Shift + A)"
               title="Acceso Operativo (Ctrl + Shift + A)"
-              class="whitespace-nowrap bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-medium sm:font-semibold text-gray-300 hover:text-white px-3.5 py-2.5 sm:px-4 sm:py-2.5 rounded-full flex items-center justify-center gap-1.5 sm:gap-2 backdrop-blur-md transition-all duration-300 hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.25)] active:scale-95 min-h-[44px] min-w-[44px]">
+              class="whitespace-nowrap bg-white/5 hover:bg-white/10 border border-purple-500/30 text-xs font-semibold text-gray-200 hover:text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full flex items-center justify-center gap-1.5 sm:gap-2 transition-colors duration-200 hover:border-purple-400/60 active:scale-95 min-h-[40px] sm:min-h-[44px]">
               <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 group-hover:text-purple-300 transition-colors shrink-0" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -224,8 +224,8 @@
           </div>
 
           <button onclick="openBookingModal(1)"
-            class="holiday-cta-sheen group relative whitespace-nowrap flex items-center justify-center gap-1.5 sm:gap-2.5 px-4 py-2.5 sm:px-7 sm:py-3.5 rounded-full sm:rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white text-xs sm:text-sm font-semibold sm:font-bold transition-all duration-300 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 sm:hover:-translate-y-0.5 shadow-md sm:shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_35px_rgba(217,70,239,0.6)] active:scale-95 overflow-hidden min-h-[44px] shrink-0">
-            <svg class="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            class="holiday-cta-sheen group relative whitespace-nowrap flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 sm:px-6 sm:py-3 rounded-full sm:rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-500 to-pink-500 text-white text-xs sm:text-sm font-semibold sm:font-bold transition-all duration-200 hover:from-purple-500 hover:via-fuchsia-400 hover:to-pink-400 shadow-md sm:shadow-[0_0_20px_rgba(217,70,239,0.4)] active:scale-95 overflow-hidden min-h-[40px] sm:min-h-[44px] shrink-0">
+            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
             </svg>
             <span>Cotizar Ahora</span>
@@ -2190,79 +2190,56 @@
     </div>
   </div>
 
-  <!-- Executive Console: Bespoke FinTech Security Vault Modal (#adminLoginModal) -->
+  <!-- Acceso Staff (#adminLoginModal) — Tarjeta vertical limpia estilo iOS/FinTech -->
   <div id="adminLoginModal" role="dialog" aria-modal="true" aria-labelledby="admin-login-title"
     onclick="if (event.target === this) closeAdminLoginModal()"
-    class="fixed inset-0 z-[80] hidden items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
+    class="fixed inset-0 z-[80] hidden items-center justify-center p-4 bg-black/85 overflow-y-auto overscroll-contain opacity-0 pointer-events-none invisible">
     <div
-      class="fintech-vault-card executive-auth-card relative max-w-md w-full mx-auto bg-[#0c0818]/95 backdrop-blur-2xl border border-purple-500/25 rounded-3xl p-8 shadow-2xl overflow-hidden">
-
-      <!-- Ambient Top Glow Line -->
-      <div
-        class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-purple-400/60 to-transparent pointer-events-none">
-      </div>
+      class="fintech-vault-card executive-auth-card w-full max-w-[380px] mx-auto bg-[#0b0716] border border-white/12 rounded-3xl p-6 sm:p-7 flex flex-col gap-5 relative shadow-2xl overflow-hidden">
 
       <!-- Close Button -->
       <button type="button" id="admin-login-close" onclick="closeAdminLoginModal()"
-        aria-label="Cerrar consola de acceso"
-        class="absolute top-4 right-4 z-20 text-gray-400 hover:text-white p-2 rounded-full bg-white/[0.03] hover:bg-white/10 border border-white/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        aria-label="Cerrar acceso staff"
+        class="absolute top-4 right-4 z-20 w-10 h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
 
-      <!-- Vault Header -->
-      <div class="text-center pt-1">
-        <div class="relative inline-flex items-center justify-center mb-4">
-          <img src="img/arkik_logo.jpg" alt="Arkik Logo" loading="lazy" decoding="async" width="96" height="96"
-            class="w-12 h-12 object-contain rounded-2xl border border-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.25)]" />
-          <span
-            class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-400/60 flex items-center justify-center">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          </span>
-        </div>
-        <span class="block text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-purple-300/80 mb-1">
-          ARKIK SECURITY GATEWAY · TLS 1.3
-        </span>
-        <h3 id="admin-login-title" class="font-heading font-extrabold text-2xl text-white tracking-tight">
-          Bóveda Operativa Staff
+      <!-- Minimalist Centered Header -->
+      <div class="flex flex-col items-center text-center pt-1">
+        <img src="img/arkik_logo.jpg" alt="Arkik Productions" loading="lazy" decoding="async" width="88" height="88"
+          class="w-11 h-11 rounded-2xl mx-auto object-contain border border-white/10 mb-3" />
+        <h3 id="admin-login-title" class="text-xl font-bold text-white text-center leading-tight">
+          Acceso Staff
         </h3>
-        <p class="text-xs text-slate-400 font-medium mt-1">Seleccione su perfil e ingrese su PIN de autorización</p>
+        <p class="text-xs text-slate-400 text-center mt-1">Ingresa tu PIN de acceso</p>
       </div>
 
-      <!-- Profile Selector: Interactive Toggle [👑 Propietario] vs [⚡ Ingeniero TI] -->
-      <div id="admin-role-segmented" class="role-segmented-control relative overflow-hidden mt-6 bg-black/60 border border-white/10 p-1.5 rounded-2xl grid grid-cols-2" role="tablist"
-        aria-label="Selector de perfil administrativo">
+      <!-- Profile Selector: Clean Horizontal Segmented Control -->
+      <div id="admin-role-segmented"
+        class="role-segmented-control relative overflow-hidden grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-white/[0.04] border border-white/10 w-full"
+        role="tablist" aria-label="Selector de perfil administrativo">
         <span id="admin-role-glider" class="role-glider" aria-hidden="true"></span>
         <button type="button" id="admin-role-owner" onclick="AdminModule.setRole('owner')"
-          class="role-btn role-btn--active flex-1 py-2.5 px-3 rounded-xl text-xs tracking-wide transition-all duration-300 min-h-[46px] flex items-center justify-center gap-2 text-white font-semibold">
-          <span>👑</span>
+          class="role-btn role-btn--active w-full min-h-[42px] px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap text-white">
           <span>Propietario</span>
         </button>
         <button type="button" id="admin-role-it" onclick="AdminModule.setRole('it')"
-          class="role-btn flex-1 py-2.5 px-3 rounded-xl text-xs tracking-wide transition-all duration-300 min-h-[46px] flex items-center justify-center gap-2 text-gray-400 font-medium">
-          <span>⚡</span>
+          class="role-btn w-full min-h-[42px] px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap text-gray-400">
           <span>Ingeniero TI</span>
         </button>
       </div>
 
-      <!-- Security Input: High-Contrast PIN Field with Neon Focus States -->
-      <div class="mt-5 relative">
-        <label for="admin-pin" class="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
-          PIN de Autorización
-        </label>
-        <div
-          class="bg-black/50 border border-white/15 rounded-2xl px-4 py-3 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-500/30 focus-within:shadow-[0_0_25px_rgba(168,85,247,0.3)] transition-all flex items-center min-h-[54px]">
-          <svg class="w-4 h-4 text-purple-400 mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-          <input type="password" id="admin-pin" data-autofocus="true" inputmode="text" maxlength="64"
-            autocomplete="current-password" placeholder="••••••••" aria-label="PIN de acceso"
-            class="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-600 font-mono text-lg tracking-[0.35em] outline-none p-0">
+      <!-- Clean PIN Form -->
+      <form id="admin-login-form" autocomplete="off" class="flex flex-col gap-4 w-full">
+        <div class="relative w-full">
+          <label for="admin-pin" class="sr-only">PIN de Autorización</label>
+          <input type="password" id="admin-pin" name="staff_pin_code" data-autofocus="true" inputmode="numeric"
+            maxlength="8" autocomplete="off" placeholder="••••" aria-label="PIN de Autorización"
+            class="w-full min-h-[48px] bg-[#07040e] border border-white/15 focus:border-purple-500 rounded-2xl px-4 pr-12 text-center text-white placeholder-slate-500 font-mono tracking-[0.35em] outline-none transition-colors">
           <button type="button" id="admin-pin-toggle" aria-label="Mostrar u ocultar PIN"
-            class="ml-2 -mr-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-white focus:outline-none rounded-xl transition-colors shrink-0">
+            class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white focus:outline-none transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -2271,40 +2248,39 @@
             </svg>
           </button>
         </div>
-      </div>
 
-      <!-- Honeypot anti-bot -->
-      <input type="text" id="login-website-trap" name="website_trap" tabindex="-1" autocomplete="off" aria-hidden="true"
-        data-lpignore="true" data-1p-ignore="true" data-bwignore="true"
-        style="opacity: 0; position: absolute; top: -9999px; left: -9999px;" />
+        <!-- Honeypot anti-bot (ignorado por autocompletado nativo) -->
+        <input type="text" id="login-website-trap" name="website_trap" tabindex="-1" autocomplete="new-password"
+          aria-hidden="true" data-lpignore="true" data-1p-ignore="true" data-bwignore="true"
+          style="opacity: 0; position: absolute; top: -9999px; left: -9999px; pointer-events: none;" />
 
-      <!-- Cyber-Defense UI: Error & Rate-Limiting Lockout Banner (#login-lockout-banner) -->
-      <div class="min-h-[32px] mt-4 flex flex-col items-center justify-center gap-2">
-        <p id="admin-auth-error" class="hidden text-xs text-rose-400 text-center font-medium tracking-wide"></p>
-        <div id="login-lockout-banner"
-          class="hidden w-full rounded-2xl bg-rose-950/85 border border-rose-500/50 text-rose-200 text-xs p-3.5 shadow-[0_0_25px_rgba(244,63,94,0.25)] backdrop-blur-md">
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-rose-400 animate-ping shrink-0"></span>
-              <span id="admin-lockout-msg" class="font-mono font-bold tracking-tight">Bloqueo por 30s tras 3 intentos
-                fallidos · 00:30</span>
+        <!-- Error & Rate-Limiting Lockout Banner (#login-lockout-banner) -->
+        <div id="admin-auth-feedback" class="flex flex-col items-center justify-center gap-2 empty:hidden">
+          <p id="admin-auth-error" class="hidden text-xs text-rose-400 text-center font-medium"></p>
+          <div id="login-lockout-banner"
+            class="hidden w-full rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs p-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span>
+                <span id="admin-lockout-msg" class="font-mono font-semibold truncate">Bloqueo temporal · 00:30</span>
+              </div>
+              <button type="button" id="admin-lockout-reset" onclick="window.resetAdminLock && window.resetAdminLock()"
+                class="text-[11px] font-semibold text-rose-200 underline underline-offset-2 hover:text-white transition-colors shrink-0">
+                Restablecer
+              </button>
             </div>
-            <button type="button" id="admin-lockout-reset" onclick="window.resetAdminLock && window.resetAdminLock()"
-              class="text-[11px] font-semibold text-rose-200 underline underline-offset-2 decoration-rose-400/50 hover:text-white transition-colors shrink-0">
-              Restablecer
-            </button>
           </div>
         </div>
-      </div>
 
-      <!-- Primary Action CTA Button -->
-      <button type="button" id="admin-login-submit" onclick="attemptAdminLogin(event)"
-        class="w-full mt-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold text-xs uppercase tracking-widest shadow-[0_0_25px_rgba(147,51,234,0.4)] hover:shadow-[0_0_35px_rgba(147,51,234,0.65)] border border-purple-400/40 py-3.5 rounded-2xl transition-all duration-300 min-h-[50px] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-        <span>Autenticar y Desbloquear</span>
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-        </svg>
-      </button>
+        <!-- Primary Action CTA Button -->
+        <button type="button" id="admin-login-submit" onclick="attemptAdminLogin(event)"
+          class="w-full min-h-[48px] rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-semibold tracking-wide flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>Ingresar</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+          </svg>
+        </button>
+      </form>
     </div>
   </div>
 
