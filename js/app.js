@@ -1059,14 +1059,22 @@ function apiEnabled() {
     typeof ArkikApi.isEnabled === "function" && ArkikApi.isEnabled();
 }
 
-// True only on static preview hosts (GitHub Pages: *.github.io / github.io).
+// True on static preview hosts (GitHub Pages, Cloudflare Pages, localhost, 127.0.0.1, file:).
 // Keeps Zero-Trust fail-closed behavior intact on full-stack / production origins.
 function isStaticPreviewHost() {
   try {
-    const host = (typeof location !== "undefined" && location && typeof location.hostname === "string")
-      ? location.hostname.toLowerCase()
-      : "";
-    return host === "github.io" || host.endsWith(".github.io");
+    if (typeof location === "undefined" || !location) return false;
+    const proto = typeof location.protocol === "string" ? location.protocol.toLowerCase() : "";
+    if (proto === "file:") return true;
+    const host = typeof location.hostname === "string" ? location.hostname.toLowerCase() : "";
+    return (
+      host === "github.io" ||
+      host.endsWith(".github.io") ||
+      host === "pages.dev" ||
+      host.endsWith(".pages.dev") ||
+      host === "localhost" ||
+      host === "127.0.0.1"
+    );
   } catch (err) {
     return false;
   }
@@ -3225,6 +3233,11 @@ const SecurityModule = {
       if (purge) {
         ADMIN_LEGACY_RATE_KEYS.forEach((key) => {
           try { SafeStorage.removeItem(key); } catch (e) { /* noop */ }
+          try {
+            if (typeof window !== "undefined" && window.localStorage) {
+              window.localStorage.removeItem(key);
+            }
+          } catch (e) { /* noop */ }
           report.legacyPurged.push(key);
         });
       }
@@ -3283,32 +3296,37 @@ const SecurityModule = {
   },
 
   /**
-   * Static preview local PIN fallback (GitHub Pages / HTTP 404-405 static hosting only).
+   * Static preview local PIN fallback (GitHub Pages / Cloudflare Pages / localhost / file:).
    * Accepts:
    *  - '2580' -> 'owner'
    *  - '1234' -> 'it'
+   * Uses safe direct comparison wrapped in try/catch (never depends on crypto.subtle).
    * Clears residual lockout keys on success and applies UI rate limiting on failure.
    */
   verifyLocal(roleId, pin) {
-    const rawPin = (pin === undefined) ? roleId : pin;
-    const pinValue = this.normalizePin(rawPin);
-    const localPinRoles = {
-      "2580": "owner",
-      "1234": "it"
-    };
-    const matchedRole = Object.prototype.hasOwnProperty.call(localPinRoles, pinValue)
-      ? localPinRoles[pinValue]
-      : null;
-
-    if (matchedRole) {
-      this.clearLockState();
-      return {
-        ok: true,
-        status: 200,
-        role: matchedRole,
-        source: "local",
-        expiresAt: new Date(Date.now() + (ADMIN_CONFIG.sessionTimeoutMs || 900000)).toISOString()
+    try {
+      const rawPin = (pin === undefined) ? roleId : pin;
+      const pinValue = this.normalizePin(String(rawPin || "").replace(/\s+/g, "").trim());
+      const localPinRoles = {
+        "2580": "owner",
+        "1234": "it"
       };
+      const matchedRole = Object.prototype.hasOwnProperty.call(localPinRoles, pinValue)
+        ? localPinRoles[pinValue]
+        : null;
+
+      if (matchedRole) {
+        this.clearLockState();
+        return {
+          ok: true,
+          status: 200,
+          role: matchedRole,
+          source: "local",
+          expiresAt: new Date(Date.now() + (ADMIN_CONFIG.sessionTimeoutMs || 900000)).toISOString()
+        };
+      }
+    } catch (err) {
+      console.warn("[Arkik] verifyLocal:", err && err.message ? err.message : err);
     }
 
     const failState = this.registerFailedAttempt(Date.now(), {
@@ -4471,6 +4489,7 @@ const AdminModule = {
     const modal = document.getElementById("adminLoginModal");
     if (!modal) return;
     trackModal(true);
+    try { SecurityModule.purgeExpiredLockout(); } catch (e) { /* noop */ }
     this.resetLockoutState();
     resetLoginTrap();
     this.setRole("owner");
@@ -4488,7 +4507,6 @@ const AdminModule = {
       this.startLockoutCountdown(lockStatus.waitMs);
       return;
     }
-    ModalController.open("adminLoginModal");
     if (pin && !pin.disabled) {
       requestAnimationFrame(() => pin.focus({ preventScroll: true }));
     }
@@ -4569,7 +4587,7 @@ const AdminModule = {
     const glider = document.getElementById("admin-role-glider");
     const segmented = document.getElementById("admin-role-segmented");
     if (glider) {
-      glider.style.transform = roleId === "it" ? "translateX(100%)" : "translateX(0%)";
+      glider.style.transform = roleId === "it" ? "translateX(calc(100% + 0.375rem))" : "translateX(0%)";
       glider.classList.toggle("role-glider--it", roleId === "it");
     }
     if (segmented && segmented.setAttribute) {
@@ -11212,6 +11230,14 @@ function setupEventListeners() {
   if (roleOwner) roleOwner.addEventListener("click", () => AdminModule.setRole("owner"));
   const roleIt = document.getElementById("admin-role-it");
   if (roleIt) roleIt.addEventListener("click", () => AdminModule.setRole("it"));
+  const adminLoginForm = document.getElementById("admin-login-form");
+  if (adminLoginForm) {
+    adminLoginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      AdminModule.attemptLogin(e);
+    });
+  }
   const adminPin = document.getElementById("admin-pin");
   if (adminPin) {
     adminPin.addEventListener("keydown", (e) => {

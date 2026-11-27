@@ -143,8 +143,10 @@ pre,
   top: 0.75rem;
   right: 0.75rem;
   z-index: 10;
-  width: 1.5rem;
-  height: 1.5rem;
+  min-width: 44px;
+  min-height: 44px;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -395,7 +397,7 @@ body {
    ------------------------------------------------------------
    El título usaba `font-syne`: una display geométrica de trazo
    muy ancho. A 60px sus minúsculas se leen "extendidas" y el
-   conjunto pierde ladensity de un titular corporativo. Se retira
+   conjunto pierde la densidad de un titular corporativo. Se retira
    del hero y se fuerza Plus Jakarta Sans (variable, opsz activa).
    Este selector es (0,1,1) a propósito: gana por especificidad a
    CUALQUIER utilidad Tailwind de clase (0,1,0) sin recurrir a
@@ -451,7 +453,25 @@ body {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: none;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-stretch: 100%;
   transition: background-color 280ms ease, border-color 280ms ease, backdrop-filter 280ms ease, -webkit-backdrop-filter 280ms ease, box-shadow 280ms ease;
+}
+
+@media (max-width: 359.98px) {
+  .site-navbar-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 0.5rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .site-navbar-actions {
+    width: 100%;
+    justify-content: center;
+    gap: 0.625rem;
+  }
 }
 
 @media (min-width: 769px) {
@@ -561,8 +581,6 @@ body {
   padding: 0;
   border: 0;
   white-space: nowrap;
-  /* added via jQuery */
-  ;
 }
 
 /* iOS: 16px base font prevents auto-zoom on field focus */
@@ -1138,6 +1156,8 @@ input[type="submit"],
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
+  min-height: 44px;
+  scroll-snap-align: start;
   padding: 0.65rem 1rem;
   border-radius: 9999px;
   white-space: nowrap;
@@ -1343,13 +1363,13 @@ html {
 
 /* ---- Tarjeta Ejecutiva Lightbox (Glassmorphism VIP) ---- */
 
-/* Avatar interactivo de Juan José (sección #esencia): resplandor neón envolvente */
+/* Avatar interactivo de Juan José (sección #esencia): acabado limpio sin halo pesado */
 .executive-avatar {
-  box-shadow: 0 0 14px rgba(168, 85, 247, 0.35), 0 4px 18px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 
 .executive-avatar:hover {
-  box-shadow: 0 0 28px rgba(236, 72, 153, 0.5), 0 6px 22px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.35), 0 6px 18px rgba(0, 0, 0, 0.55);
 }
 
 /* Resplandor ambiental posterior (backlight glow solo detrás/contornos de la tarjeta, nunca sobre la foto) */
@@ -1533,42 +1553,37 @@ html {
 
 /* ---- Marco de Esencia: cristal limpio + ambientación continua estilo footer ---- */
 
-/* Cuadro grande principal (#esencia): cristal profundo esmerilado, sin mallas ni tramas */
-.esencia-sphere-card {
+/* ---- Sección #esencia: tarjetas oscuras sobrias y limpias ---- */
+#esencia .esencia-inner-card {
+  position: relative;
+  z-index: 10;
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
+}
+
+#esencia .esencia-testimonial-card {
   position: relative;
   z-index: 10;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 50px rgba(168, 85, 247, 0.16), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
 }
 
-.esencia-sphere-card:hover {
-  border-color: rgba(168, 85, 247, 0.3);
-  box-shadow: 0 0 65px rgba(168, 85, 247, 0.25), 0 30px 70px -30px rgba(0, 0, 0, 0.8);
+#esencia .esencia-testimonial-card blockquote {
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: -0.005em;
 }
 
-/* Cristal ultralimpio translúcido para las tarjetas interiores */
-/* Fondo oscuro fluido continuo SIN mallas ni tramas; solo luz ambiental difusa */
-.esencia-glass-card,
-.esencia-inner-card {
-  position: relative;
-  z-index: 10;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Tarjeta de Juan José: mismo cristal continuo con borde bioluminiscente púrpura.
-   Recorta los glows internos para no generar el parche oscuro (bache negro). */
-.esencia-testimonial-card {
-  overflow: hidden;
-  border-color: rgba(168, 85, 247, 0.2);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px rgba(168, 85, 247, 0.12);
+/* Aísla el <footer> de firma de las reglas globales de <footer> de página */
+#esencia .esencia-testimonial-card .esencia-signature {
+  contain: none;
+  overflow: visible;
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+  width: 100%;
 }
 
 /* ---- Full-Bleed Section Continuity (no gaps at any zoom level) ---- */
@@ -1908,14 +1923,14 @@ footer>.max-w-7xl {
 
 #adminLoginModal .role-glider {
   position: absolute;
-  top: 0.375rem;
-  bottom: 0.375rem;
-  left: 0.375rem;
-  width: calc(50% - 0.375rem);
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  width: calc(50% - 0.4375rem);
   border-radius: 0.75rem;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.34), rgba(79, 70, 229, 0.20));
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.34), rgba(79, 70, 229, 0.22));
   border: 1px solid rgba(168, 85, 247, 0.45);
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transform: translateX(0%);
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
@@ -1923,7 +1938,7 @@ footer>.max-w-7xl {
 }
 
 #adminLoginModal .role-glider.role-glider--it {
-  transform: translateX(100%);
+  transform: translateX(calc(100% + 0.375rem));
 }
 
 #adminLoginModal .role-btn {
@@ -2473,7 +2488,7 @@ footer>.max-w-7xl {
   gap: 6px;
   flex-shrink: 0;
   scroll-snap-align: start;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 16px;
   border-radius: 12px;
   font-size: 12px;
@@ -2508,7 +2523,7 @@ footer>.max-w-7xl {
 #portal-period-filters .pill-btn {
   flex-shrink: 1;
   scroll-snap-align: none;
-  min-height: 42px;
+  min-height: 44px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3063,21 +3078,32 @@ footer>.max-w-7xl {
   overscroll-behavior: contain;
 }
 
+#adminLoginModal,
+#adminLoginModal * {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-stretch: 100%;
+  letter-spacing: -0.01em;
+}
+
+#adminLoginModal #admin-pin {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.35em;
+}
+
 .executive-auth-card {
-  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
-  background-color: rgba(8, 5, 17, 0.95);
-  backdrop-filter: blur(64px);
-  -webkit-backdrop-filter: blur(64px);
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.1), 0 20px 40px -15px rgba(147, 51, 234, 0.15);
-  animation: adminModalIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  transform: translate3d(0, 0, 0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #0b0716;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 24px 48px -14px rgba(0, 0, 0, 0.85);
+  animation: adminModalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .role-btn {
-  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
-  min-height: 44px;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 42px;
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
@@ -3090,12 +3116,6 @@ footer>.max-w-7xl {
   border-color: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
-}
-
-#adminLoginModal #admin-pin {
-  font-size: 16px;
-  line-height: 1.5;
-  letter-spacing: 0.25em;
 }
 
 /* PIN: el autofill amarillo/claro por defecto de Chrome y Safari rompe la
@@ -3115,8 +3135,8 @@ footer>.max-w-7xl {
 #adminLoginModal #admin-pin-toggle {
   -webkit-appearance: none;
   appearance: none;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 36px;
+  min-height: 36px;
 }
 
 /* Input PIN con foco luminoso */
@@ -6615,16 +6635,11 @@ textarea:disabled,
    toca app.js: todo se aplica vía overrides CSS con scope #catalog-grid.
    ════════════════════════════════════════════════════════════════ */
 
-/* ── #esencia: contenedores internos con halo elegante y vidrio esmerilado profundo ── */
+/* ── #esencia: superficie oscura sobria y uniforme ── */
 #esencia .esencia-inner-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 20px 40px -15px rgba(0, 0, 0, 0.7),
-    0 0 35px rgba(147, 51, 234, 0.15),
-    0 0 70px rgba(168, 85, 247, 0.10);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(11, 7, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.65);
 }
 
 /* ── Tarjetas del catálogo: dark glassmorphic de alta gama ──
@@ -7809,7 +7824,7 @@ body.rack-preview-open {
 }
 
 /* ==================================================================
-   RAG INTELLIGENCE STUDIO  (#ragStudioView)
+   CENTRO ANALÍTICO (#ragStudioView)
    Superficie dedicada a pantalla completa. Obsidian glass: fondo
    translucido + blur, borde violeta sutil, y un acento por KPI
    inyectado vía la custom property --rag-accent.
@@ -7873,7 +7888,7 @@ body.rack-preview-open {
 .rag-studio-badge {
   display: inline-flex;
   align-items: center;
-  gap: .375rem;
+  gap: .4375rem;
   font-size: .6875rem;
   font-weight: 700;
   letter-spacing: .1em;
@@ -7884,6 +7899,16 @@ body.rack-preview-open {
   border: 1px solid rgba(16, 185, 129, .3);
   background: rgba(16, 185, 129, .2);
   white-space: nowrap;
+}
+
+.rag-studio-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.7);
+  flex-shrink: 0;
 }
 
 .rag-studio-nav {
@@ -7897,6 +7922,7 @@ body.rack-preview-open {
   display: inline-flex;
   align-items: center;
   gap: .4375rem;
+  min-height: 44px;
   padding: .5rem .875rem;
   font-size: .6875rem;
   font-weight: 800;
@@ -7984,6 +8010,7 @@ body.rack-preview-open {
   width: 100%;
   min-width: 0;
   padding: .875rem 1.125rem;
+  font-size: 16px;
   font-weight: 600;
   color: #f8fafc;
   background: transparent;
@@ -8010,12 +8037,19 @@ body.rack-preview-open {
   padding-right: 0.25rem;
   padding-bottom: .25rem;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+}
+
+.rag-studio-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .rag-studio-pills .rag-pill {
   flex: 0 0 auto;
+  min-height: 44px;
+  scroll-snap-align: start;
   white-space: nowrap;
 }
 
@@ -8190,7 +8224,7 @@ body.rack-preview-open {
   min-width: 0;
 }
 
-/* El JS emite <span>电话 / <span>✉️ dentro de .rag-contact, así que
+/* El JS emite <span>teléfono / <span>✉️ dentro de .rag-contact, así que
    hace falta el layout en flex. Se acota al Studio para no alterar la
    tarjeta compacta del panel, que usa .rag-contact como texto simple. */
 #ragStudioView .rag-contact {
@@ -8219,7 +8253,7 @@ body.rack-preview-open {
   font-weight: 800;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: #64748b;
+  color: #94a3b8;
   margin-bottom: .1875rem;
 }
 
@@ -8235,7 +8269,7 @@ body.rack-preview-open {
 }
 
 .rag-fin--paid .rag-fin-value {
-  color: #6ee7b7;
+  color: #34d399;
 }
 
 .rag-fin--pending {
@@ -8244,6 +8278,14 @@ body.rack-preview-open {
 
 .rag-fin--pending .rag-fin-value {
   color: #fcd34d;
+}
+
+.rag-fin--balance {
+  border-color: rgba(34, 211, 238, .35);
+}
+
+.rag-fin--balance .rag-fin-value {
+  color: #67e8f9;
 }
 
 .rag-fin--total .rag-fin-value {
@@ -8288,6 +8330,7 @@ body.rack-preview-open {
   align-items: center;
   justify-content: center;
   gap: .45rem;
+  min-height: 44px;
   padding: .42rem .8rem;
   font-size: .6875rem;
   font-weight: 700;
@@ -8588,11 +8631,75 @@ body.rack-preview-open {
     background-color: rgba(10, 6, 24, 0.96) !important;
   }
 
+  #esencia .esencia-inner-card {
+    background: #0b0716 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  /* RAPID TOUCH-SCROLLING MODE: completely disable blur and heavy glow shadows */
+  #esencia .esencia-testimonial-card {
+    background: #0b0716 !important;
+    border: 1px solid rgba(168, 85, 247, 0.18) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  #esencia .esencia-testimonial-card .esencia-signature {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+  }
+
+  /* Elimina backdrop-blur pesados con especificidad de ID en móvil (#catalog-grid, #proceso, #cobertura, #gallery-grid) */
+  .mobile-safe-nav,
+  #catalog-grid .glass-panel,
+  #proceso .glass-panel,
+  #cobertura .glass-panel,
+  #cobertura .command-val-card,
+  #gallery-grid [class*="backdrop-blur"],
+  .extra-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .mobile-safe-nav.site-navbar:not(.navbar-scrolled) {
+    background-color: transparent !important;
+    border-bottom: 1px solid transparent !important;
+    box-shadow: none !important;
+  }
+
+  .mobile-safe-nav.site-navbar.navbar-scrolled {
+    background-color: rgba(11, 7, 23, 0.96) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09) !important;
+  }
+
+  #catalog-grid .glass-panel,
+  #proceso .glass-panel,
+  #cobertura .glass-panel {
+    background: #0b0716 !important;
+    box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6) !important;
+  }
+
+  /* Evita filtros de píxel y transiciones pesadas sobre imágenes en celular al decodificar */
+  .catalog-card__img,
+  #gallery-grid .gallery-card img {
+    filter: none !important;
+    transition: none !important;
+  }
+
+  /* RAPID TOUCH-SCROLLING MODE: pausa animaciones CSS y apaga sombras/blurs durante el scroll */
+  body.is-scrolling *,
+  body.is-scrolling *::before,
+  body.is-scrolling *::after {
+    animation-play-state: paused !important;
+  }
+
   body.is-scrolling [class*="backdrop-blur"],
+  body.is-scrolling #catalog-grid .glass-panel,
   body.is-scrolling .esencia-inner-card,
+  body.is-scrolling .esencia-testimonial-card,
   body.is-scrolling .modal-overlay,
   body.is-scrolling .modal-card,
   body.is-scrolling .bg-glow-purple,
@@ -8742,8 +8849,9 @@ body.rack-preview-open {
   display: none;
 }
 
-.owner-action-toolbar .owner-toolbar-btn {
-  min-height: 38px;
+.owner-action-toolbar .owner-toolbar-btn,
+.owner-action-toolbar button {
+  min-height: 44px;
   white-space: nowrap;
   user-select: none;
 }
@@ -8983,16 +9091,13 @@ body.rack-preview-open {
   box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.5);
 }
 
-/* 4. Bespoke FinTech Security Vault & Bioluminescent KPIs */
+/* 4. Clean Dark Staff Login Card (sin backdrop-blur pesado para 60 FPS en móvil) */
 .fintech-vault-card {
-  background: rgba(12, 8, 24, 0.95);
-  backdrop-filter: blur(32px) saturate(140%);
-  -webkit-backdrop-filter: blur(32px) saturate(140%);
-  border: 1px solid rgba(168, 85, 247, 0.25);
-  box-shadow:
-    0 25px 60px -15px rgba(0, 0, 0, 0.85),
-    0 0 40px rgba(139, 92, 246, 0.15),
-    inset 0 1px 1px rgba(255, 255, 255, 0.12);
+  background: #0b0716;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 50px -15px rgba(0, 0, 0, 0.88);
 }
 
 .role-btn {
@@ -9060,4 +9165,86 @@ body.modal-open .floating-wa-btn {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* ============================================================
+   MOBILE APP ERGONOMICS — Safe-Area, Scroll Containment & Touch
+   ------------------------------------------------------------
+   Elimina desplazamientos accidentales del fondo, desbordes
+   horizontales y recortes en bordes en iOS / Android sin tocar
+   la lógica del cotizador ni la seguridad.
+   ============================================================ */
+html,
+body {
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+.mobile-safe-nav {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+#whatsapp-float {
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, calc(0.875rem + env(safe-area-inset-bottom, 0px)));
+}
+
+/* Bloqueo estricto del scroll del fondo al abrir cualquier modal */
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none;
+}
+
+/* Restaura gestos de scroll táctil exclusivamente dentro de los cuerpos de modales */
+#booking-modal .booking-modal-body,
+#executive-modal,
+#brand-modal,
+#adminLoginModal,
+#adminPortalModal,
+#preInvoicePreviewModal {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Evita que el FAB de WhatsApp tape el copyright o enlaces al final del footer */
+  #master-liquid-footer {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Resguardo de bordes laterales y notch en lightboxes móviles */
+  #executive-modal,
+  #brand-modal {
+    padding:
+      max(1rem, env(safe-area-inset-top, 0px))
+      max(0.75rem, env(safe-area-inset-right, 0px))
+      max(1rem, env(safe-area-inset-bottom, 0px))
+      max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+
+  #executive-modal .executive-lightbox,
+  #brand-modal .brand-lightbox {
+    width: 100%;
+    max-width: min(24rem, 100%);
+  }
+
+  /* Evita recortes horizontales en secciones con safe-area landscape */
+  section > .max-w-7xl,
+  footer > .max-w-7xl {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
 }
