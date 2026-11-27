@@ -1,211 +1,171 @@
-# Arkik Productions — Executive Operating System & Booking Engine
+# Arkik Productions — Sistema Operativo Ejecutivo & Plataforma Web SPA
 
-> **Repository:** [https://github.com/esmoliname/arkik_productions_web](https://github.com/esmoliname/arkik_productions_web)
+> **Producción:** Vercel Serverless + Neon PostgreSQL — Costa Rica (`America/Costa_Rica` / `UTC-6`)
+>
+> **Despliegue Oficial en Vivo:** https://arkik-productions.vercel.app/
+> **Repositorio Fuente:** https://github.com/esmoliname/arkik_productions_web
+> **Vista Previa Estática (GitHub Pages):** https://esmoliname.github.io/arkik_productions_web/
 
-Plataforma ejecutiva de alto rendimiento (SPA) y sistema operativo de gestión de eventos, cotizaciones dinámicas, validación bancaria **SINPE Móvil**, motor de búsqueda y agregación determinista (**ArkikRAGEngine**) y subsistema de generación de documentos contractuales en **PDF y DOCX** para **Arkik Productions** (Granadilla, Curridabat, San José, Costa Rica).
-
----
-
-## Project Overview
-
-Arkik Productions es una plataforma web que combina un catálogo público de servicios musicales y sonido con un motor de reservas transaccionales y un panel administrativo. El sistema gestiona cotizaciones en tiempo real, disponibilidad de agenda, validación de comprobantes SINPE Móvil, auditoría de operaciones y exportación de prefacturas en PDF/DOCX.
-
-Funcionalidades principales:
-
-- Catálogo de servicios musicales (Banda RT, Trío, Dúo, Solista, Alquiler de Sonido).
-- Wizard de reserva de 4 pasos con cálculo dinámico de horas extra, DJ en recesos, subwoofers y viáticos.
-- Validación de disponibilidad por fecha/hora con bloqueo automático por capacidad.
-- Validación bancaria SINPE Móvil con comprobante (voucher) y aprobación administrativa.
-- Panel administrativo con dashboard, métricas financieras, auditoría y gestión de precios.
-- Generación de prefacturas en PDF (A4) y Word (.docx).
-- Motor de búsqueda operativa determinista (ArkikRAGEngine) sobre reservas activas.
+Plataforma web ejecutiva (SPA) y sistema operativo de reservas musicales, cotizaciones dinámicas, validación bancaria **SINPE Móvil**, consola administrativa Zero-Trust y exportación documental (**PDF A4** y **Word `.docx`**) para **Arkik Productions** (Granadilla, San José, Costa Rica).
 
 ---
 
-## Architecture
+## 1. Arquitectura del Sistema y Flujo de Datos
 
-Arquitectura real del proyecto (no se usa Cloudflare en la arquitectura objetivo):
+### Estructura real del proyecto
 
-- **Frontend:** Vanilla JavaScript SPA (ES2022+), CSS3 con variables de diseño líquido y Tailwind CSS. Sin frameworks de UI.
-- **Backend:** Vercel Serverless Functions (Node.js 22+) bajo `/api`.
-- **Database:** Neon PostgreSQL (server-side only, vía `DATABASE_URL`).
-- **Persistencia remota primero:** La fuente de verdad de las reservas es Neon PostgreSQL a través de `/api`. `LocalStorage` se utiliza únicamente para caché, preferencias y borradores/cola offline no confirmada. El sistema **no** simula confirmaciones cuando el backend no responde.
-
-```mermaid
-graph TD
-    Client[Cliente / Navegador] --> UI[SPA Vanilla JS]
-    UI --> API[Vercel Serverless /api]
-    API --> PG[(Neon PostgreSQL)]
-    PG --> API
-    API --> UI
+```
+arkik_productions_web/
+├── index.html                  # SPA única (cotizador, portal staff, biblioteca, docs)
+├── css/styles.css              # Sistema de diseño Dark Obsidian / Glassmorphism
+├── js/
+│   ├── data.js                 # Catálogo, configuración, motor de calendario/precios
+│   ├── api.js                  # Cliente HTTP tipado (Zero-Trust, sin montos en cliente)
+│   └── app.js                  # Lógica de UI, wizard, RBAC, CloudSync, exportación
+├── api/                        # Funciones Serverless Vercel (Node 22+)
+│   ├── _lib/                   # Dominio puro, repositorio, servicio, auth, rate-limit
+│   ├── bookings/, availability/, pricing/, health/, ready/
+│   └── admin/                  # login, session, logout, dashboard, pricing, audit, stats
+├── db/                         # Migraciones SQL, provisioning least-privilege, seeds
+├── test/                       # 18+ suites offline (node:test), contrato y seguridad
+├── scripts/                    # predeploy-check, dev-server, build-publish, preflight Neon
+├── .github/workflows/          # GitHub Pages (preview) y Cloudflare Pages (preview)
+├── vercel.json                 # Rewrites, headers de seguridad, cache
+└── .env.example                # Plantilla de variables (sin valores reales)
 ```
 
-Módulos principales:
+### Arquitectura Híbrida / Dual-Branch
 
-- `js/data.js`: Catálogo, mapa geográfico (7 provincias, 84 cantones, GAM vs. Fuera de GAM), configuración SINPE y constantes.
-- `js/app.js`: Núcleo reactivo — `ArkikAssets`, `CartState`, `PriceManager`, `BookingStore`, `ArkikRAGEngine`, `ModalController`, exportación documental.
-- `js/api.js`: Cliente HTTP hacia `/api` con manejo de errores y reintentos.
-- `api/_lib/*`: Librerías compartidas (config, auth, db, cors, log, respond, repo, service, ratelimit, registry, logic).
-- `api/admin/*`: Endpoints administrativos protegidos por sesión.
-- `api/bookings/*`, `api/availability/*`, `api/pricing.js`: Endpoints públicos y administrativos.
+- **`main` — Producción Zero-Trust.** Respaldada por API Serverless (`api/bookings`, `api/availability`, `api/admin/*`) y base de datos PostgreSQL (Neon). Sesiones `HttpOnly` / `SameSite=Strict`, hashes `scrypt`, rate-limiting persistente en PostgreSQL y autoridad de precios exclusivamente en servidor (`PRICE_MISMATCH`).
+- **`preview/cloudflare` — Vista previa estática.** Despliegue en GitHub Pages / Cloudflare Pages con motor resiliente `SafeStorage` / `MemoryStorage` y cliente HTTP fail-closed (sin colas offline no verificadas).
+
+### Diagrama de flujo (cliente → persistencia → auditoría)
+
+```
+┌────────────────────┐      HTTPS Same-Origin      ┌──────────────────────────┐
+│  Navegador (SPA)   │  ───────────────────────►  │  Vercel Serverless (Node) │
+│  Wizard 4 pasos    │   POST /api/bookings        │  api/_lib/service.js      │
+│  SINPE 50 %        │   (sin montos)             │  api/_lib/logic.js        │
+│  compresión canvas │                            │  api/_lib/repo.js         │
+└────────────────────┘                            └────────────┬─────────────┘
+       ▲                                                      │
+       │  CloudSync (focus/visibility, throttled)              │ Pooled TLS + SQL param.
+       │  KPIs / calendario / auditoría                       ▼
+┌──────┴──────────────┐                            ┌──────────────────────────┐
+│  Portal Staff RBAC  │  ◄──────────────────────  │   Neon PostgreSQL        │
+│  owner / it         │   GET /api/admin/*         │  bookings, availability, │
+│  KPIs, tarifas,     │                            │  admin_sessions,         │
+│  bloqueos, auditoría│                            │  rate_limits, config     │
+└─────────────────────┘                            └──────────────────────────┘
+```
 
 ---
 
-## Requirements
+## 2. Módulos Funcionales y Reglas de Negocio
 
-- Node.js 22+ (ver `package.json` `engines.node`).
-- npm.
-- Git.
-- Cuenta y base de datos Neon PostgreSQL para integración.
-- Cuenta Vercel para despliegue.
+### Cotizador Público Interactivo (Wizard en 4 Pasos)
+
+- **Catálogo de formatos musicales y técnicos** con tiempos exactos de montaje y desmontaje.
+- **Cálculo dinámico de extras:** horas adicionales al 50 % con tope máximo, DJ en recesos, subwoofers.
+- **Recargo automático del 12 % de viáticos fuera del GAM**, evaluado por Provincia + Cantón (7 provincias / 84 cantones).
+- **Motor de calendario y disponibilidad:** antelación mínima estricta de **72 horas**, horizonte de **365 días**, máximo 2 eventos diarios y margen logístico de traslado/descanso (5–6 horas) anti-colisiones.
+- **Flujo SINPE Móvil:** prima del **50 %**, compresión nativa de comprobantes en `<canvas>` y generación de código único `ARK-XXXXXXXX` con envío estructurado a WhatsApp.
+
+### Portal Staff con Control de Acceso Basado en Roles (RBAC)
+
+- **Vista Propietario (`owner`):** KPIs financieros dinámicos con filtros temporales (`Hoy`, `Esta Semana`, `Este Mes`, `Este Año`, `Histórico Total`), gráfico de flujo de caja, gestión de estados de reserva (`pendiente → confirmada → realizada / cancelada`), reprogramación, bloqueo de fechas y gestión dinámica de tarifas.
+- **Suite de Ingeniería TI (`it`):** matriz de tarifas en vivo, bloqueo/desbloqueo de fechas en agenda, gestor de biblioteca multimedia e integridad/respaldo de base de datos JSON. Sin permisos de mutación sobre precios, disponibilidad ni reservas.
+
+> **Nota de seguridad:** este README no incluye PINs, contraseñas ni llaves privadas. Las credenciales se gestionan exclusivamente mediante variables de entorno y migraciones.
+
+### RAG Analytics Studio & Motor de Exportación (PDF / DOCX)
+
+- Indexación analítica de registros, cálculo de tasa de conversión en tiempo real y visor lateral de inspección.
+- Generación de comprobantes/reportes en **PDF A4** (`html2pdf.js`) y **Word** (`docx`) con logotipo incrustado, con degradación limpia a vista de impresión controlada ante bloqueos de CDN.
+
+### Rendimiento Móvil y Sistema de Diseño
+
+- Estética Dark Obsidian / Glassmorphism, tipografía `Plus Jakarta Sans` + `JetBrains Mono`.
+- `AnimationRegistry` con pausa automática de `requestAnimationFrame` en modales/scroll.
+- Prevención de auto-zoom en iOS Safari (`16px` en inputs).
 
 ---
 
-## Installation
+## 3. Seguridad Zero-Trust
+
+- **Autenticación y Sesiones:** PINs administrativos validados exclusivamente en servidor con `scrypt` + salt único y comparación en tiempo constante. Sesiones persistidas en PostgreSQL (`admin_sessions`) con expiración deslizante de 15 minutos y cookie `__Host-session` (`HttpOnly; Secure; SameSite=Strict; Path=/`).
+- **Autoridad de Precios (`PRICE_MISMATCH`):** El cliente **no** envía montos en `POST /api/bookings`. El servidor recalcula tarifa base, horas extra, DJ, subwoofers, recargo fuera de GAM (12 %) y adelanto SINPE (50 %) directamente desde PostgreSQL.
+- **Rate Limiting Distribuido:** Control de tasa por IP real respaldado por PostgreSQL (`rate_limits`), complementado por `ClientThrottler` persistente en `SafeStorage`.
+- **Zona Horaria Oficial (`UTC-6`):** Backend y calendario del cliente anclan "hoy", la antelación mínima de 72 horas y el horizonte de 365 días a hora fija de Costa Rica (`UTC-6`, sin DST).
+- **Anti-XSS y Sanitización:** escape de entradas, lista blanca estricta de estados (`sanitizeBookingStatusClass`) y renderizado seguro con `textContent`.
+- **Endurecimiento HTTP (`vercel.json`):** `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` y `Content-Security-Policy-Report-Only`.
+
+---
+
+## 4. Instalación Local, Variables de Entorno y Pruebas
+
+### Requisitos
+
+- **Node.js 22+** y **npm**
+- Base de datos **Neon PostgreSQL**
+
+### Instalación y configuración local
 
 ```bash
 npm install
+cp .env.example .env.local
 ```
 
----
-
-## Development
-
-Iniciar el servidor full-stack de desarrollo local (`scripts/dev-server.js`, sirve estáticos y enruta `/api/*` + rutas SPA):
+Genera un secreto de sesión seguro (`ADMIN_SESSION_SECRET`, mínimo 64 caracteres hex):
 
 ```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+Completa en `.env.local` tu `DATABASE_URL` (pooled), `DIRECT_DATABASE_URL` (direct, solo migraciones), `ADMIN_OWNER_PIN`, `ADMIN_IT_PIN` y `ADMIN_SESSION_SECRET`. **Nunca subas `.env`, `.env.local` ni `.dev.vars` al repositorio.**
+
+### Migraciones y arranque local
+
+```bash
+# Aplicar esquema y semillas de configuración inicial en Neon
+npm run db:migrate
+
+# Iniciar servidor full-stack local (SPA + /api/*)
 npm run dev
 ```
 
-Solo si se necesita un servidor estático puro sin API, existe `npm run dev:static` (`serve -s .`).
-
-Comprobación de sintaxis:
+### Validación y pruebas
 
 ```bash
+# Verificación de sintaxis JS en frontend, DB y scripts
+node --check js/app.js
+node --check js/data.js
 npm run check
-```
 
----
-
-## Environment Variables
-
-Variables de entorno (nombres y propósito). **Nunca incluir valores reales.** Usar placeholders seguros.
-
-| Variable | Propósito |
-|---|---|
-| `DATABASE_URL` | Cadena de conexión PostgreSQL de Neon (solo server-side). |
-| `APP_ENV` | Entorno: `development`, `staging`, `preview` o `production` (`APP_ENV=development` explícito requerido para fallback local sin DB). |
-| `SEED_MODE` | `true` permite insertar datos demo (solo desarrollo local); `false` en producción. |
-| `ADMIN_OWNER_PIN` | PIN del rol Owner (solo server-side, nunca en código ni cliente). |
-| `ADMIN_IT_PIN` | PIN del rol IT (solo server-side). |
-| `ADMIN_SESSION_SECRET` | Secreto para firmar tokens de sesión (64+ caracteres aleatorios). Obligatorio en `staging`, `preview`, `production`, cloud o con `DATABASE_URL` (`503` si falta). |
-| `ALLOWED_ORIGINS` | Orígenes permitidos para CORS (separados por coma). Vacío = same-origin únicamente. |
-| `PUBLIC_APP_URL` | URL pública de la app (para links/emails). |
-
-Copiar `.env.example` a `.env.local` para desarrollo. Nunca commitear `.env` real.
-
----
-
-## Database
-
-- **Neon PostgreSQL** como base de datos oficial.
-- Migraciones en `db/migrations/` (`001_initial_schema.sql`, `002_indexes.sql`, `003_config_seed.sql`).
-- Inicialización: `npm run db:migrate`.
-- Semillas de desarrollo: `npm run db:seed:dev` (solo con `SEED_MODE=true`).
-- Separación de entornos por `DATABASE_URL` y `APP_ENV`.
-- Bases vacías: el sistema arranca vacío en producción (`SEED_MODE=false`); no se insertan datos demo.
-- Protección de datos existentes: las migraciones son idempotentes (`ON CONFLICT`); no se sobrescriben datos de producción.
-
----
-
-## API
-
-### Endpoints públicos
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/health` | Probe de liveness puro (`200`, `status: "ok"`, `database: "not_checked"`, cero queries SQL). |
-| `GET` | `/api/ready` | Único probe de readiness PostgreSQL (`200` solo tras `SELECT 1` válido; `503` si falla o falta `DATABASE_URL`). |
-| `POST` | `/api/bookings` | Creación de reserva (rate limited, idempotente). |
-| `GET` | `/api/availability` | Mapa de disponibilidad bloqueada (+ `?date=`, `?from=&to=`). |
-| `GET` | `/api/pricing` | Precios públicos (catálogo, overrides, rates). |
-
-### Endpoints administrativos (requieren sesión)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/api/admin/login` | Autenticación por PIN. |
-| `GET` | `/api/admin/session` | Sesión actual o 401. |
-| `POST` | `/api/admin/logout` | Cierre de sesión. |
-| `GET` | `/api/admin/dashboard` | Payload del panel administrativo. |
-| `GET` | `/api/admin/stats` | Agregados. |
-| `GET` | `/api/admin/audit` | Eventos de auditoría. |
-| `GET/PUT` | `/api/admin/pricing` | Gestión de precios (PUT solo Owner). |
-| `GET` | `/api/bookings` | Listado de reservas (admin). |
-| `GET/PATCH` | `/api/bookings/[code]` | Detalle / edición de contacto. |
-| `PATCH` | `/api/bookings/[code]/status` | Transición de estado. |
-| `PATCH` | `/api/bookings/[code]/reschedule` | Reagendamiento. |
-| `PUT/DELETE` | `/api/availability` | Gestión de disponibilidad (solo Owner). |
-
----
-
-## Security
-
-- **Autenticación:** PIN administrativo validado exclusivamente en el servidor, hashes scrypt con salt único, comparación en tiempo constante.
-- **Sesiones:** Sesiones opacas persistidas en PostgreSQL (`admin_sessions`) con expiración deslizante (15 min) siempre que `DATABASE_URL` esté configurada; modo local stateless `v1.` únicamente con `APP_ENV=development` explícito, sin `DATABASE_URL` y sin flags cloud/producción. Cookies `HttpOnly`, `Secure` en Preview/Producción (`__Host-session`), `SameSite=Strict`.
-- **Roles:** `owner` e `it`, verificados en el servidor. Operaciones sensibles (precios, disponibilidad, gestión de reservas) reservadas al Owner.
-- **Protección de login:** Rate limiting por IP y por IP+rol (PostgreSQL `rate_limits`); backoff progresivo temporal; sin bloqueo global por rol para evitar DoS por terceros.
-- **Variables de entorno:** `ADMIN_SESSION_SECRET` obligatorio en `staging`, `preview`, `production`, cloud (`VERCEL=1`, `VERCEL_ENV`) o cuando `DATABASE_URL` está configurada (responde `503` si falta o usa el valor por defecto dev; el fallback dev solo aplica con `APP_ENV=development` explícito sin DB). Ningún secreto en el frontend.
-- **CORS:** Same-origin por defecto; orígenes explícitos cuando se configuran. Preflight restringido.
-- **Logs:** Redacción automática de secretos, PINs, tokens, cookies y URLs de conexión.
-- **Auditoría:** Eventos de login, logout, cambios de estado, precios y disponibilidad.
-- **Sincronización cliente (`CloudSync`):** Sin polling continuo en la vista pública (sincronización al arranque, al abrir modal de reserva, al seleccionar fecha, pre-submit y retorno de foco con cooldown >= 60 s); en el portal administrativo, actualización manual + intervalo moderado (45 s) solo con el portal abierto y pestaña visible.
-
----
-
-## Testing
-
-```bash
+# Suite completa de pruebas unitarias, de integración y seguridad (offline mocks)
 npm test
+
+# Compuerta completa pre-despliegue (sintaxis + 18+ suites + invariantes estáticos RBAC/SQL/headers)
+npm run predeploy:check
 ```
 
-Suites existentes:
-
-- `test/api-client.test.cjs`: Cliente HTTP, idempotencia, rate limiting, manejo de errores.
-- `test/auth-recovery.test.cjs`: Recuperación de autenticación, RBAC, cookies, failover/readiness DB, matriz de entornos y `CloudSync`.
-- `test/behavior.test.cjs`: Comportamiento de handlers (auth, métodos, DB caída, probes `/api/health` y `/api/ready`).
-- `test/contract.test.cjs`: Contratos de availability range y pricing.
-- `test/load.test.cjs`: Carga de módulos de API y librerías (`api/_lib` y handlers).
-- `test/logic.test.cjs`: Lógica de negocio (precios, capacidad, transiciones, validación).
-- `test/security.test.cjs`: Higiene de secretos, redacción de logs y superficie cliente.
-
-No se eliminan pruebas para obtener resultados positivos.
-
 ---
 
-## Deployment
+## 5. Despliegue en Vercel + Neon
 
-Preparación para:
+1. Conecta el repositorio en **Vercel** y configura las variables de entorno en **Project Settings > Environment Variables**:
+   - `DATABASE_URL` (endpoint `-pooler` de Neon con rol mínimo `arkik_app`)
+   - `ADMIN_SESSION_SECRET` (64+ caracteres aleatorios)
+   - `APP_ENV=production`
+   - `SEED_MODE=false`
+   - `ALLOWED_ORIGINS` (vacío para *same-origin*)
+   - *(No agregues `DIRECT_DATABASE_URL` ni `DIRECT_ADMIN_DATABASE_URL` al runtime de Vercel).*
+2. Ejecuta `npm run db:migrate` desde tu entorno seguro apuntando a la base de producción antes del primer tráfico.
+3. Verifica liveness y readiness tras el despliegue:
+   - `GET /api/health` → `200 OK`
+   - `GET /api/ready` → `200 OK` (confirma conectividad real con Neon `SELECT 1`)
 
-- **Vercel Preview:** Entorno de prueba con su propia `DATABASE_URL` y credenciales.
-- **Vercel Production:** `SEED_MODE=false`, `ADMIN_SESSION_SECRET` obligatorio, `APP_ENV=production`.
-- **Neon PostgreSQL:** Base de datos por entorno (desarrollo/preview/producción).
-- **Dominio personalizado:** Configurar en Vercel; usar `PUBLIC_APP_URL`.
-
-No incluir credenciales ni URLs privadas con parámetros sensibles en la documentación.
-
----
-
-## Documentation Index
-
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/DATABASE.md`](docs/DATABASE.md)
-- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
-- [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md)
-- [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)
-- [`docs/QA_REPORT.md`](docs/QA_REPORT.md)
-- [`docs/CATALOG_AUDIT.md`](docs/CATALOG_AUDIT.md)
-- [`docs/PRODUCTION_READINESS_REPORT.md`](docs/PRODUCTION_READINESS_REPORT.md)
+El preview estático se publica automáticamente en **GitHub Pages** desde la rama `preview/cloudflare` y en **Cloudflare Pages** (`arkik-productions`, rama `cloudflare-preview`).
 
 ---
 
